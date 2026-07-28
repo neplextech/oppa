@@ -1,0 +1,49 @@
+{
+  "protocolVersion": 1,
+  "messageId": "msg_inventory_001",
+  "correlationId": "msg_inventory_request_001",
+  "sentAt": "2026-07-28T10:00:06Z",
+  "type": "agent.printer_inventory",
+  "payload": {
+    "revision": 7,
+    "printers": [
+      {
+        "id": "printer_receipt_001",
+        "fingerprint": "system:CUPS:receipt-001",
+        "name": "Front desk receipt",
+        "kind": "local",
+        "connection": {
+          "type": "system",
+          "systemName": "receipt-001"
+        },
+        "capabilities": {
+          "mediaWidths": [58, 80],
+          "raster": true,
+          "cut": true,
+          "qr": true,
+          "barcode": true
+        },
+        "enabled": true,
+        "availability": "online"
+      },
+      {
+        "id": "printer_virtual_001",
+        "fingerprint": "virtual:development",
+        "name": "Development virtual printer",
+        "kind": "virtual",
+        "connection": {
+          "type": "virtual"
+        },
+        "capabilities": {
+          "mediaWidths": [80],
+          "raster": true,
+          "cut": true,
+          "qr": true,
+          "barcode": true
+        },
+        "enabled": true,
+        "availability": "online"
+      }
+    ]
+  }
+}

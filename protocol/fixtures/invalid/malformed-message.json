@@ -1,0 +1,16 @@
+{
+  "protocolVersion": 1,
+  "sentAt": "not-a-timestamp",
+  "type": "server.print_job",
+  "payload": {
+    "jobId": "job_bad",
+    "idempotencyKey": "",
+    "printerId": "printer_receipt_001",
+    "createdAt": "2026-07-28T10:01:58Z",
+    "document": {
+      "width": 72,
+      "sections": []
+    }
+  },
+  "unexpected": true
+}

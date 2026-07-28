@@ -1,0 +1,10 @@
+{
+  "protocolVersion": 1,
+  "messageId": "msg_agent_heartbeat_001",
+  "correlationId": "msg_server_heartbeat_001",
+  "sentAt": "2026-07-28T10:00:05Z",
+  "type": "agent.heartbeat",
+  "payload": {
+    "uptimeSeconds": 3600
+  }
+}

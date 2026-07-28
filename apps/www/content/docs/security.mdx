@@ -1,0 +1,55 @@
+---
+title: Security
+description:
+  The remote-command boundary, credential safety, limits, and
+  diagnostics redaction.
+---
+
+OPPA is a privileged bridge to local printer hardware. Treat every
+remote message as untrusted input.
+
+## Remote command boundary
+
+The agent accepts only documented OpenPrinter messages. It does not
+expose:
+
+- arbitrary shell or script execution
+- unrestricted filesystem access
+- generic HTTP proxying
+- server-selected local file paths
+- a JavaScript runtime or plugin loader
+- remote desktop functionality
+
+Tauri commands are similarly narrow and typed.
+
+## Authentication
+
+- authorization uses PKCE and cryptographic state
+- the callback binds only to ephemeral `127.0.0.1`
+- authorization codes are accepted once and expire quickly
+- the WebSocket uses Bearer authentication over TLS in production
+- refresh credentials use operating-system secure storage
+
+Tokens are never written to SQLite, product JSON, logs, or diagnostic
+exports.
+
+## Input and resource limits
+
+The protocol bounds encoded messages, document sections, metadata,
+strings, images, and inventory size. OPPA validates a job's printer ID
+against its enabled local registry. Network submission uses explicit
+connect and write timeouts.
+
+Local jobs, processed idempotency history, captured virtual output,
+and diagnostic logs all have retention limits. A remote peer cannot
+grow them without bound.
+
+## Product builds
+
+Production products use `https:` and `wss:` endpoints. Product
+configuration is validated and embedded during compilation, which
+prevents an unprivileged local edit from redirecting an installed
+agent to another provider.
+
+Report suspected vulnerabilities privately to the maintainers before
+opening a public issue.

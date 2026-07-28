@@ -1,0 +1,2466 @@
+{
+  "$id": "https://openprinter.dev/schema/openprinter-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "anyOf": [
+    {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "messageId": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "type": "string"
+            },
+            "payload": {
+              "additionalProperties": false,
+              "properties": {
+                "agentId": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+                  "type": "string"
+                },
+                "agentVersion": {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "productId": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+                  "type": "string"
+                },
+                "productVersion": {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "supportedProtocolVersions": {
+                  "items": {
+                    "const": 1,
+                    "type": "integer"
+                  },
+                  "maxItems": 8,
+                  "minItems": 1,
+                  "type": "array",
+                  "uniqueItems": true
+                }
+              },
+              "required": [
+                "agentId",
+                "agentVersion",
+                "productId",
+                "productVersion",
+                "supportedProtocolVersions"
+              ],
+              "type": "object"
+            },
+            "protocolVersion": {
+              "const": 1,
+              "type": "integer"
+            },
+            "sentAt": {
+              "maxLength": 30,
+              "minLength": 20,
+              "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{1,9})?Z$",
+              "type": "string"
+            },
+            "type": {
+              "const": "agent.hello",
+              "type": "string"
+            }
+          },
+          "required": [
+            "protocolVersion",
+            "messageId",
+            "sentAt",
+            "type",
+            "payload"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "messageId": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "type": "string"
+            },
+            "payload": {
+              "additionalProperties": false,
+              "properties": {
+                "metadata": {
+                  "additionalProperties": false,
+                  "maxProperties": 32,
+                  "patternProperties": {
+                    "^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$": {
+                      "maxLength": 1024,
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                },
+                "method": {
+                  "anyOf": [
+                    {
+                      "const": "oauth2",
+                      "type": "string"
+                    },
+                    {
+                      "const": "api_key",
+                      "type": "string"
+                    },
+                    {
+                      "const": "none",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "subject": {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "method"
+              ],
+              "type": "object"
+            },
+            "protocolVersion": {
+              "const": 1,
+              "type": "integer"
+            },
+            "sentAt": {
+              "maxLength": 30,
+              "minLength": 20,
+              "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{1,9})?Z$",
+              "type": "string"
+            },
+            "type": {
+              "const": "agent.authentication_metadata",
+              "type": "string"
+            }
+          },
+          "required": [
+            "protocolVersion",
+            "messageId",
+            "sentAt",
+            "type",
+            "payload"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "correlationId": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "type": "string"
+            },
+            "messageId": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "type": "string"
+            },
+            "payload": {
+              "additionalProperties": false,
+              "properties": {
+                "uptimeSeconds": {
+                  "maximum": 9007199254740991,
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "uptimeSeconds"
+              ],
+              "type": "object"
+            },
+            "protocolVersion": {
+              "const": 1,
+              "type": "integer"
+            },
+            "sentAt": {
+              "maxLength": 30,
+              "minLength": 20,
+              "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{1,9})?Z$",
+              "type": "string"
+            },
+            "type": {
+              "const": "agent.heartbeat",
+              "type": "string"
+            }
+          },
+          "required": [
+            "protocolVersion",
+            "messageId",
+            "sentAt",
+            "correlationId",
+            "type",
+            "payload"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "correlationId": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "type": "string"
+            },
+            "messageId": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "type": "string"
+            },
+            "payload": {
+              "additionalProperties": false,
+              "properties": {
+                "printers": {
+                  "items": {
+                    "anyOf": [
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "availability": {
+                            "anyOf": [
+                              {
+                                "const": "online",
+                                "type": "string"
+                              },
+                              {
+                                "const": "offline",
+                                "type": "string"
+                              },
+                              {
+                                "const": "unknown",
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          "capabilities": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "barcode": {
+                                "type": "boolean"
+                              },
+                              "cut": {
+                                "type": "boolean"
+                              },
+                              "mediaWidths": {
+                                "items": {
+                                  "anyOf": [
+                                    {
+                                      "const": 58,
+                                      "type": "integer"
+                                    },
+                                    {
+                                      "const": 80,
+                                      "type": "integer"
+                                    }
+                                  ]
+                                },
+                                "maxItems": 2,
+                                "minItems": 1,
+                                "type": "array",
+                                "uniqueItems": true
+                              },
+                              "qr": {
+                                "type": "boolean"
+                              },
+                              "raster": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "mediaWidths",
+                              "raster",
+                              "cut",
+                              "qr",
+                              "barcode"
+                            ],
+                            "type": "object"
+                          },
+                          "connection": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "systemName": {
+                                "maxLength": 256,
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              "type": {
+                                "const": "system",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "type",
+                              "systemName"
+                            ],
+                            "type": "object"
+                          },
+                          "enabled": {
+                            "type": "boolean"
+                          },
+                          "fingerprint": {
+                            "maxLength": 256,
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "id": {
+                            "maxLength": 128,
+                            "minLength": 1,
+                            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+                            "type": "string"
+                          },
+                          "kind": {
+                            "const": "local",
+                            "type": "string"
+                          },
+                          "name": {
+                            "maxLength": 256,
+                            "minLength": 1,
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "fingerprint",
+                          "name",
+                          "enabled",
+                          "availability",
+                          "kind",
+                          "connection"
+                        ],
+                        "type": "object"
+                      },
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "availability": {
+                            "anyOf": [
+                              {
+                                "const": "online",
+                                "type": "string"
+                              },
+                              {
+                                "const": "offline",
+                                "type": "string"
+                              },
+                              {
+                                "const": "unknown",
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          "capabilities": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "barcode": {
+                                "type": "boolean"
+                              },
+                              "cut": {
+                                "type": "boolean"
+                              },
+                              "mediaWidths": {
+                                "items": {
+                                  "anyOf": [
+                                    {
+                                      "const": 58,
+                                      "type": "integer"
+                                    },
+                                    {
+                                      "const": 80,
+                                      "type": "integer"
+                                    }
+                                  ]
+                                },
+                                "maxItems": 2,
+                                "minItems": 1,
+                                "type": "array",
+                                "uniqueItems": true
+                              },
+                              "qr": {
+                                "type": "boolean"
+                              },
+                              "raster": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "mediaWidths",
+                              "raster",
+                              "cut",
+                              "qr",
+                              "barcode"
+                            ],
+                            "type": "object"
+                          },
+                          "connection": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "host": {
+                                "maxLength": 253,
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              "port": {
+                                "maximum": 65535,
+                                "minimum": 1,
+                                "type": "integer"
+                              },
+                              "type": {
+                                "const": "tcp",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "type",
+                              "host",
+                              "port"
+                            ],
+                            "type": "object"
+                          },
+                          "enabled": {
+                            "type": "boolean"
+                          },
+                          "fingerprint": {
+                            "maxLength": 256,
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "id": {
+                            "maxLength": 128,
+                            "minLength": 1,
+                            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+                            "type": "string"
+                          },
+                          "kind": {
+                            "const": "network",
+                            "type": "string"
+                          },
+                          "name": {
+                            "maxLength": 256,
+                            "minLength": 1,
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "fingerprint",
+                          "name",
+                          "enabled",
+                          "availability",
+                          "kind",
+                          "connection"
+                        ],
+                        "type": "object"
+                      },
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "availability": {
+                            "anyOf": [
+                              {
+                                "const": "online",
+                                "type": "string"
+                              },
+                              {
+                                "const": "offline",
+                                "type": "string"
+                              },
+                              {
+                                "const": "unknown",
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          "capabilities": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "barcode": {
+                                "type": "boolean"
+                              },
+                              "cut": {
+                                "type": "boolean"
+                              },
+                              "mediaWidths": {
+                                "items": {
+                                  "anyOf": [
+                                    {
+                                      "const": 58,
+                                      "type": "integer"
+                                    },
+                                    {
+                                      "const": 80,
+                                      "type": "integer"
+                                    }
+                                  ]
+                                },
+                                "maxItems": 2,
+                                "minItems": 1,
+                                "type": "array",
+                                "uniqueItems": true
+                              },
+                              "qr": {
+                                "type": "boolean"
+                              },
+                              "raster": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "mediaWidths",
+                              "raster",
+                              "cut",
+                              "qr",
+                              "barcode"
+                            ],
+                            "type": "object"
+                          },
+                          "connection": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "type": {
+                                "const": "virtual",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "type"
+                            ],
+                            "type": "object"
+                          },
+                          "enabled": {
+                            "type": "boolean"
+                          },
+                          "fingerprint": {
+                            "maxLength": 256,
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "id": {
+                            "maxLength": 128,
+                            "minLength": 1,
+                            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+                            "type": "string"
+                          },
+                          "kind": {
+                            "const": "virtual",
+                            "type": "string"
+                          },
+                          "name": {
+                            "maxLength": 256,
+                            "minLength": 1,
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "fingerprint",
+                          "name",
+                          "enabled",
+                          "availability",
+                          "kind",
+                          "connection"
+                        ],
+                        "type": "object"
+                      }
+                    ],
+                    "title": "PrinterDescriptor"
+                  },
+                  "maxItems": 512,
+                  "type": "array"
+                },
+                "revision": {
+                  "maximum": 9007199254740991,
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "revision",
+                "printers"
+              ],
+              "type": "object"
+            },
+            "protocolVersion": {
+              "const": 1,
+              "type": "integer"
+            },
+            "sentAt": {
+              "maxLength": 30,
+              "minLength": 20,
+              "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{1,9})?Z$",
+              "type": "string"
+            },
+            "type": {
+              "const": "agent.printer_inventory",
+              "type": "string"
+            }
+          },
+          "required": [
+            "protocolVersion",
+            "messageId",
+            "sentAt",
+            "type",
+            "payload"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "messageId": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "type": "string"
+            },
+            "payload": {
+              "additionalProperties": false,
+              "properties": {
+                "added": {
+                  "items": {
+                    "anyOf": [
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "availability": {
+                            "anyOf": [
+                              {
+                                "const": "online",
+                                "type": "string"
+                              },
+                              {
+                                "const": "offline",
+                                "type": "string"
+                              },
+                              {
+                                "const": "unknown",
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          "capabilities": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "barcode": {
+                                "type": "boolean"
+                              },
+                              "cut": {
+                                "type": "boolean"
+                              },
+                              "mediaWidths": {
+                                "items": {
+                                  "anyOf": [
+                                    {
+                                      "const": 58,
+                                      "type": "integer"
+                                    },
+                                    {
+                                      "const": 80,
+                                      "type": "integer"
+                                    }
+                                  ]
+                                },
+                                "maxItems": 2,
+                                "minItems": 1,
+                                "type": "array",
+                                "uniqueItems": true
+                              },
+                              "qr": {
+                                "type": "boolean"
+                              },
+                              "raster": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "mediaWidths",
+                              "raster",
+                              "cut",
+                              "qr",
+                              "barcode"
+                            ],
+                            "type": "object"
+                          },
+                          "connection": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "systemName": {
+                                "maxLength": 256,
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              "type": {
+                                "const": "system",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "type",
+                              "systemName"
+                            ],
+                            "type": "object"
+                          },
+                          "enabled": {
+                            "type": "boolean"
+                          },
+                          "fingerprint": {
+                            "maxLength": 256,
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "id": {
+                            "maxLength": 128,
+                            "minLength": 1,
+                            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+                            "type": "string"
+                          },
+                          "kind": {
+                            "const": "local",
+                            "type": "string"
+                          },
+                          "name": {
+                            "maxLength": 256,
+                            "minLength": 1,
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "fingerprint",
+                          "name",
+                          "enabled",
+                          "availability",
+                          "kind",
+                          "connection"
+                        ],
+                        "type": "object"
+                      },
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "availability": {
+                            "anyOf": [
+                              {
+                                "const": "online",
+                                "type": "string"
+                              },
+                              {
+                                "const": "offline",
+                                "type": "string"
+                              },
+                              {
+                                "const": "unknown",
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          "capabilities": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "barcode": {
+                                "type": "boolean"
+                              },
+                              "cut": {
+                                "type": "boolean"
+                              },
+                              "mediaWidths": {
+                                "items": {
+                                  "anyOf": [
+                                    {
+                                      "const": 58,
+                                      "type": "integer"
+                                    },
+                                    {
+                                      "const": 80,
+                                      "type": "integer"
+                                    }
+                                  ]
+                                },
+                                "maxItems": 2,
+                                "minItems": 1,
+                                "type": "array",
+                                "uniqueItems": true
+                              },
+                              "qr": {
+                                "type": "boolean"
+                              },
+                              "raster": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "mediaWidths",
+                              "raster",
+                              "cut",
+                              "qr",
+                              "barcode"
+                            ],
+                            "type": "object"
+                          },
+                          "connection": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "host": {
+                                "maxLength": 253,
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              "port": {
+                                "maximum": 65535,
+                                "minimum": 1,
+                                "type": "integer"
+                              },
+                              "type": {
+                                "const": "tcp",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "type",
+                              "host",
+                              "port"
+                            ],
+                            "type": "object"
+                          },
+                          "enabled": {
+                            "type": "boolean"
+                          },
+                          "fingerprint": {
+                            "maxLength": 256,
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "id": {
+                            "maxLength": 128,
+                            "minLength": 1,
+                            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+                            "type": "string"
+                          },
+                          "kind": {
+                            "const": "network",
+                            "type": "string"
+                          },
+                          "name": {
+                            "maxLength": 256,
+                            "minLength": 1,
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "fingerprint",
+                          "name",
+                          "enabled",
+                          "availability",
+                          "kind",
+                          "connection"
+                        ],
+                        "type": "object"
+                      },
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "availability": {
+                            "anyOf": [
+                              {
+                                "const": "online",
+                                "type": "string"
+                              },
+                              {
+                                "const": "offline",
+                                "type": "string"
+                              },
+                              {
+                                "const": "unknown",
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          "capabilities": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "barcode": {
+                                "type": "boolean"
+                              },
+                              "cut": {
+                                "type": "boolean"
+                              },
+                              "mediaWidths": {
+                                "items": {
+                                  "anyOf": [
+                                    {
+                                      "const": 58,
+                                      "type": "integer"
+                                    },
+                                    {
+                                      "const": 80,
+                                      "type": "integer"
+                                    }
+                                  ]
+                                },
+                                "maxItems": 2,
+                                "minItems": 1,
+                                "type": "array",
+                                "uniqueItems": true
+                              },
+                              "qr": {
+                                "type": "boolean"
+                              },
+                              "raster": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "mediaWidths",
+                              "raster",
+                              "cut",
+                              "qr",
+                              "barcode"
+                            ],
+                            "type": "object"
+                          },
+                          "connection": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "type": {
+                                "const": "virtual",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "type"
+                            ],
+                            "type": "object"
+                          },
+                          "enabled": {
+                            "type": "boolean"
+                          },
+                          "fingerprint": {
+                            "maxLength": 256,
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "id": {
+                            "maxLength": 128,
+                            "minLength": 1,
+                            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+                            "type": "string"
+                          },
+                          "kind": {
+                            "const": "virtual",
+                            "type": "string"
+                          },
+                          "name": {
+                            "maxLength": 256,
+                            "minLength": 1,
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "fingerprint",
+                          "name",
+                          "enabled",
+                          "availability",
+                          "kind",
+                          "connection"
+                        ],
+                        "type": "object"
+                      }
+                    ],
+                    "title": "PrinterDescriptor"
+                  },
+                  "maxItems": 512,
+                  "type": "array"
+                },
+                "removedPrinterIds": {
+                  "items": {
+                    "maxLength": 128,
+                    "minLength": 1,
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+                    "type": "string"
+                  },
+                  "maxItems": 512,
+                  "type": "array",
+                  "uniqueItems": true
+                },
+                "revision": {
+                  "maximum": 9007199254740991,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "updated": {
+                  "items": {
+                    "anyOf": [
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "availability": {
+                            "anyOf": [
+                              {
+                                "const": "online",
+                                "type": "string"
+                              },
+                              {
+                                "const": "offline",
+                                "type": "string"
+                              },
+                              {
+                                "const": "unknown",
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          "capabilities": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "barcode": {
+                                "type": "boolean"
+                              },
+                              "cut": {
+                                "type": "boolean"
+                              },
+                              "mediaWidths": {
+                                "items": {
+                                  "anyOf": [
+                                    {
+                                      "const": 58,
+                                      "type": "integer"
+                                    },
+                                    {
+                                      "const": 80,
+                                      "type": "integer"
+                                    }
+                                  ]
+                                },
+                                "maxItems": 2,
+                                "minItems": 1,
+                                "type": "array",
+                                "uniqueItems": true
+                              },
+                              "qr": {
+                                "type": "boolean"
+                              },
+                              "raster": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "mediaWidths",
+                              "raster",
+                              "cut",
+                              "qr",
+                              "barcode"
+                            ],
+                            "type": "object"
+                          },
+                          "connection": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "systemName": {
+                                "maxLength": 256,
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              "type": {
+                                "const": "system",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "type",
+                              "systemName"
+                            ],
+                            "type": "object"
+                          },
+                          "enabled": {
+                            "type": "boolean"
+                          },
+                          "fingerprint": {
+                            "maxLength": 256,
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "id": {
+                            "maxLength": 128,
+                            "minLength": 1,
+                            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+                            "type": "string"
+                          },
+                          "kind": {
+                            "const": "local",
+                            "type": "string"
+                          },
+                          "name": {
+                            "maxLength": 256,
+                            "minLength": 1,
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "fingerprint",
+                          "name",
+                          "enabled",
+                          "availability",
+                          "kind",
+                          "connection"
+                        ],
+                        "type": "object"
+                      },
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "availability": {
+                            "anyOf": [
+                              {
+                                "const": "online",
+                                "type": "string"
+                              },
+                              {
+                                "const": "offline",
+                                "type": "string"
+                              },
+                              {
+                                "const": "unknown",
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          "capabilities": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "barcode": {
+                                "type": "boolean"
+                              },
+                              "cut": {
+                                "type": "boolean"
+                              },
+                              "mediaWidths": {
+                                "items": {
+                                  "anyOf": [
+                                    {
+                                      "const": 58,
+                                      "type": "integer"
+                                    },
+                                    {
+                                      "const": 80,
+                                      "type": "integer"
+                                    }
+                                  ]
+                                },
+                                "maxItems": 2,
+                                "minItems": 1,
+                                "type": "array",
+                                "uniqueItems": true
+                              },
+                              "qr": {
+                                "type": "boolean"
+                              },
+                              "raster": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "mediaWidths",
+                              "raster",
+                              "cut",
+                              "qr",
+                              "barcode"
+                            ],
+                            "type": "object"
+                          },
+                          "connection": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "host": {
+                                "maxLength": 253,
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              "port": {
+                                "maximum": 65535,
+                                "minimum": 1,
+                                "type": "integer"
+                              },
+                              "type": {
+                                "const": "tcp",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "type",
+                              "host",
+                              "port"
+                            ],
+                            "type": "object"
+                          },
+                          "enabled": {
+                            "type": "boolean"
+                          },
+                          "fingerprint": {
+                            "maxLength": 256,
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "id": {
+                            "maxLength": 128,
+                            "minLength": 1,
+                            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+                            "type": "string"
+                          },
+                          "kind": {
+                            "const": "network",
+                            "type": "string"
+                          },
+                          "name": {
+                            "maxLength": 256,
+                            "minLength": 1,
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "fingerprint",
+                          "name",
+                          "enabled",
+                          "availability",
+                          "kind",
+                          "connection"
+                        ],
+                        "type": "object"
+                      },
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "availability": {
+                            "anyOf": [
+                              {
+                                "const": "online",
+                                "type": "string"
+                              },
+                              {
+                                "const": "offline",
+                                "type": "string"
+                              },
+                              {
+                                "const": "unknown",
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          "capabilities": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "barcode": {
+                                "type": "boolean"
+                              },
+                              "cut": {
+                                "type": "boolean"
+                              },
+                              "mediaWidths": {
+                                "items": {
+                                  "anyOf": [
+                                    {
+                                      "const": 58,
+                                      "type": "integer"
+                                    },
+                                    {
+                                      "const": 80,
+                                      "type": "integer"
+                                    }
+                                  ]
+                                },
+                                "maxItems": 2,
+                                "minItems": 1,
+                                "type": "array",
+                                "uniqueItems": true
+                              },
+                              "qr": {
+                                "type": "boolean"
+                              },
+                              "raster": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "mediaWidths",
+                              "raster",
+                              "cut",
+                              "qr",
+                              "barcode"
+                            ],
+                            "type": "object"
+                          },
+                          "connection": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "type": {
+                                "const": "virtual",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "type"
+                            ],
+                            "type": "object"
+                          },
+                          "enabled": {
+                            "type": "boolean"
+                          },
+                          "fingerprint": {
+                            "maxLength": 256,
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "id": {
+                            "maxLength": 128,
+                            "minLength": 1,
+                            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+                            "type": "string"
+                          },
+                          "kind": {
+                            "const": "virtual",
+                            "type": "string"
+                          },
+                          "name": {
+                            "maxLength": 256,
+                            "minLength": 1,
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "fingerprint",
+                          "name",
+                          "enabled",
+                          "availability",
+                          "kind",
+                          "connection"
+                        ],
+                        "type": "object"
+                      }
+                    ],
+                    "title": "PrinterDescriptor"
+                  },
+                  "maxItems": 512,
+                  "type": "array"
+                }
+              },
+              "required": [
+                "revision",
+                "added",
+                "updated",
+                "removedPrinterIds"
+              ],
+              "type": "object"
+            },
+            "protocolVersion": {
+              "const": 1,
+              "type": "integer"
+            },
+            "sentAt": {
+              "maxLength": 30,
+              "minLength": 20,
+              "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{1,9})?Z$",
+              "type": "string"
+            },
+            "type": {
+              "const": "agent.printer_inventory_changed",
+              "type": "string"
+            }
+          },
+          "required": [
+            "protocolVersion",
+            "messageId",
+            "sentAt",
+            "type",
+            "payload"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "correlationId": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "type": "string"
+            },
+            "messageId": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "type": "string"
+            },
+            "payload": {
+              "additionalProperties": false,
+              "properties": {
+                "idempotencyKey": {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "jobId": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+                  "type": "string"
+                },
+                "receivedAt": {
+                  "maxLength": 30,
+                  "minLength": 20,
+                  "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{1,9})?Z$",
+                  "type": "string"
+                },
+                "status": {
+                  "const": "received",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "jobId",
+                "idempotencyKey",
+                "status",
+                "receivedAt"
+              ],
+              "type": "object"
+            },
+            "protocolVersion": {
+              "const": 1,
+              "type": "integer"
+            },
+            "sentAt": {
+              "maxLength": 30,
+              "minLength": 20,
+              "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{1,9})?Z$",
+              "type": "string"
+            },
+            "type": {
+              "const": "agent.job_received",
+              "type": "string"
+            }
+          },
+          "required": [
+            "protocolVersion",
+            "messageId",
+            "sentAt",
+            "correlationId",
+            "type",
+            "payload"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "correlationId": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "type": "string"
+            },
+            "messageId": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "type": "string"
+            },
+            "payload": {
+              "additionalProperties": false,
+              "properties": {
+                "idempotencyKey": {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "jobId": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+                  "type": "string"
+                },
+                "printerId": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+                  "type": "string"
+                },
+                "status": {
+                  "const": "submitted",
+                  "type": "string"
+                },
+                "submittedAt": {
+                  "maxLength": 30,
+                  "minLength": 20,
+                  "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{1,9})?Z$",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "jobId",
+                "idempotencyKey",
+                "printerId",
+                "status",
+                "submittedAt"
+              ],
+              "type": "object"
+            },
+            "protocolVersion": {
+              "const": 1,
+              "type": "integer"
+            },
+            "sentAt": {
+              "maxLength": 30,
+              "minLength": 20,
+              "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{1,9})?Z$",
+              "type": "string"
+            },
+            "type": {
+              "const": "agent.job_submitted",
+              "type": "string"
+            }
+          },
+          "required": [
+            "protocolVersion",
+            "messageId",
+            "sentAt",
+            "correlationId",
+            "type",
+            "payload"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "correlationId": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "type": "string"
+            },
+            "messageId": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "type": "string"
+            },
+            "payload": {
+              "additionalProperties": false,
+              "properties": {
+                "error": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "code": {
+                      "maxLength": 128,
+                      "minLength": 1,
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+                      "type": "string"
+                    },
+                    "message": {
+                      "maxLength": 1024,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "retryable": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message",
+                    "retryable"
+                  ],
+                  "type": "object"
+                },
+                "failedAt": {
+                  "maxLength": 30,
+                  "minLength": 20,
+                  "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{1,9})?Z$",
+                  "type": "string"
+                },
+                "idempotencyKey": {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "jobId": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+                  "type": "string"
+                },
+                "status": {
+                  "const": "failed",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "jobId",
+                "idempotencyKey",
+                "status",
+                "failedAt",
+                "error"
+              ],
+              "type": "object"
+            },
+            "protocolVersion": {
+              "const": 1,
+              "type": "integer"
+            },
+            "sentAt": {
+              "maxLength": 30,
+              "minLength": 20,
+              "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{1,9})?Z$",
+              "type": "string"
+            },
+            "type": {
+              "const": "agent.job_failed",
+              "type": "string"
+            }
+          },
+          "required": [
+            "protocolVersion",
+            "messageId",
+            "sentAt",
+            "correlationId",
+            "type",
+            "payload"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "messageId": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "type": "string"
+            },
+            "payload": {
+              "additionalProperties": false,
+              "properties": {
+                "agentId": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+                  "type": "string"
+                },
+                "collectedAt": {
+                  "maxLength": 30,
+                  "minLength": 20,
+                  "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{1,9})?Z$",
+                  "type": "string"
+                },
+                "health": {
+                  "anyOf": [
+                    {
+                      "const": "healthy",
+                      "type": "string"
+                    },
+                    {
+                      "const": "degraded",
+                      "type": "string"
+                    },
+                    {
+                      "const": "unhealthy",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "issues": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "code": {
+                        "maxLength": 128,
+                        "minLength": 1,
+                        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+                        "type": "string"
+                      },
+                      "message": {
+                        "maxLength": 1024,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "severity": {
+                        "anyOf": [
+                          {
+                            "const": "info",
+                            "type": "string"
+                          },
+                          {
+                            "const": "warning",
+                            "type": "string"
+                          },
+                          {
+                            "const": "error",
+                            "type": "string"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "code",
+                      "message",
+                      "severity"
+                    ],
+                    "type": "object"
+                  },
+                  "maxItems": 64,
+                  "type": "array"
+                },
+                "printersOnline": {
+                  "maximum": 512,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "printersTotal": {
+                  "maximum": 512,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "queueDepth": {
+                  "maximum": 9007199254740991,
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "agentId",
+                "collectedAt",
+                "health",
+                "queueDepth",
+                "printersOnline",
+                "printersTotal",
+                "issues"
+              ],
+              "type": "object"
+            },
+            "protocolVersion": {
+              "const": 1,
+              "type": "integer"
+            },
+            "sentAt": {
+              "maxLength": 30,
+              "minLength": 20,
+              "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{1,9})?Z$",
+              "type": "string"
+            },
+            "type": {
+              "const": "agent.diagnostics",
+              "type": "string"
+            }
+          },
+          "required": [
+            "protocolVersion",
+            "messageId",
+            "sentAt",
+            "type",
+            "payload"
+          ],
+          "type": "object"
+        }
+      ],
+      "title": "AgentMessage"
+    },
+    {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "correlationId": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "type": "string"
+            },
+            "messageId": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "type": "string"
+            },
+            "payload": {
+              "additionalProperties": false,
+              "properties": {
+                "heartbeatIntervalMs": {
+                  "maximum": 300000,
+                  "minimum": 5000,
+                  "type": "integer"
+                },
+                "maxMessageBytes": {
+                  "maximum": 2097152,
+                  "minimum": 1024,
+                  "type": "integer"
+                },
+                "selectedProtocolVersion": {
+                  "const": 1,
+                  "type": "integer"
+                },
+                "serverId": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+                  "type": "string"
+                },
+                "serverVersion": {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "sessionId": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+                  "type": "string"
+                },
+                "supportedProtocolVersions": {
+                  "items": {
+                    "const": 1,
+                    "type": "integer"
+                  },
+                  "maxItems": 8,
+                  "minItems": 1,
+                  "type": "array",
+                  "uniqueItems": true
+                }
+              },
+              "required": [
+                "serverId",
+                "serverVersion",
+                "sessionId",
+                "supportedProtocolVersions",
+                "selectedProtocolVersion",
+                "heartbeatIntervalMs",
+                "maxMessageBytes"
+              ],
+              "type": "object"
+            },
+            "protocolVersion": {
+              "const": 1,
+              "type": "integer"
+            },
+            "sentAt": {
+              "maxLength": 30,
+              "minLength": 20,
+              "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{1,9})?Z$",
+              "type": "string"
+            },
+            "type": {
+              "const": "server.hello",
+              "type": "string"
+            }
+          },
+          "required": [
+            "protocolVersion",
+            "messageId",
+            "sentAt",
+            "correlationId",
+            "type",
+            "payload"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "messageId": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "type": "string"
+            },
+            "payload": {
+              "additionalProperties": false,
+              "properties": {
+                "timeoutMs": {
+                  "maximum": 120000,
+                  "minimum": 1000,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "timeoutMs"
+              ],
+              "type": "object"
+            },
+            "protocolVersion": {
+              "const": 1,
+              "type": "integer"
+            },
+            "sentAt": {
+              "maxLength": 30,
+              "minLength": 20,
+              "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{1,9})?Z$",
+              "type": "string"
+            },
+            "type": {
+              "const": "server.heartbeat",
+              "type": "string"
+            }
+          },
+          "required": [
+            "protocolVersion",
+            "messageId",
+            "sentAt",
+            "type",
+            "payload"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "messageId": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "type": "string"
+            },
+            "payload": {
+              "additionalProperties": false,
+              "properties": {
+                "createdAt": {
+                  "maxLength": 30,
+                  "minLength": 20,
+                  "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{1,9})?Z$",
+                  "type": "string"
+                },
+                "document": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "sections": {
+                      "items": {
+                        "anyOf": [
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "align": {
+                                "anyOf": [
+                                  {
+                                    "const": "left",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "center",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "right",
+                                    "type": "string"
+                                  }
+                                ]
+                              },
+                              "bold": {
+                                "type": "boolean"
+                              },
+                              "type": {
+                                "const": "text",
+                                "type": "string"
+                              },
+                              "value": {
+                                "maxLength": 16384,
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "type",
+                              "value"
+                            ],
+                            "type": "object"
+                          },
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "left": {
+                                "maxLength": 4096,
+                                "type": "string"
+                              },
+                              "right": {
+                                "maxLength": 4096,
+                                "type": "string"
+                              },
+                              "type": {
+                                "const": "row",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "type",
+                              "left",
+                              "right"
+                            ],
+                            "type": "object"
+                          },
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "type": {
+                                "const": "divider",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "type"
+                            ],
+                            "type": "object"
+                          },
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "data": {
+                                "maxLength": 1398104,
+                                "minLength": 4,
+                                "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$",
+                                "type": "string"
+                              },
+                              "mediaType": {
+                                "anyOf": [
+                                  {
+                                    "const": "image/png",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "image/jpeg",
+                                    "type": "string"
+                                  }
+                                ]
+                              },
+                              "type": {
+                                "const": "image",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "type",
+                              "mediaType",
+                              "data"
+                            ],
+                            "type": "object"
+                          },
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "type": {
+                                "const": "qr",
+                                "type": "string"
+                              },
+                              "value": {
+                                "maxLength": 4096,
+                                "minLength": 1,
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "type",
+                              "value"
+                            ],
+                            "type": "object"
+                          },
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "format": {
+                                "anyOf": [
+                                  {
+                                    "const": "code128",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "code39",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "ean13",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "upca",
+                                    "type": "string"
+                                  }
+                                ]
+                              },
+                              "type": {
+                                "const": "barcode",
+                                "type": "string"
+                              },
+                              "value": {
+                                "maxLength": 256,
+                                "minLength": 1,
+                                "pattern": "^[\\x20-\\x7E]+$",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "type",
+                              "format",
+                              "value"
+                            ],
+                            "type": "object"
+                          },
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "lines": {
+                                "maximum": 255,
+                                "minimum": 1,
+                                "type": "integer"
+                              },
+                              "type": {
+                                "const": "feed",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "type",
+                              "lines"
+                            ],
+                            "type": "object"
+                          },
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "type": {
+                                "const": "cut",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "type"
+                            ],
+                            "type": "object"
+                          }
+                        ]
+                      },
+                      "maxItems": 256,
+                      "minItems": 1,
+                      "type": "array"
+                    },
+                    "width": {
+                      "anyOf": [
+                        {
+                          "const": 58,
+                          "type": "integer"
+                        },
+                        {
+                          "const": 80,
+                          "type": "integer"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "width",
+                    "sections"
+                  ],
+                  "title": "PrintDocument",
+                  "type": "object"
+                },
+                "idempotencyKey": {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "jobId": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+                  "type": "string"
+                },
+                "metadata": {
+                  "additionalProperties": false,
+                  "maxProperties": 32,
+                  "patternProperties": {
+                    "^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$": {
+                      "maxLength": 1024,
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                },
+                "printerId": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "jobId",
+                "idempotencyKey",
+                "printerId",
+                "createdAt",
+                "document"
+              ],
+              "title": "PrintJob",
+              "type": "object"
+            },
+            "protocolVersion": {
+              "const": 1,
+              "type": "integer"
+            },
+            "sentAt": {
+              "maxLength": 30,
+              "minLength": 20,
+              "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{1,9})?Z$",
+              "type": "string"
+            },
+            "type": {
+              "const": "server.print_job",
+              "type": "string"
+            }
+          },
+          "required": [
+            "protocolVersion",
+            "messageId",
+            "sentAt",
+            "type",
+            "payload"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "messageId": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "type": "string"
+            },
+            "payload": {
+              "additionalProperties": false,
+              "properties": {
+                "jobId": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+                  "type": "string"
+                },
+                "reason": {
+                  "maxLength": 512,
+                  "minLength": 1,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "jobId"
+              ],
+              "type": "object"
+            },
+            "protocolVersion": {
+              "const": 1,
+              "type": "integer"
+            },
+            "sentAt": {
+              "maxLength": 30,
+              "minLength": 20,
+              "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{1,9})?Z$",
+              "type": "string"
+            },
+            "type": {
+              "const": "server.cancel_job",
+              "type": "string"
+            }
+          },
+          "required": [
+            "protocolVersion",
+            "messageId",
+            "sentAt",
+            "type",
+            "payload"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "messageId": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "type": "string"
+            },
+            "payload": {
+              "additionalProperties": false,
+              "properties": {},
+              "type": "object"
+            },
+            "protocolVersion": {
+              "const": 1,
+              "type": "integer"
+            },
+            "sentAt": {
+              "maxLength": 30,
+              "minLength": 20,
+              "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{1,9})?Z$",
+              "type": "string"
+            },
+            "type": {
+              "const": "server.request_printer_inventory",
+              "type": "string"
+            }
+          },
+          "required": [
+            "protocolVersion",
+            "messageId",
+            "sentAt",
+            "type",
+            "payload"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "messageId": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "type": "string"
+            },
+            "payload": {
+              "additionalProperties": false,
+              "properties": {
+                "revision": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "scope": {
+                  "anyOf": [
+                    {
+                      "const": "agent",
+                      "type": "string"
+                    },
+                    {
+                      "const": "printers",
+                      "type": "string"
+                    },
+                    {
+                      "const": "all",
+                      "type": "string"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "scope"
+              ],
+              "type": "object"
+            },
+            "protocolVersion": {
+              "const": 1,
+              "type": "integer"
+            },
+            "sentAt": {
+              "maxLength": 30,
+              "minLength": 20,
+              "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{1,9})?Z$",
+              "type": "string"
+            },
+            "type": {
+              "const": "server.configuration_invalidated",
+              "type": "string"
+            }
+          },
+          "required": [
+            "protocolVersion",
+            "messageId",
+            "sentAt",
+            "type",
+            "payload"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "messageId": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "type": "string"
+            },
+            "payload": {
+              "additionalProperties": false,
+              "properties": {
+                "code": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+                  "type": "string"
+                },
+                "reason": {
+                  "maxLength": 1024,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "reconnect": {
+                  "type": "boolean"
+                },
+                "retryAfterMs": {
+                  "maximum": 86400000,
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "code",
+                "reason",
+                "reconnect"
+              ],
+              "type": "object"
+            },
+            "protocolVersion": {
+              "const": 1,
+              "type": "integer"
+            },
+            "sentAt": {
+              "maxLength": 30,
+              "minLength": 20,
+              "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{1,9})?Z$",
+              "type": "string"
+            },
+            "type": {
+              "const": "server.disconnect",
+              "type": "string"
+            }
+          },
+          "required": [
+            "protocolVersion",
+            "messageId",
+            "sentAt",
+            "type",
+            "payload"
+          ],
+          "type": "object"
+        }
+      ],
+      "title": "ServerMessage"
+    }
+  ],
+  "description": "A version 1 OpenPrinter message. Submission does not imply verified physical printing.",
+  "title": "OpenPrinterProtocolMessage"
+}

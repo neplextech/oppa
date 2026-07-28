@@ -1,0 +1,11 @@
+[package]
+name = "oppa-protocol"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Validated Rust representation of the OpenPrinter wire protocol"
+readme = "README.md"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true

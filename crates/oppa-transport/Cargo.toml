@@ -1,0 +1,23 @@
+[package]
+name = "oppa-transport"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "TLS WebSocket transport and reconnect state for OPPA"
+readme = "README.md"
+
+[dependencies]
+async-trait = "0.1.91"
+futures-util = "0.3.31"
+oppa-platform = { path = "../oppa-platform" }
+oppa-protocol = { path = "../oppa-protocol" }
+rand = "0.9.2"
+thiserror = "2.0.19"
+tokio = { version = "1.53.1", features = ["net", "sync", "time"] }
+tokio-tungstenite = { version = "0.28.0", features = ["rustls-tls-webpki-roots"] }
+tokio-util = { version = "0.7.17", features = ["rt"] }
+url = "2.5.8"
+
+[dev-dependencies]
+serde_json = "1.0.145"
+tokio = { version = "1.53.1", features = ["macros", "rt-multi-thread"] }

@@ -1,0 +1,65 @@
+---
+title: Protocol
+description:
+  Versioned WebSocket messages, canonical schemas, negotiation, and
+  validation.
+---
+
+OpenPrinter version 1 is a JSON message protocol carried over
+WebSocket. Every message has an explicit discriminator and protocol
+version. Messages that participate in a request flow also carry a
+correlation ID.
+
+## Canonical definitions
+
+The TypeBox schemas in `@openprinter/protocol` are the source of
+truth. They produce:
+
+- inferred TypeScript types
+- runtime validators and codecs
+- a deterministic JSON Schema for non-TypeScript consumers
+- fixture tests shared with `oppa-protocol`
+
+Never change a Rust wire type alone. Update the canonical schema,
+regenerate the JSON Schema, update fixtures, and make both test suites
+pass.
+
+## Agent messages
+
+- agent hello and authentication metadata
+- heartbeat response
+- printer inventory snapshot or change
+- job received
+- job submitted
+- job failed
+- sanitized diagnostics summary
+
+## Server messages
+
+- server hello
+- heartbeat request
+- print job
+- cancel job
+- printer inventory request
+- configuration invalidation
+- disconnect reason
+
+## Negotiation
+
+The first messages establish the supported protocol versions. An
+unsupported version is rejected with a clear protocol error; it is
+never silently interpreted as the current version.
+
+## Limits
+
+Decoders enforce a maximum encoded message size, bounded section and
+metadata counts, bounded text and image payloads, valid identifiers,
+and known discriminators. Unknown fields are rejected where they would
+weaken the remote command boundary.
+
+## Delivery states
+
+Use **received**, **submitted**, and **failed** for agent
+acknowledgements. `printed` is not a universal protocol state because
+a successful operating-system or TCP submission does not prove
+physical output.

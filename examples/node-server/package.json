@@ -1,0 +1,30 @@
+{
+  "name": "openprinter-node-example",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Development HTTP and OpenPrinter server for running OPPA locally",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "check": "pnpm --filter @openprinter/protocol build && pnpm --filter @openprinter/server build && pnpm run typecheck && pnpm run test",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit"
+  },
+  "dependencies": {
+    "@openprinter/protocol": "workspace:*",
+    "@openprinter/server": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.30",
+    "tsx": "^4.20.3",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

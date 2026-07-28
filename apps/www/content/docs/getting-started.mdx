@@ -1,0 +1,93 @@
+---
+title: Getting Started
+description:
+  Run the local example server and exercise OPPA with a virtual
+  printer.
+---
+
+## Prerequisites
+
+- Node.js 22 or newer
+- pnpm 11
+- the current Rust stable toolchain with `rustfmt` and Clippy
+- the native prerequisites required by Tauri on your operating system
+
+Install JavaScript dependencies from the repository root:
+
+```bash
+pnpm install
+```
+
+## 1. Start the example server
+
+```bash
+pnpm --filter openprinter-node-example dev
+```
+
+The example listens on `127.0.0.1:8787`. Its authorization and token
+endpoints are intended only for local development.
+
+## 2. Run OPPA
+
+The default product is already configured for the example server:
+
+```bash
+OPPA_PRODUCT_DIR=products/default pnpm oppa:dev
+```
+
+Select **Connect account**. The browser authorization page redirects
+to a one-time loopback callback bound to `127.0.0.1`.
+
+## 3. Create a virtual printer
+
+Open **Virtual Printers**, create an 80 mm printer, and leave its
+simulation mode on **Always succeed**. The agent includes it in the
+next inventory snapshot.
+
+## 4. Send a test job
+
+List connected agents:
+
+```bash
+curl http://127.0.0.1:8787/agents
+```
+
+Then send a structured job using the endpoint documented by the
+example:
+
+```bash
+curl -X POST http://127.0.0.1:8787/agents/AGENT_ID/jobs \
+  -H 'content-type: application/json' \
+  --data '{
+    "jobId": "job_getting_started_1",
+    "idempotencyKey": "getting_started_1",
+    "printerId": "PRINTER_ID",
+    "createdAt": "2026-07-28T10:00:00.000Z",
+    "document": {
+      "width": 80,
+      "sections": [
+        {
+          "type": "text",
+          "value": "OpenPrinter test",
+          "align": "center",
+          "bold": true
+        },
+        { "type": "cut" }
+      ]
+    }
+  }'
+```
+
+OPPA should show a local job that advances from received to submitted,
+and the virtual printer should expose its captured output.
+
+## Validate the workspace
+
+```bash
+pnpm typecheck
+pnpm test
+pnpm lint
+pnpm build
+```
+
+Physical printers are not required for the automated test suite.

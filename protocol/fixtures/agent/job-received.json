@@ -1,0 +1,13 @@
+{
+  "protocolVersion": 1,
+  "messageId": "msg_job_received_001",
+  "correlationId": "msg_print_job_001",
+  "sentAt": "2026-07-28T10:02:01Z",
+  "type": "agent.job_received",
+  "payload": {
+    "jobId": "job_invoice_123_v1",
+    "idempotencyKey": "invoice_123_v1",
+    "status": "received",
+    "receivedAt": "2026-07-28T10:02:01Z"
+  }
+}

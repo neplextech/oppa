@@ -1,0 +1,33 @@
+{
+  "protocolVersion": 1,
+  "messageId": "msg_inventory_changed_001",
+  "sentAt": "2026-07-28T10:01:00Z",
+  "type": "agent.printer_inventory_changed",
+  "payload": {
+    "revision": 8,
+    "added": [
+      {
+        "id": "printer_network_001",
+        "fingerprint": "tcp:192.0.2.10:9100",
+        "name": "Network receipt printer",
+        "kind": "network",
+        "connection": {
+          "type": "tcp",
+          "host": "192.0.2.10",
+          "port": 9100
+        },
+        "capabilities": {
+          "mediaWidths": [80],
+          "raster": true,
+          "cut": true,
+          "qr": true,
+          "barcode": true
+        },
+        "enabled": true,
+        "availability": "unknown"
+      }
+    ],
+    "updated": [],
+    "removedPrinterIds": ["printer_retired_001"]
+  }
+}

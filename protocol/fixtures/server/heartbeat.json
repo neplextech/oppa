@@ -1,0 +1,9 @@
+{
+  "protocolVersion": 1,
+  "messageId": "msg_server_heartbeat_001",
+  "sentAt": "2026-07-28T10:00:04Z",
+  "type": "server.heartbeat",
+  "payload": {
+    "timeoutMs": 15000
+  }
+}

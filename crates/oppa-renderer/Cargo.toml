@@ -1,0 +1,19 @@
+[package]
+name = "oppa-renderer"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Structured OpenPrinter document renderers for ESC/POS and virtual printers"
+readme = "README.md"
+
+[dependencies]
+base64 = "0.22.1"
+image = { version = "0.25.8", default-features = false, features = ["jpeg", "png"] }
+oppa-protocol = { path = "../oppa-protocol" }
+serde = { version = "1.0.229", features = ["derive"] }
+thiserror = "2.0.19"
+unicode-segmentation = "1.12.0"
+unicode-width = "0.2.2"
+
+[dev-dependencies]
+serde_json = "1.0.145"

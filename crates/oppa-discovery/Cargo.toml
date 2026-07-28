@@ -1,0 +1,18 @@
+[package]
+name = "oppa-discovery"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Fault-isolated printer discovery, normalization, and deduplication for OPPA"
+readme = "README.md"
+
+[dependencies]
+async-trait = "0.1.91"
+futures-util = "0.3.31"
+oppa-core = { path = "../oppa-core" }
+oppa-printer = { path = "../oppa-printer" }
+thiserror = "2.0.19"
+tokio = { version = "1.53.1", features = ["process", "sync", "time"] }
+
+[dev-dependencies]
+tokio = { version = "1.53.1", features = ["macros", "rt-multi-thread"] }

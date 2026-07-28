@@ -1,0 +1,26 @@
+{
+  "title": "OpenPrinter Documentation",
+  "pages": [
+    "index",
+    "why-oppa-exists",
+    "architecture",
+    "getting-started",
+    "example-server",
+    "build-oppa",
+    "product-configuration",
+    "authentication-flow",
+    "protocol",
+    "print-documents",
+    "printer-discovery",
+    "virtual-printer",
+    "server-sdk",
+    "nodejs-integration",
+    "agent-lifecycle",
+    "job-delivery",
+    "idempotency",
+    "security",
+    "diagnostics",
+    "contributing",
+    "release-process"
+  ]
+}

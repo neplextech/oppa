@@ -1,0 +1,30 @@
+[package]
+name = "oppa-platform"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Portable operating-system capability interfaces for OPPA"
+readme = "README.md"
+
+[dependencies]
+async-trait = "0.1.91"
+directories = "6.0.0"
+hostname = "0.4.1"
+keyring = { version = "3.6.3", default-features = false }
+open = "5.3.3"
+thiserror = "2.0.19"
+tokio = { version = "1.53.1", features = ["rt", "sync"] }
+url = "2.5.8"
+zeroize = "1.8.2"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+keyring = { version = "3.6.3", default-features = false, features = ["sync-secret-service", "crypto-rust"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring = { version = "3.6.3", default-features = false, features = ["apple-native"] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+keyring = { version = "3.6.3", default-features = false, features = ["windows-native"] }
+
+[dev-dependencies]
+tokio = { version = "1.53.1", features = ["macros", "rt-multi-thread"] }

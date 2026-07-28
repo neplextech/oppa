@@ -1,21 +1,43 @@
 {
   "name": "@oppa/workspace",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
+  "license": "MIT",
+  "author": "Neplex <info@neplextech.com>",
   "type": "module",
   "scripts": {
-    "format": "oxfmt"
-  },
-  "author": "Neplex <info@neplextech.com>",
-  "license": "MIT",
-  "devEngines": {
-    "packageManager": {
-      "name": "pnpm",
-      "version": "^11.17.0",
-      "onFail": "download"
-    }
+    "build": "pnpm -r --if-present run build && cargo build --workspace",
+    "dev": "pnpm --parallel --filter oppa --filter openprinter-node-example --filter @oppa/www run dev",
+    "test": "pnpm test:js && pnpm test:rust",
+    "test:js": "pnpm --filter @openprinter/protocol build && pnpm --filter @openprinter/server build && pnpm -r --if-present run test",
+    "test:rust": "cargo test --workspace",
+    "lint": "pnpm lint:js && pnpm lint:rust",
+    "lint:js": "eslint . --max-warnings=0",
+    "lint:rust": "cargo clippy --workspace --all-targets --all-features -- -D warnings",
+    "format": "oxfmt --write . && cargo fmt --all",
+    "format:check": "oxfmt --check . && cargo fmt --all --check",
+    "typecheck": "pnpm --filter @openprinter/protocol build && pnpm --filter @openprinter/server build && pnpm -r --if-present run typecheck",
+    "docs:dev": "pnpm --filter @oppa/www dev",
+    "oppa:dev": "node apps/oppa/scripts/run-tauri.mjs dev",
+    "oppa:build": "node apps/oppa/scripts/run-tauri.mjs build",
+    "protocol:generate": "pnpm --filter @openprinter/protocol generate",
+    "changelog": "git-cliff --output CHANGELOG.md",
+    "changelog:unreleased": "git-cliff --unreleased --strip header"
   },
   "devDependencies": {
-    "oxfmt": "^0.60.0"
-  }
+    "@eslint/js": "^9.32.0",
+    "@types/node": "^24.0.0",
+    "eslint": "^9.32.0",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "eslint-plugin-react-refresh": "^0.4.20",
+    "git-cliff": "^2.13.1",
+    "globals": "^16.3.0",
+    "oxfmt": "^0.60.0",
+    "typescript": "catalog:",
+    "typescript-eslint": "^8.38.0"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "packageManager": "pnpm@11.17.0"
 }

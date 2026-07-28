@@ -1,0 +1,21 @@
+{
+  "protocolVersion": 1,
+  "messageId": "msg_diagnostics_001",
+  "sentAt": "2026-07-28T10:04:00Z",
+  "type": "agent.diagnostics",
+  "payload": {
+    "agentId": "agent_demo_001",
+    "collectedAt": "2026-07-28T10:04:00Z",
+    "health": "degraded",
+    "queueDepth": 2,
+    "printersOnline": 1,
+    "printersTotal": 2,
+    "issues": [
+      {
+        "code": "printer.offline",
+        "message": "One enabled printer is offline",
+        "severity": "warning"
+      }
+    ]
+  }
+}

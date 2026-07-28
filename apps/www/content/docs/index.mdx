@@ -1,0 +1,52 @@
+---
+title: Introduction
+description:
+  Understand the boundary between the OPPA desktop agent and the
+  OpenPrinter integration ecosystem.
+---
+
+OPPA and OpenPrinter connect a remote application to printers that are
+reachable only from a user's local machine or network.
+
+**OPPA** is the Open Printer Proxy Agent. It is a lightweight Tauri
+desktop application backed by a shell-independent Rust agent. It
+authenticates with one compile-time configured provider, discovers
+local printers, receives jobs, writes them to SQLite, renders their
+structured documents, submits them to a concrete printer transport,
+and reports the resulting state.
+
+**OpenPrinter** is the generic integration layer.
+`@openprinter/protocol` publishes the canonical TypeScript schemas and
+codecs. `@openprinter/server` manages authenticated WebSocket sessions
+and delivers validated messages from an existing HTTP server. Neither
+package contains restaurant, tenant, station, billing, or
+application-specific routing concepts.
+
+## The important invariant
+
+OPPA never acknowledges receipt of a print job until the job is
+durably stored locally:
+
+```text
+receive → validate → persist → acknowledge → render → submit → persist result → report
+```
+
+The word **submitted** means that a printer backend accepted the job.
+It does not universally mean that paper was physically produced,
+because most printer interfaces cannot prove that.
+
+## Where to begin
+
+- Follow [Getting Started](/docs/getting-started) to run the example
+  with a virtual printer.
+- Read [Architecture](/docs/architecture) before adding an
+  infrastructure boundary.
+- Use [Server SDK](/docs/server-sdk) and
+  [Node.js Integration](/docs/nodejs-integration) when integrating an
+  existing application.
+- Review [Security](/docs/security) before exposing an agent gateway.
+
+The repository is intentionally conservative: it provides the
+foundation and explicit extension points without embedding a hosted
+queue, a business dashboard, arbitrary plugin execution, or a generic
+remote-control channel.

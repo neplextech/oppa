@@ -1,0 +1,65 @@
+---
+title: Print Documents
+description:
+  Portable receipt primitives, limits, rendering, and Unicode
+  strategy.
+---
+
+A print job contains a structured document rather than a remote script
+or local file path.
+
+```ts
+const document = {
+  width: 80,
+  sections: [
+    {
+      type: 'text',
+      value: 'Test Receipt',
+      align: 'center',
+      bold: true,
+    },
+    {
+      type: 'row',
+      left: 'Total',
+      right: 'NPR 1,250.00',
+    },
+    { type: 'divider' },
+    { type: 'qr', value: 'https://example.com/receipt/123' },
+    { type: 'feed', lines: 3 },
+    { type: 'cut' },
+  ],
+} as const;
+```
+
+Version 1 defines text, row, divider, image, QR code, barcode, feed,
+and cut sections. Documents use a 58 mm or 80 mm target width.
+
+## Validation
+
+The protocol bounds total message size, section count, text length,
+decoded image bytes, feed lines, and barcode or QR values. A printer
+ID must refer to a locally registered enabled printer.
+
+## Rendering
+
+`oppa-renderer` owns layout, wrapping, alignment, and conversion into
+an output representation:
+
+- ESC/POS bytes for compatible receipt printers
+- structured virtual output for development inspection
+
+`oppa-spooler` owns submission. Keeping the two boundaries separate
+makes it possible to test layout without printer hardware and to
+reject an output format unsupported by a target transport. Raster and
+native-document representations are explicit extension boundaries, but
+the initial renderer does not emit them yet.
+
+## Unicode
+
+ESC/POS code pages are not a reliable universal Unicode solution. In
+particular, Nepali text needs proper shaping and glyph coverage. The
+current ESC/POS renderer returns an explicit unsupported error for
+non-ASCII text rather than pretending arbitrary UTF-8 bytes will print
+correctly. A future raster text renderer can add reliable shaping
+without changing the structured wire document; the virtual renderer
+already preserves Unicode for local inspection.

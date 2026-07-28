@@ -1,0 +1,56 @@
+{
+  "protocolVersion": 1,
+  "messageId": "msg_print_job_001",
+  "sentAt": "2026-07-28T10:02:00Z",
+  "type": "server.print_job",
+  "payload": {
+    "jobId": "job_invoice_123_v1",
+    "idempotencyKey": "invoice_123_v1",
+    "printerId": "printer_receipt_001",
+    "createdAt": "2026-07-28T10:01:58Z",
+    "document": {
+      "width": 80,
+      "sections": [
+        {
+          "type": "text",
+          "value": "OpenPrinter",
+          "align": "center",
+          "bold": true
+        },
+        {
+          "type": "row",
+          "left": "Subtotal",
+          "right": "12.00"
+        },
+        {
+          "type": "divider"
+        },
+        {
+          "type": "image",
+          "mediaType": "image/png",
+          "data": "iVBORw=="
+        },
+        {
+          "type": "qr",
+          "value": "https://openprinter.dev/jobs/job_invoice_123_v1"
+        },
+        {
+          "type": "barcode",
+          "format": "code128",
+          "value": "INVOICE-123"
+        },
+        {
+          "type": "feed",
+          "lines": 3
+        },
+        {
+          "type": "cut"
+        }
+      ]
+    },
+    "metadata": {
+      "route": "front-desk",
+      "source": "invoice-service"
+    }
+  }
+}

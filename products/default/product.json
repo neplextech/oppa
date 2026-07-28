@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "productId": "oppa",
+  "productName": "OPPA",
+  "applicationId": "com.neplextech.oppa",
+  "description": "Open Printer Proxy Agent",
+  "protocol": {
+    "clientId": "oppa-desktop",
+    "authorizationUrl": "http://127.0.0.1:8787/authorize",
+    "tokenUrl": "http://127.0.0.1:8787/token",
+    "gatewayUrl": "ws://127.0.0.1:8787/openprinter/agent"
+  },
+  "updates": {
+    "endpoint": null
+  },
+  "branding": {
+    "supportUrl": "https://github.com/neplextech/oppa/issues",
+    "documentationUrl": "https://github.com/neplextech/oppa"
+  },
+  "features": {
+    "virtualPrinter": true,
+    "systemPrinterDiscovery": true,
+    "networkPrinterDiscovery": true,
+    "usbPrinterDiscovery": false,
+    "remoteDiagnostics": false,
+    "managedHardware": false
+  },
+  "legal": {
+    "privacyUrl": null,
+    "termsUrl": null
+  }
+}

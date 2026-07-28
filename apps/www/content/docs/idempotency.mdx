@@ -1,0 +1,47 @@
+---
+title: Idempotency
+description:
+  Prevent duplicate submission during at-least-once delivery and
+  recovery.
+---
+
+Retries and reconnects can deliver the same job more than once. Every
+print job therefore contains:
+
+- a unique job ID
+- an idempotency key chosen by the integrating application
+- optional opaque metadata describing an intentional reprint
+
+OPPA stores both identifiers in the same durable transaction as the
+received payload.
+
+## Duplicate job ID
+
+Receiving an existing job ID with the same idempotency key returns the
+current local state rather than inserting or submitting a second copy.
+Reusing a job ID with different content is a protocol error.
+
+## Completed idempotency key
+
+When a completed idempotency key is delivered under another ordinary
+job ID, the repository marks the delivery as a duplicate and avoids a
+second submission. This protects against host retries that
+accidentally allocate a new transport request.
+
+## Intentional reprints
+
+A reprint is new work. It uses a distinct job ID and a distinct
+idempotency key, with optional opaque metadata referring to the
+original business record. The generic protocol does not infer that
+intent from an application-specific invoice or order identifier.
+
+## Crash recovery
+
+On restart, OPPA loads received and retryable jobs. Durable state
+transitions make recovery decisions without relying on volatile
+in-memory callbacks. Where a backend cannot prove whether a write
+crossed its irreversible boundary, the agent records an explicit
+uncertain failure instead of claiming success.
+
+Storage tests cover duplicate insertion, completed-key lookup, legal
+state transitions, and pending job restoration.

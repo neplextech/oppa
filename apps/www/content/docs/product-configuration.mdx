@@ -1,0 +1,72 @@
+---
+title: Product Configuration
+description:
+  Compile branded agents from validated, immutable product
+  definitions.
+---
+
+OPPA supports downstream branded builds without requiring a permanent
+source fork. Select a product directory at compile time:
+
+```bash
+OPPA_PRODUCT_DIR=products/default pnpm oppa:build
+```
+
+The directory contains a versioned `product.json` and an `assets`
+directory.
+
+```json
+{
+  "schemaVersion": 1,
+  "productId": "oppa",
+  "productName": "OPPA",
+  "applicationId": "com.neplextech.oppa",
+  "description": "Open Printer Proxy Agent",
+  "protocol": {
+    "clientId": "oppa-desktop",
+    "authorizationUrl": "https://example.com/openprinter/authorize",
+    "tokenUrl": "https://example.com/openprinter/token",
+    "gatewayUrl": "wss://example.com/openprinter/agent"
+  },
+  "updates": { "endpoint": null },
+  "branding": {
+    "supportUrl": "https://example.com/support",
+    "documentationUrl": "https://example.com/docs"
+  },
+  "features": {
+    "virtualPrinter": true,
+    "systemPrinterDiscovery": true,
+    "networkPrinterDiscovery": true,
+    "usbPrinterDiscovery": false,
+    "remoteDiagnostics": false,
+    "managedHardware": false
+  }
+}
+```
+
+The product-aware Tauri wrapper applies `productName` and
+`applicationId` to the desktop bundle and window. Icon files in
+`assets` replace default Tauri icons when they use the corresponding
+standard filenames; other assets remain available through the embedded
+Rust product API.
+
+## Features and Cargo capabilities
+
+Product configuration can disable a supported capability, but it
+cannot enable code excluded from the binary. Capabilities that
+materially change the compiled implementation use Cargo features.
+Validation rejects an impossible combination. USB discovery, remote
+diagnostic upload, and managed hardware mode are not implemented in
+the initial build, so their product switches must remain `false`.
+
+## Production endpoint rules
+
+Release products should use `https:` authorization and token endpoints
+and a `wss:` gateway. Loopback `http:` and `ws:` endpoints are allowed
+only for explicit development products.
+
+## Immutability
+
+The build script embeds the validated JSON and assets in the binary.
+Runtime provider switching is deliberately unsupported: each branded
+binary connects only to the provider selected at compilation.

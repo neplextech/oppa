@@ -1,0 +1,12 @@
+// @ts-nocheck
+import { browser } from 'fumadocs-mdx/runtime/browser';
+import type * as Config from '../source.config';
+
+const create = browser<typeof Config, import("fumadocs-mdx/runtime/types").InternalTypeConfig & {
+  DocData: {
+  }
+}>();
+const browserCollections = {
+  docs: create.doc("docs", {"agent-lifecycle.mdx": () => import("../content/docs/agent-lifecycle.mdx?collection=docs"), "architecture.mdx": () => import("../content/docs/architecture.mdx?collection=docs"), "authentication-flow.mdx": () => import("../content/docs/authentication-flow.mdx?collection=docs"), "build-oppa.mdx": () => import("../content/docs/build-oppa.mdx?collection=docs"), "contributing.mdx": () => import("../content/docs/contributing.mdx?collection=docs"), "diagnostics.mdx": () => import("../content/docs/diagnostics.mdx?collection=docs"), "example-server.mdx": () => import("../content/docs/example-server.mdx?collection=docs"), "getting-started.mdx": () => import("../content/docs/getting-started.mdx?collection=docs"), "idempotency.mdx": () => import("../content/docs/idempotency.mdx?collection=docs"), "index.mdx": () => import("../content/docs/index.mdx?collection=docs"), "job-delivery.mdx": () => import("../content/docs/job-delivery.mdx?collection=docs"), "nodejs-integration.mdx": () => import("../content/docs/nodejs-integration.mdx?collection=docs"), "print-documents.mdx": () => import("../content/docs/print-documents.mdx?collection=docs"), "printer-discovery.mdx": () => import("../content/docs/printer-discovery.mdx?collection=docs"), "product-configuration.mdx": () => import("../content/docs/product-configuration.mdx?collection=docs"), "protocol.mdx": () => import("../content/docs/protocol.mdx?collection=docs"), "release-process.mdx": () => import("../content/docs/release-process.mdx?collection=docs"), "security.mdx": () => import("../content/docs/security.mdx?collection=docs"), "server-sdk.mdx": () => import("../content/docs/server-sdk.mdx?collection=docs"), "virtual-printer.mdx": () => import("../content/docs/virtual-printer.mdx?collection=docs"), "why-oppa-exists.mdx": () => import("../content/docs/why-oppa-exists.mdx?collection=docs"), }),
+};
+export default browserCollections;

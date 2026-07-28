@@ -1,0 +1,13 @@
+{
+  "protocolVersion": 1,
+  "messageId": "msg_agent_hello_001",
+  "sentAt": "2026-07-28T10:00:00Z",
+  "type": "agent.hello",
+  "payload": {
+    "agentId": "agent_demo_001",
+    "agentVersion": "0.1.0",
+    "productId": "oppa.default",
+    "productVersion": "1.0.0",
+    "supportedProtocolVersions": [1]
+  }
+}

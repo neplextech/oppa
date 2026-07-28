@@ -1,0 +1,10 @@
+{
+  "protocolVersion": 1,
+  "messageId": "msg_cancel_job_001",
+  "sentAt": "2026-07-28T10:02:02Z",
+  "type": "server.cancel_job",
+  "payload": {
+    "jobId": "job_invoice_123_v1",
+    "reason": "The host application cancelled the durable job"
+  }
+}

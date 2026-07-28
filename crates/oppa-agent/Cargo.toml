@@ -1,0 +1,31 @@
+[package]
+name = "oppa-agent"
+description = "Shell-independent OPPA agent orchestration and lifecycle"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+async-trait.workspace = true
+oppa-core = { path = "../oppa-core" }
+oppa-printer = { path = "../oppa-printer" }
+oppa-protocol = { path = "../oppa-protocol" }
+oppa-renderer = { path = "../oppa-renderer" }
+oppa-spooler = { path = "../oppa-spooler" }
+oppa-storage = { path = "../oppa-storage" }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tokio-util = { version = "0.7.17", features = ["rt"] }
+tracing.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

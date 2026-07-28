@@ -1,0 +1,24 @@
+[package]
+name = "oppa-storage"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Durable SQLite state and print-job lifecycle repository for OPPA"
+readme = "README.md"
+
+[dependencies]
+async-trait = "0.1.91"
+chrono = "0.4.45"
+oppa-core = { path = "../oppa-core" }
+oppa-printer = { path = "../oppa-printer" }
+parking_lot = "0.12.5"
+rusqlite = { version = "0.40.1", features = ["bundled"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.145"
+sha2.workspace = true
+thiserror = "2.0.19"
+tokio = { version = "1.53.1", features = ["rt"] }
+
+[dev-dependencies]
+tempfile = "3.23.0"
+tokio = { version = "1.53.1", features = ["macros", "rt-multi-thread"] }

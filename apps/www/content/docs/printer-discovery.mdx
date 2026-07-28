@@ -1,0 +1,48 @@
+---
+title: Printer Discovery
+description:
+  Providers, normalization, fingerprints, and stable local identities.
+---
+
+Discovery is provider-based. The initial workspace supports
+operating-system queues, manually configured raw TCP printers, and
+virtual printers. Optional platform providers can be compiled when
+their implementation is available.
+
+## Stable identity
+
+No hardware attribute is universal. MAC addresses may be absent,
+randomized, shared behind a print server, or unrelated to a USB queue.
+Discovery therefore builds a fingerprint from the metadata a provider
+can actually observe:
+
+- queue and driver name
+- device URI
+- host and port
+- USB vendor and product IDs
+- serial number
+- MAC address when available
+
+OPPA assigns its own stable local printer ID and persists the binding
+between that ID and the best available fingerprint.
+
+## Normalization
+
+The discovery manager executes enabled providers independently,
+normalizes descriptors, and deduplicates likely duplicates while
+retaining provider metadata. A provider failure is reported in
+diagnostics and does not crash other discovery work.
+
+## Inventory
+
+An inventory entry includes a concrete local ID, display name,
+connection details, available capabilities, enabled state, and
+availability state. The integrating platform may attach that ID to its
+own logical routing model.
+
+## Manual network printers
+
+A manually configured printer records a validated host and port. Raw
+TCP submission normally uses port 9100, but the port is explicit.
+Discovery does not imply reachability; the spooler applies a bounded
+connection and write timeout for each submission.

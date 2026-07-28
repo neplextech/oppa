@@ -1,0 +1,12 @@
+.next
+.fumadocs
+.source
+coverage
+dist
+node_modules
+target
+Cargo.lock
+pnpm-lock.yaml
+PLAN.md
+protocol/schema/openprinter.schema.json
+apps/oppa/src-tauri/gen

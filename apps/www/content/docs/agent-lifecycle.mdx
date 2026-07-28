@@ -1,0 +1,49 @@
+---
+title: Agent Lifecycle
+description:
+  Runtime states, reconnect behavior, restart recovery, and graceful
+  shutdown.
+---
+
+`oppa-agent` owns the runtime state machine. Desktop UI labels are
+projections of this state, not a second source of truth.
+
+| State         | Meaning                                                |
+| ------------- | ------------------------------------------------------ |
+| Unconfigured  | No usable authorization credential exists              |
+| Authorizing   | A bounded browser pairing flow is active               |
+| Disconnected  | Configured but no gateway session exists               |
+| Connecting    | Transport negotiation or authentication is in progress |
+| Connected     | Gateway and local processing are healthy               |
+| Degraded      | The core loop runs, but one subsystem needs attention  |
+| Shutting down | New work is stopped while current resources close      |
+
+## Startup
+
+The agent loads the embedded product, opens and migrates SQLite,
+restores printer bindings, restores pending jobs, checks credentials,
+starts enabled discovery providers, and connects to the configured
+gateway.
+
+Incomplete jobs are reconciled conservatively. A job persisted as
+received but not submitted can be retried. A job whose submission
+outcome is unknown after a crash is not blindly declared successful;
+the idempotency and recovery policy determines the next safe action.
+
+## Reconnect
+
+Transport reconnect uses bounded exponential backoff with jitter and a
+maximum delay. Successful traffic resets the backoff. Sleep and wake
+signals may trigger a fresh connection rather than waiting for a stale
+socket timeout.
+
+## Shutdown
+
+Shutdown stops new delivery, closes the WebSocket cleanly, lets
+bounded local operations complete, flushes state and logs, then
+releases resources. A disappearing printer or failed close is a
+structured error, never a panic.
+
+The desktop window can close while the agent remains active in the
+system tray. Choosing **Quit** is the explicit process shutdown
+action.

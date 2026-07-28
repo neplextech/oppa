@@ -1,15 +1,40 @@
 {
-    "name": "@openprinter/server",
-    "version": "0.0.1",
-    "description": "Server side SDK for Open Printer Proxy Agent (OPPA)",
-    "type": "module",
-    "main": "dist/index.js",
-    "types": "dist/index.d.ts",
-    "scripts": {
-        "build": "tsc",
-        "check": "tsc --noEmit"
-    },
-    "dependencies": {
-        "typescript": "catalog:"
+  "name": "@openprinter/protocol",
+  "version": "0.1.0",
+  "description": "Canonical OpenPrinter wire protocol schemas, types, validation, and codecs",
+  "license": "MIT",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
     }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "check": "pnpm run typecheck && pnpm run schema:check && pnpm run test",
+    "generate": "pnpm run schema:generate",
+    "schema:generate": "pnpm run build && node scripts/generate-schema.mjs",
+    "schema:check": "pnpm run build && node scripts/generate-schema.mjs --check",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit"
+  },
+  "dependencies": {
+    "@sinclair/typebox": "^0.34.52"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.30",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  },
+  "engines": {
+    "node": ">=20"
+  }
 }

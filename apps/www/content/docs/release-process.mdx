@@ -1,0 +1,65 @@
+---
+title: Release Process
+description:
+  Validation, changelog generation, artifacts, and package publication
+  boundaries.
+---
+
+Releases are coordinated from the workspace root. OPPA desktop
+artifacts and the two `@openprinter/*` packages share protocol
+compatibility but may be published independently once a release policy
+is established.
+
+## 1. Validate
+
+```bash
+pnpm format:check
+pnpm lint
+pnpm typecheck
+pnpm test
+pnpm build
+```
+
+Platform compilation runs on Windows, macOS, and Linux. Normal CI does
+not require code signing.
+
+## 2. Review protocol compatibility
+
+Regenerate the committed JSON Schema and confirm that the working tree
+remains clean:
+
+```bash
+pnpm protocol:generate
+git diff --exit-code
+```
+
+Both language suites must accept all valid shared fixtures and reject
+malformed and unsupported version fixtures.
+
+## 3. Generate the changelog
+
+```bash
+pnpm changelog:unreleased
+pnpm changelog
+```
+
+Git Cliff groups conventional commits under features, fixes,
+performance, documentation, refactoring, testing, build, CI, and other
+changes.
+
+## 4. Build artifacts
+
+Desktop distributors select and validate their product directory
+before producing signed platform artifacts. Package publication should
+include compiled JavaScript, declarations, README, license, and
+protocol schema where applicable.
+
+## 5. Verify
+
+Test the packaged example workflow with a virtual printer: authorize,
+connect, synchronize inventory, deliver a job, observe received and
+submitted events, restart OPPA, and confirm local state recovery.
+
+Publishing credentials, signing identities, channels, and registry
+provenance are managed outside the source tree and must never appear
+in diagnostic output or CI logs.

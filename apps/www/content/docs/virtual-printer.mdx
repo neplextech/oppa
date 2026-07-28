@@ -1,0 +1,46 @@
+---
+title: Virtual Printer
+description:
+  Test protocol delivery and rendering without physical printer
+  hardware.
+---
+
+A virtual printer participates in discovery and job delivery like a
+physical target but captures output locally instead of opening a
+device connection.
+
+Use it to:
+
+- develop an integrating server without printer hardware
+- inspect the structured document sent by the server
+- inspect rendered ESC/POS bytes and byte counts
+- preview raster or receipt output when available
+- test restart recovery and idempotency
+- simulate predictable failures
+
+## Simulation modes
+
+| Mode             | Behavior                                         |
+| ---------------- | ------------------------------------------------ |
+| Always succeed   | Captures output and returns a submission receipt |
+| Fail next job    | Fails once, then returns to success              |
+| Always fail      | Returns a structured simulated failure           |
+| Delay submission | Waits for the configured bounded delay           |
+| Offline          | Reports that the printer is unavailable          |
+
+The virtual printer never reports physical completion. A successful
+simulation produces the same **submitted** state used by other
+spoolers.
+
+## Local history
+
+Captured output is bounded and stored as development-oriented local
+history. The UI can inspect or clear it. Diagnostics still avoid
+including complete print contents by default.
+
+## Automated tests
+
+Agent lifecycle tests use the virtual spooler to verify the required
+order: persistence, receipt acknowledgement, rendering, submission,
+result persistence, and result reporting. This keeps CI independent of
+platform printer drivers.

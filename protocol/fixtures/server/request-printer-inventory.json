@@ -1,0 +1,7 @@
+{
+  "protocolVersion": 1,
+  "messageId": "msg_inventory_request_001",
+  "sentAt": "2026-07-28T10:00:05Z",
+  "type": "server.request_printer_inventory",
+  "payload": {}
+}

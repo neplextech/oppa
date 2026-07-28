@@ -1,0 +1,16 @@
+[package]
+name = "oppa-printer"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Printer descriptors, fingerprints, capabilities, and backend contracts for OPPA"
+readme = "README.md"
+
+[dependencies]
+async-trait = "0.1.91"
+oppa-core = { path = "../oppa-core" }
+serde = { version = "1.0.229", features = ["derive"] }
+thiserror = "2.0.19"
+
+[dev-dependencies]
+serde_json = "1.0.145"

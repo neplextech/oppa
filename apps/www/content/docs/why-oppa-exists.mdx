@@ -1,0 +1,50 @@
+---
+title: Why OPPA Exists
+description:
+  Why browser and cloud applications need a constrained local printer
+  agent.
+---
+
+Cloud applications cannot reliably submit printer-native data to a
+local USB device, operating system queue, or printer reachable only on
+a private network. Browser printing also requires an interactive
+system dialog and offers too little control for unattended receipt
+workflows.
+
+OPPA solves this boundary with a small local process:
+
+1. The user explicitly authorizes the agent against the integrating
+   platform.
+2. The platform sends a structured, versioned job over an
+   authenticated WebSocket.
+3. OPPA validates the message and the selected local printer
+   identifier.
+4. The job is persisted before receipt is acknowledged.
+5. A renderer and spooler submit the result through a supported local
+   transport.
+
+## Why not put everything in the agent?
+
+The integrating application already owns the durable business record,
+authorization policy, and logical routing decision. Duplicating those
+responsibilities in a desktop utility would create two sources of
+truth.
+
+OpenPrinter therefore does **not** decide whether a receipt belongs to
+a kitchen, bar, billing counter, organization, or branch. The host
+application resolves those concepts into a concrete OPPA printer ID
+before delivery.
+
+## Why not silently queue on the server SDK?
+
+An in-process SDK cannot promise durable delivery after a process
+crash or deployment. The host application must retain offline work in
+its own durable queue and call the SDK only when the target agent is
+connected. A structured offline result makes that ownership explicit.
+
+## Why a structured document?
+
+A structured document is safer and more portable than a remote
+local-file path or arbitrary script. It gives the renderer a bounded
+vocabulary—text, rows, dividers, images, codes, feed, and cut—while
+leaving platform and printer-specific output behind local interfaces.

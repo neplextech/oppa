@@ -47,6 +47,8 @@
     ".turbo",
     "turbo-lint.log",
     ".source",
-    "turbo/generators/templates/**/*.hbs"
+    "turbo/generators/templates/**/*.hbs",
+    "protocol/schema/openprinter.schema.json",
+    "apps/oppa/src-tauri/gen"
   ]
 }

@@ -1,12 +1,41 @@
 {
-    "name": "@openprinter/protocol",
-    "version": "0.0.1",
-    "description": "Open Printer Proxy Agent (OPPA) Protocol",
-    "type": "module",
-    "main": "dist/index.js",
-    "types": "dist/index.d.ts",
-    "scripts": {
-        "build": "tsc",
-        "check": "tsc --noEmit"
+  "name": "@openprinter/server",
+  "version": "0.1.0",
+  "description": "Framework-neutral server SDK for OpenPrinter-compatible agents",
+  "license": "MIT",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
     }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "check": "pnpm --filter @openprinter/protocol build && pnpm run typecheck && pnpm run test",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit"
+  },
+  "dependencies": {
+    "@openprinter/protocol": "workspace:*",
+    "ws": "^8.18.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.30",
+    "@types/ws": "^8.18.1",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  },
+  "engines": {
+    "node": ">=20"
+  }
 }

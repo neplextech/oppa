@@ -1,0 +1,53 @@
+---
+title: Job Delivery Semantics
+description:
+  Ownership, acknowledgement order, offline behavior, and final
+  states.
+---
+
+OpenPrinter uses at-least-once delivery. The integrating application
+owns the durable server-side job and OPPA owns durable local receipt.
+
+```text
+application stores queued job
+  → application selects concrete agent and printer IDs
+  → server SDK delivers while the agent is connected
+  → OPPA validates and stores the job
+  → OPPA reports received
+  → OPPA renders and submits
+  → OPPA stores submitted or failed
+  → OPPA reports the result
+```
+
+## Acknowledgement invariant
+
+`job-received` must not be emitted until the local transaction
+commits. If validation or persistence fails, the server retains
+ownership of the queued job and can retry later.
+
+## Offline agents
+
+`@openprinter/server` returns a structured offline result. It does not
+retain the payload after the call. The host leaves the durable record
+queued.
+
+## Cancellation
+
+A cancellation request is best effort. A queued or received local job
+can normally move to cancelled. A job already accepted by an
+operating-system queue or written to a raw TCP device may no longer be
+cancellable. In protocol version 1, the SDK result confirms only that
+the request reached the connected agent; there is no separate
+agent-to-server cancellation-result message. A host must not interpret
+successful delivery as proof of cancellation.
+
+## Terminology
+
+- **queued**: retained by the integrating application
+- **delivered**: handed to a connected session
+- **received**: durably stored by OPPA
+- **submitted**: accepted by the selected local backend
+- **failed**: local rendering or submission ended with an error
+- **cancelled**: stopped before an irreversible submission boundary
+
+Do not translate every submitted state into **printed**.

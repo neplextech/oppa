@@ -1,0 +1,14 @@
+{
+  "protocolVersion": 1,
+  "messageId": "msg_job_submitted_001",
+  "correlationId": "msg_print_job_001",
+  "sentAt": "2026-07-28T10:02:03Z",
+  "type": "agent.job_submitted",
+  "payload": {
+    "jobId": "job_invoice_123_v1",
+    "idempotencyKey": "invoice_123_v1",
+    "printerId": "printer_receipt_001",
+    "status": "submitted",
+    "submittedAt": "2026-07-28T10:02:03Z"
+  }
+}

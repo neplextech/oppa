@@ -1,0 +1,71 @@
+---
+title: Node.js Integration
+description:
+  Attach OpenPrinter to an existing HTTP server and deliver a
+  structured job.
+---
+
+Install the protocol and server packages:
+
+```bash
+pnpm add @openprinter/protocol @openprinter/server ws
+```
+
+Create an OpenPrinter server and attach its upgrade handler:
+
+```ts
+import { createServer } from 'node:http';
+import { createOpenPrinterServer } from '@openprinter/server';
+
+const httpServer = createServer(app);
+
+const openPrinter = createOpenPrinterServer({
+  authenticateAgent: async ({ token }) => {
+    const record = await agentTokens.verify(token);
+    return record ? { agentId: record.agentId } : null;
+  },
+  onAgentConnected({ agent }) {
+    agents.markOnline(agent.agentId);
+  },
+  onAgentDisconnected({ agent }) {
+    agents.markOffline(agent.agentId);
+  },
+  onJobReceived({ message }) {
+    printJobs.markDelivered(message.payload.jobId);
+  },
+  onJobSubmitted({ message }) {
+    printJobs.markSubmitted(message.payload.jobId);
+  },
+  onJobFailed({ message }) {
+    printJobs.markFailed(
+      message.payload.jobId,
+      message.payload.error,
+    );
+  },
+});
+
+httpServer.on('upgrade', openPrinter.handleUpgrade);
+```
+
+## Deliver a job
+
+Only call `sendJob` for a job already stored durably by your
+application:
+
+```ts
+const result = await openPrinter.sendJob(agentId, {
+  jobId: job.id,
+  idempotencyKey: job.idempotencyKey,
+  printerId: job.printerId,
+  createdAt: job.createdAt.toISOString(),
+  document: job.document,
+});
+
+if (!result.ok) {
+  await printJobs.keepQueued(job.id, result.reason);
+}
+```
+
+Treat `job-received` as proof of durable local receipt and
+`job-submitted` as proof that OPPA successfully handed output to its
+selected backend.

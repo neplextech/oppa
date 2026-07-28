@@ -1,0 +1,63 @@
+---
+title: Architecture
+description:
+  Workspace layers, dependency direction, and ownership boundaries.
+---
+
+The monorepo contains a pnpm workspace for applications and packages
+and a Cargo workspace for the agent crates.
+
+```text
+apps/oppa (Tauri host + React UI)
+        │
+        ▼
+   oppa-agent
+   ├── oppa-auth ────────────┐
+   ├── oppa-transport        │
+   ├── oppa-storage          │
+   ├── oppa-discovery        ├── infrastructure boundaries
+   ├── oppa-renderer         │
+   ├── oppa-spooler          │
+   └── oppa-platform ────────┘
+        │
+        ▼
+oppa-printer · oppa-protocol · oppa-product · oppa-core
+```
+
+The TypeScript side contains:
+
+```text
+@openprinter/protocol → canonical TypeBox schemas, types, and codecs
+@openprinter/server   → authenticated WebSocket sessions and delivery
+node-server example  → development authorization, token, and job endpoints
+```
+
+## Boundary rules
+
+- `apps/oppa` is a host. Tauri commands translate typed UI requests
+  into `oppa-agent` operations.
+- `oppa-agent` must be usable without Tauri so a future headless shell
+  can reuse the runtime.
+- Low-level crates do not depend on UI code or Tauri.
+- The protocol contains only generic printer-agent concepts.
+- Credentials use secure platform storage and never the SQLite job
+  database.
+- Rendering produces an output representation; spoolers own submission
+  and timeouts.
+- Discovery failures degrade one provider rather than terminating the
+  agent.
+
+## Protocol source of truth
+
+The TypeBox definitions in `@openprinter/protocol` are canonical. A
+deterministic script emits a language-neutral JSON Schema. Both the
+Rust crate and TypeScript package validate the same committed
+fixtures, which prevents a protocol change from landing on only one
+side.
+
+## Evolution
+
+The interfaces leave room for a headless Linux agent, service-mode
+installation, or alternative desktop shell. Those targets are not
+implemented by the initial workspace. New crates are added only when a
+responsibility cannot be represented cleanly by an existing boundary.

@@ -1,0 +1,52 @@
+---
+title: Build OPPA
+description:
+  Build the desktop application with an embedded product definition.
+---
+
+OPPA uses Vite and React for its compact interface and Tauri for the
+native host. The actual agent orchestration lives in `oppa-agent`.
+
+## Development build
+
+```bash
+pnpm install
+OPPA_PRODUCT_DIR=products/default pnpm oppa:dev
+```
+
+## Release build
+
+```bash
+OPPA_PRODUCT_DIR=products/default pnpm oppa:build
+```
+
+The selected product directory is read during compilation. The build
+fails when required fields, endpoint schemes, feature compatibility,
+or supplied assets are invalid or unreadable. OPPA does not load an
+editable `product.json` at runtime.
+
+## Platform prerequisites
+
+Tauri requires platform tooling in addition to Rust:
+
+- macOS: Xcode command-line tools
+- Windows: Microsoft C++ Build Tools and WebView2
+- Linux: the WebKitGTK and system tray libraries listed by the current
+  Tauri prerequisites
+
+Normal pull-request builds do not require code signing. Distributor
+builds are responsible for their own certificates, application
+identity, and release channel.
+
+## Frontend boundary
+
+The React application calls narrow commands such as
+`get_agent_status`, `list_printers`, `send_test_print`, and
+`get_diagnostics`. It is not granted generic shell, filesystem, SQL,
+or network execution.
+
+## Headless reuse
+
+Do not add agent business logic to a Tauri command. A future non-Tauri
+host should be able to create the same `Agent` and `AgentHandle` from
+`oppa-agent`.

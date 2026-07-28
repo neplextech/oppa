@@ -1,0 +1,52 @@
+---
+title: Diagnostics
+description:
+  Sanitized local health information, bounded logs, and support
+  bundles.
+---
+
+The desktop diagnostics screen gives operators enough context to
+identify a connection, discovery, storage, or printer-submission
+problem without exposing credentials or full receipt contents.
+
+## Included information
+
+- agent version and compile-time product ID
+- operating system and platform feature availability
+- current agent and gateway state
+- recent sanitized connection events
+- printer descriptors without secret material
+- discovery provider status
+- database health and migration version
+- recent job state summaries
+- bounded submission and storage errors
+
+## Excluded information
+
+- access tokens, refresh tokens, authorization codes, and PKCE
+  verifiers
+- keyring values
+- complete structured documents or receipt text by default
+- raw customer data
+- arbitrary local files
+
+## Structured logging
+
+Rust logging separates application, transport, discovery, job
+lifecycle, printer submission, storage, and update targets. Values
+known to contain credentials are wrapped or redacted before they reach
+a subscriber. Production log levels avoid protocol payload bodies.
+
+## Export
+
+The export command writes a sanitized JSON bundle into the product's
+local diagnostic directory and returns that exact path. The frontend
+does not receive a generic filesystem capability. Operators should
+still review a bundle before sharing it, because printer display names
+and network addresses may describe their environment.
+
+## Retention
+
+Logs and recent job summaries are ring-buffered or pruned. Virtual
+printer content has its own explicit history controls and is not
+silently copied into diagnostic logs.

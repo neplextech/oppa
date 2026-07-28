@@ -1,0 +1,12 @@
+{
+  "protocolVersion": 1,
+  "messageId": "msg_disconnect_001",
+  "sentAt": "2026-07-28T10:06:00Z",
+  "type": "server.disconnect",
+  "payload": {
+    "code": "server.maintenance",
+    "reason": "Scheduled maintenance",
+    "reconnect": true,
+    "retryAfterMs": 60000
+  }
+}

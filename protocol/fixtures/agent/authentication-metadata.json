@@ -1,0 +1,13 @@
+{
+  "protocolVersion": 1,
+  "messageId": "msg_auth_metadata_001",
+  "sentAt": "2026-07-28T10:00:01Z",
+  "type": "agent.authentication_metadata",
+  "payload": {
+    "method": "oauth2",
+    "subject": "installation_001",
+    "metadata": {
+      "organization": "example"
+    }
+  }
+}

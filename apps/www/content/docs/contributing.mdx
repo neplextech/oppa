@@ -1,0 +1,53 @@
+---
+title: Contributing
+description:
+  Workspace conventions, testing expectations, and architectural
+  review rules.
+---
+
+Read the root `AGENTS.md` and the scoped instructions in the workspace
+unit you plan to change.
+
+## Setup
+
+```bash
+pnpm install
+cargo test --workspace
+pnpm test:js
+```
+
+## Before opening a pull request
+
+```bash
+pnpm format:check
+pnpm lint
+pnpm typecheck
+pnpm test
+pnpm build
+```
+
+Physical printers are never required in CI. Add a virtual backend or
+focused mock for a hardware boundary.
+
+## Protocol changes
+
+Protocol work starts in the canonical TypeBox schema. Regenerate the
+JSON Schema, update shared fixtures, and run both Rust and TypeScript
+compatibility tests. Use stable serialized names and document delivery
+or error behavior for every new message.
+
+## Adding a crate or package
+
+Do not create a workspace unit to hold one helper or to speculate
+about a future target. Explain the new responsibility, its dependency
+direction, and why an existing boundary cannot own it. Every accepted
+unit needs a professional README and public API documentation.
+
+## Security review
+
+Changes that expand a server message, Tauri command, local network
+operation, credential flow, diagnostic export, or product
+configuration field deserve explicit security review. Never add a
+generic execution primitive to make one integration easier.
+
+Use conventional commits so Git Cliff can produce a useful changelog.

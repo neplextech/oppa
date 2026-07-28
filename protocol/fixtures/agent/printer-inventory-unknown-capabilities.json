@@ -1,0 +1,24 @@
+{
+  "protocolVersion": 1,
+  "messageId": "msg_inventory_unknown_capabilities_001",
+  "correlationId": "msg_inventory_request_002",
+  "sentAt": "2026-07-28T10:00:07Z",
+  "type": "agent.printer_inventory",
+  "payload": {
+    "revision": 9,
+    "printers": [
+      {
+        "id": "printer_system_unknown_001",
+        "fingerprint": "system:CUPS:unknown-capabilities",
+        "name": "Printer with unknown capabilities",
+        "kind": "local",
+        "connection": {
+          "type": "system",
+          "systemName": "unknown-capabilities"
+        },
+        "enabled": true,
+        "availability": "unknown"
+      }
+    ]
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "protocolVersion": 1,
+  "messageId": "msg_server_hello_001",
+  "correlationId": "msg_agent_hello_001",
+  "sentAt": "2026-07-28T10:00:00Z",
+  "type": "server.hello",
+  "payload": {
+    "serverId": "server_example_001",
+    "serverVersion": "0.1.0",
+    "sessionId": "session_001",
+    "supportedProtocolVersions": [1],
+    "selectedProtocolVersion": 1,
+    "heartbeatIntervalMs": 30000,
+    "maxMessageBytes": 2097152
+  }
+}

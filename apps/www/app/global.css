@@ -1,0 +1,30 @@
+@import 'tailwindcss';
+@import 'fumadocs-ui/css/neutral.css';
+@import 'fumadocs-ui/css/preset.css';
+
+@theme {
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+}
+
+:root {
+  --brand-blue: #2563eb;
+  --brand-ink: #07111f;
+}
+
+body {
+  font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+}
+
+code,
+pre {
+  font-family: var(--font-mono), ui-monospace, monospace;
+}
+
+.landing-grid {
+  background-image:
+    linear-gradient(to right, rgb(148 163 184 / 0.09) 1px, transparent 1px),
+    linear-gradient(to bottom, rgb(148 163 184 / 0.09) 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: linear-gradient(to bottom, black, transparent 88%);
+}

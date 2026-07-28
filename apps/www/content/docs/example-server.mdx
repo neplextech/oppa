@@ -1,0 +1,50 @@
+---
+title: Run the Example Server
+description:
+  Development endpoints and limitations of the in-memory Node.js
+  example.
+---
+
+The Node.js example demonstrates how an existing HTTP application
+hosts `@openprinter/server`. It has no database and no external queue.
+
+```bash
+pnpm --filter openprinter-node-example dev
+```
+
+The server provides:
+
+| Endpoint                        | Purpose                                                        |
+| ------------------------------- | -------------------------------------------------------------- |
+| `GET /authorize`                | Development-only approval page and authorization-code issuance |
+| `POST /token`                   | PKCE-aware one-time authorization-code exchange                |
+| `GET /agents`                   | Connected agent summaries                                      |
+| `GET /agents/:agentId/printers` | Last inventory reported by one agent                           |
+| `POST /agents/:agentId/jobs`    | Send a small structured test job                               |
+
+## Development authentication
+
+The token registry, authorization codes, and connected inventory live
+only in memory. Restarting the example clears them. This
+implementation exists to exercise the provider-neutral OPPA flow; it
+is not a production identity provider.
+
+Production integrations must validate the user session on the
+authorization endpoint, bind approval to an allowed account or
+organization, make authorization codes single-use and short-lived,
+store refresh credentials safely, and revoke credentials when access
+changes.
+
+## Offline behavior
+
+If an agent is offline, the job endpoint returns a structured
+unavailable response. The example does not invent a durable queue. A
+real application should retain the job in its own database and retry
+delivery according to its own policy.
+
+## Product configuration
+
+`examples/node-server/product/product.json` points its OAuth client ID
+and authorization, token, and gateway URLs at this server. Use the
+`OPPA_PRODUCT_DIR` environment variable at build time to select a
+different validated product definition.
