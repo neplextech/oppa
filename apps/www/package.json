@@ -11,6 +11,7 @@
     "postinstall": "fumadocs-mdx"
   },
   "dependencies": {
+    "@orama/orama": "catalog:",
     "fumadocs-core": "^16.13.0",
     "fumadocs-mdx": "^15.2.0",
     "fumadocs-ui": "^16.13.0",
