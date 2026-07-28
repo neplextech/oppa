@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "oppa-dev",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter=oppa", "dev"],
+      "port": 1420
+    }
+  ]
+}
