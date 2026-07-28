@@ -1,0 +1,21 @@
+{
+  "name": "@oppa/workspace",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "format": "oxfmt"
+  },
+  "author": "Neplex <info@neplextech.com>",
+  "license": "MIT",
+  "devEngines": {
+    "packageManager": {
+      "name": "pnpm",
+      "version": "^11.17.0",
+      "onFail": "download"
+    }
+  },
+  "devDependencies": {
+    "oxfmt": "^0.60.0"
+  }
+}

@@ -1,0 +1,12 @@
+{
+    "name": "@openprinter/server",
+    "version": "0.0.1",
+    "description": "Server side SDK for Open Printer Proxy Agent (OPPA)",
+    "type": "module",
+    "main": "dist/index.js",
+    "types": "dist/index.d.ts",
+    "scripts": {
+        "build": "tsc",
+        "check": "tsc --noEmit"
+    }
+}

@@ -1,0 +1,10 @@
+packages:
+  - apps/*
+  - packages/*
+
+preferWorkspacePackages: true
+
+catalogMode: prefer
+
+allowBuilds:
+  esbuild: set this to true or false
