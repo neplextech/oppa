@@ -8,5 +8,8 @@
     "scripts": {
         "build": "tsc",
         "check": "tsc --noEmit"
+    },
+    "dependencies": {
+        "typescript": "catalog:"
     }
 }
