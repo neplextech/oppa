@@ -157,20 +157,42 @@ fn build_app_menu(app: &App) -> tauri::Result<Menu<tauri::Wry>> {
     let menu = Menu::new(app)?;
 
     // File
-    let add_printer = MenuItem::with_id(app, APP_ADD_PRINTER, "Add Network Printer…", true, None::<&str>)?;
+    let add_printer = MenuItem::with_id(
+        app,
+        APP_ADD_PRINTER,
+        "Add Network Printer…",
+        true,
+        None::<&str>,
+    )?;
     let file_sep = PredefinedMenuItem::separator(app)?;
-    let close_window = MenuItem::with_id(app, APP_CLOSE_WINDOW, "Close Window", true, Some("CmdOrCtrl+W"))?;
-    let file_menu = Submenu::with_items(app, "File", true, &[&add_printer, &file_sep, &close_window])?;
+    let close_window = MenuItem::with_id(
+        app,
+        APP_CLOSE_WINDOW,
+        "Close Window",
+        true,
+        Some("CmdOrCtrl+W"),
+    )?;
+    let file_menu =
+        Submenu::with_items(app, "File", true, &[&add_printer, &file_sep, &close_window])?;
     menu.append(&file_menu)?;
 
     // View
-    let nav_overview = MenuItem::with_id(app, APP_NAV_OVERVIEW, "Overview", true, Some("CmdOrCtrl+1"))?;
+    let nav_overview =
+        MenuItem::with_id(app, APP_NAV_OVERVIEW, "Overview", true, Some("CmdOrCtrl+1"))?;
     let nav_jobs = MenuItem::with_id(app, APP_NAV_JOBS, "Jobs", true, Some("CmdOrCtrl+2"))?;
-    let nav_printers = MenuItem::with_id(app, APP_NAV_PRINTERS, "Printers", true, Some("CmdOrCtrl+3"))?;
-    let nav_virtual = MenuItem::with_id(app, APP_NAV_VIRTUAL, "Virtual Printer", true, Some("CmdOrCtrl+4"))?;
+    let nav_printers =
+        MenuItem::with_id(app, APP_NAV_PRINTERS, "Printers", true, Some("CmdOrCtrl+3"))?;
+    let nav_virtual = MenuItem::with_id(
+        app,
+        APP_NAV_VIRTUAL,
+        "Virtual Printer",
+        true,
+        Some("CmdOrCtrl+4"),
+    )?;
     let nav_logs = MenuItem::with_id(app, APP_NAV_LOGS, "Logs", true, Some("CmdOrCtrl+5"))?;
     let view_sep = PredefinedMenuItem::separator(app)?;
-    let nav_settings = MenuItem::with_id(app, APP_NAV_SETTINGS, "Settings", true, Some("CmdOrCtrl+,"))?;
+    let nav_settings =
+        MenuItem::with_id(app, APP_NAV_SETTINGS, "Settings", true, Some("CmdOrCtrl+,"))?;
     let view_menu = Submenu::with_items(
         app,
         "View",

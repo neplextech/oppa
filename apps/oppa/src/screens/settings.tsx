@@ -118,7 +118,7 @@ export function SettingsScreen({
             {status.agentId && (
               <>
                 <span className="text-border">·</span>
-                <span className="text-muted-foreground font-mono text-xs truncate">{status.agentId}</span>
+                <span className="text-muted-foreground truncate font-mono text-xs">{status.agentId}</span>
               </>
             )}
           </div>
@@ -164,7 +164,7 @@ function SettingRow({
 }) {
   return (
     <div className="bg-card/30 flex items-center gap-4 px-5 py-4">
-      <div className="border-border bg-secondary flex size-8 shrink-0 items-center justify-center rounded-lg border text-muted-foreground">
+      <div className="border-border bg-secondary text-muted-foreground flex size-8 shrink-0 items-center justify-center rounded-lg border">
         {icon}
       </div>
       <div className="min-w-0 flex-1">

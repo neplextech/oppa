@@ -163,7 +163,10 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
   if (method === 'GET' && url.pathname === '/') {
     const acceptsHtml = (request.headers['accept'] ?? '').includes('text/html');
     if (acceptsHtml) {
-      sendHtml(response, 200, dashboardPage(HOST, PORT));
+      sendHtml(response, 200, dashboardPage(HOST, PORT), {
+        'content-security-policy':
+          "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'self'",
+      });
     } else {
       sendJson(response, 200, {
         name: 'OpenPrinter Node.js development example',
@@ -363,7 +366,7 @@ function authorizationPage(approvalUrl: string, redirectUri: string): string {
 }
 
 function dashboardPage(host: string, port: number): string {
-  const base = `http://${host}:${port}`;
+  const base = /* html */ `http://${host}:${port}`;
   return `<!doctype html>
 <html lang="en">
   <head>
@@ -504,24 +507,37 @@ function dashboardPage(host: string, port: number): string {
           const r = await fetch(BASE + '/agents/' + encodeURIComponent(agentId) + '/printers');
           const data = await r.json();
           const printers = data.printers ?? [];
-          if (printers.length === 0) {
-            container.innerHTML = '<div class="section-title" style="margin-top:0.75rem;">Printers</div><p class="empty" style="padding:0.5rem;">No printers enabled on this agent.</p>';
-            return;
-          }
-          container.innerHTML = '<div class="section-title" style="margin-top:0.75rem;">Printers</div>';
+            if (printers.length === 0) {
+              container.innerHTML = '<div class="section-title" style="margin-top:0.75rem;">Printers</div><p class="empty" style="padding:0.5rem;">No printers enabled on this agent.</p>';
+              return;
+            }
+            container.innerHTML = '<div class="section-title" style="margin-top:0.75rem;">Printers</div>';
           for (const p of printers) {
             const row = document.createElement('div');
             row.className = 'printer-row';
             const resultId = 'result-' + agentId + '-' + p.id.replace(/[^a-z0-9]/gi, '-');
-            row.innerHTML = \`
-              <div class="printer-info">
-                <div class="printer-name">\${esc(p.displayName ?? p.id)}</div>
-                <div class="printer-sub">\${esc(p.connectionType ?? '')} · \${p.available ? 'Ready' : 'Offline'}</div>
-              </div>
-              <button class="btn btn-primary" \${!p.available || !p.enabled ? 'disabled' : ''} onclick="sendTestPrint(\${JSON.stringify(agentId)}, \${JSON.stringify(p.id)}, '\${resultId}')">
-                ↗ Test print
-              </button>
-            \`;
+              const isOnline = p.availability === 'online';
+              const isEnabled = p.enabled !== false;
+              const canPrint = isOnline && isEnabled;
+              const availabilityLabel =
+                p.availability === 'online'
+                  ? 'Ready'
+                  : p.availability === 'offline'
+                    ? 'Offline'
+                    : 'Unknown';
+              row.innerHTML = \`
+                <div class="printer-info">
+                  <div class="printer-name">\${esc(p.displayName ?? p.id)}</div>
+                  <div class="printer-sub">\${esc(p.connectionType ?? '')} · \${availabilityLabel}\${isEnabled ? '' : ' · Disabled'}</div>
+                </div>
+                <button class="btn btn-primary" \${canPrint ? '' : 'disabled'} data-result-id="\${esc(resultId)}" data-agent-id="\${esc(agentId)}" data-printer-id="\${esc(p.id)}">
+                  ↗ Test print
+                </button>
+              \`;
+            const button = row.querySelector('button');
+            button?.addEventListener('click', () => {
+              void sendTestPrint(agentId, p.id, resultId);
+            });
             container.appendChild(row);
             const resultDiv = document.createElement('div');
             resultDiv.id = resultId;

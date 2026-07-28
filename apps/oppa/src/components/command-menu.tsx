@@ -1,13 +1,4 @@
-import {
-  Activity,
-  FileClock,
-  MonitorCog,
-  Printer,
-  RotateCcw,
-  ScrollText,
-  Settings2,
-  X,
-} from 'lucide-react';
+import { Activity, FileClock, MonitorCog, Printer, RotateCcw, ScrollText, Settings2, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
 import type { ScreenId } from '@/components/app-shell';
@@ -37,13 +28,70 @@ export function CommandMenu({
   const inputRef = useRef<HTMLInputElement>(null);
 
   const allCommands: Command[] = [
-    { id: 'nav-overview', label: 'Overview', description: 'Operational status and recent activity', icon: Activity, shortcut: '⌘1', group: 'Navigate', action: () => onNavigate('overview') },
-    { id: 'nav-jobs', label: 'Jobs', description: 'Print job history and status', icon: FileClock, shortcut: '⌘2', group: 'Navigate', action: () => onNavigate('jobs') },
-    { id: 'nav-printers', label: 'Printers', description: 'Manage connected printers', icon: Printer, shortcut: '⌘3', group: 'Navigate', action: () => onNavigate('printers') },
-    { id: 'nav-virtual', label: 'Virtual Printer', description: 'Test with a software target', icon: MonitorCog, shortcut: '⌘4', group: 'Navigate', action: () => onNavigate('virtual') },
-    { id: 'nav-logs', label: 'Logs', description: 'Operational diagnostics', icon: ScrollText, shortcut: '⌘5', group: 'Navigate', action: () => onNavigate('diagnostics') },
-    { id: 'nav-settings', label: 'Settings', description: 'Preferences and product info', icon: Settings2, shortcut: '⌘,', group: 'Navigate', action: () => onNavigate('settings') },
-    { id: 'action-reconnect', label: 'Reconnect', description: 'Re-establish gateway connection', icon: RotateCcw, group: 'Actions', action: () => { void onReconnect(); } },
+    {
+      id: 'nav-overview',
+      label: 'Overview',
+      description: 'Operational status and recent activity',
+      icon: Activity,
+      shortcut: '⌘1',
+      group: 'Navigate',
+      action: () => onNavigate('overview'),
+    },
+    {
+      id: 'nav-jobs',
+      label: 'Jobs',
+      description: 'Print job history and status',
+      icon: FileClock,
+      shortcut: '⌘2',
+      group: 'Navigate',
+      action: () => onNavigate('jobs'),
+    },
+    {
+      id: 'nav-printers',
+      label: 'Printers',
+      description: 'Manage connected printers',
+      icon: Printer,
+      shortcut: '⌘3',
+      group: 'Navigate',
+      action: () => onNavigate('printers'),
+    },
+    {
+      id: 'nav-virtual',
+      label: 'Virtual Printer',
+      description: 'Test with a software target',
+      icon: MonitorCog,
+      shortcut: '⌘4',
+      group: 'Navigate',
+      action: () => onNavigate('virtual'),
+    },
+    {
+      id: 'nav-logs',
+      label: 'Logs',
+      description: 'Operational diagnostics',
+      icon: ScrollText,
+      shortcut: '⌘5',
+      group: 'Navigate',
+      action: () => onNavigate('diagnostics'),
+    },
+    {
+      id: 'nav-settings',
+      label: 'Settings',
+      description: 'Preferences and product info',
+      icon: Settings2,
+      shortcut: '⌘,',
+      group: 'Navigate',
+      action: () => onNavigate('settings'),
+    },
+    {
+      id: 'action-reconnect',
+      label: 'Reconnect',
+      description: 'Re-establish gateway connection',
+      icon: RotateCcw,
+      group: 'Actions',
+      action: () => {
+        void onReconnect();
+      },
+    },
   ];
 
   const filtered = query.trim()
@@ -97,12 +145,9 @@ export function CommandMenu({
   let globalIndex = 0;
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-start justify-center pt-20"
-      onClick={onClose}
-    >
+    <div className="fixed inset-0 z-50 flex items-start justify-center pt-20" onClick={onClose}>
       {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/20 dark:bg-black/40 backdrop-blur-sm" />
+      <div className="absolute inset-0 bg-black/20 backdrop-blur-sm dark:bg-black/40" />
 
       {/* Panel */}
       <div
@@ -151,7 +196,7 @@ export function CommandMenu({
           ) : (
             Object.entries(groups).map(([group, cmds]) => (
               <div key={group}>
-                <p className="text-muted-foreground px-4 pb-1 pt-2 text-xs font-medium tracking-wider uppercase">
+                <p className="text-muted-foreground px-4 pt-2 pb-1 text-xs font-medium tracking-wider uppercase">
                   {group}
                 </p>
                 {cmds.map((cmd) => {
@@ -174,14 +219,21 @@ export function CommandMenu({
                         onClose();
                       }}
                     >
-                      <div className={cn('flex size-7 shrink-0 items-center justify-center rounded-md', isActive ? 'bg-primary/10' : 'bg-secondary')}>
-                        <Icon className={cn('size-3.5', isActive ? 'text-primary' : 'text-muted-foreground')} strokeWidth={1.75} aria-hidden />
+                      <div
+                        className={cn(
+                          'flex size-7 shrink-0 items-center justify-center rounded-md',
+                          isActive ? 'bg-primary/10' : 'bg-secondary',
+                        )}
+                      >
+                        <Icon
+                          className={cn('size-3.5', isActive ? 'text-primary' : 'text-muted-foreground')}
+                          strokeWidth={1.75}
+                          aria-hidden
+                        />
                       </div>
                       <div className="min-w-0 flex-1">
                         <p className="font-medium">{cmd.label}</p>
-                        {cmd.description && (
-                          <p className="text-muted-foreground truncate text-xs">{cmd.description}</p>
-                        )}
+                        {cmd.description && <p className="text-muted-foreground truncate text-xs">{cmd.description}</p>}
                       </div>
                       {cmd.shortcut && (
                         <kbd className="text-muted-foreground shrink-0 font-mono text-xs">{cmd.shortcut}</kbd>
@@ -195,9 +247,15 @@ export function CommandMenu({
         </div>
 
         <div className="border-border text-muted-foreground flex items-center gap-4 border-t px-4 py-2 text-xs">
-          <span><kbd className="font-mono">↑↓</kbd> navigate</span>
-          <span><kbd className="font-mono">↵</kbd> select</span>
-          <span><kbd className="font-mono">Esc</kbd> close</span>
+          <span>
+            <kbd className="font-mono">↑↓</kbd> navigate
+          </span>
+          <span>
+            <kbd className="font-mono">↵</kbd> select
+          </span>
+          <span>
+            <kbd className="font-mono">Esc</kbd> close
+          </span>
         </div>
       </div>
     </div>

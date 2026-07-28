@@ -17,8 +17,7 @@ import { VirtualPrintersScreen } from '@/screens/virtual-printers';
 export type Theme = 'system' | 'light' | 'dark';
 
 function applyThemeClass(t: Theme) {
-  const isDark =
-    t === 'dark' || (t === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+  const isDark = t === 'dark' || (t === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
   document.documentElement.classList.toggle('dark', isDark);
 }
 

@@ -229,9 +229,7 @@ function PrinterRow({
       {/* Connection */}
       <div className="text-sm">
         <p className="text-foreground/80">{titleCase(printer.connectionType)}</p>
-        {printer.address && (
-          <p className="text-muted-foreground truncate font-mono text-xs">{printer.address}</p>
-        )}
+        {printer.address && <p className="text-muted-foreground truncate font-mono text-xs">{printer.address}</p>}
       </div>
 
       {/* Status */}
@@ -258,7 +256,7 @@ function PrinterRow({
             render={
               <button
                 type="button"
-                className="text-muted-foreground hover:text-foreground flex size-8 items-center justify-center rounded-md opacity-0 transition-all group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                className="text-muted-foreground hover:text-foreground focus-visible:ring-ring flex size-8 items-center justify-center rounded-md opacity-0 transition-all group-hover:opacity-100 focus-visible:opacity-100 focus-visible:ring-1 focus-visible:outline-none"
                 aria-label={`Actions for ${printer.displayName}`}
               />
             }
@@ -266,9 +264,7 @@ function PrinterRow({
             <MoreHorizontal className="size-4" strokeWidth={1.75} aria-hidden />
           </DropdownMenuTrigger>
           <DropdownMenuContent side="bottom" align="end" sideOffset={4}>
-            <DropdownMenuItem
-              onClick={() => void onConfigure(printer.id, { enabled: !printer.enabled })}
-            >
+            <DropdownMenuItem onClick={() => void onConfigure(printer.id, { enabled: !printer.enabled })}>
               {printer.enabled ? 'Disable' : 'Enable'}
             </DropdownMenuItem>
             <DropdownMenuItem

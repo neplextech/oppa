@@ -1,12 +1,4 @@
-import {
-  Activity,
-  Command,
-  FileClock,
-  MonitorCog,
-  Printer,
-  ScrollText,
-  Settings2,
-} from 'lucide-react';
+import { Activity, Command, FileClock, MonitorCog, Printer, ScrollText, Settings2 } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useState } from 'react';
 
@@ -50,11 +42,7 @@ export function AppShell({
 
       <div className="flex flex-1 overflow-hidden">
         {/* Sidebar navigation */}
-        <Sidebar
-          activeScreen={activeScreen}
-          onNavigate={onNavigate}
-          onOpenCommand={openCommand}
-        />
+        <Sidebar activeScreen={activeScreen} onNavigate={onNavigate} onOpenCommand={openCommand} />
 
         {/* Main workspace */}
         <main className="bg-background flex-1 overflow-x-hidden overflow-y-auto" id="main-content" tabIndex={-1}>
@@ -63,11 +51,7 @@ export function AppShell({
       </div>
 
       {commandOpen && (
-        <CommandMenu
-          onClose={() => setCommandOpen(false)}
-          onNavigate={onNavigate}
-          onReconnect={onReconnect}
-        />
+        <CommandMenu onClose={() => setCommandOpen(false)} onNavigate={onNavigate} onReconnect={onReconnect} />
       )}
     </div>
   );
@@ -160,9 +144,7 @@ function Sidebar({
                   : 'text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
               )}
             >
-              {active && (
-                <span className="bg-primary absolute top-1/2 left-0 h-5 w-0.5 -translate-y-1/2 rounded-r" />
-              )}
+              {active && <span className="bg-primary absolute top-1/2 left-0 h-5 w-0.5 -translate-y-1/2 rounded-r" />}
               <Icon
                 className={cn(
                   'size-4 shrink-0',

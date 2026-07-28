@@ -76,8 +76,13 @@ export function sendJson(
   response.end(body);
 }
 
-/** Send an HTML response used only by the local approval page. */
-export function sendHtml(response: ServerResponse, status: number, html: string): void {
+/** Send an HTML response with conservative security headers by default. */
+export function sendHtml(
+  response: ServerResponse,
+  status: number,
+  html: string,
+  headers?: Readonly<Record<string, string>>,
+): void {
   const body = Buffer.from(html, 'utf8');
   response.writeHead(status, {
     'cache-control': 'no-store',
@@ -87,6 +92,7 @@ export function sendHtml(response: ServerResponse, status: number, html: string)
     'referrer-policy': 'no-referrer',
     'x-content-type-options': 'nosniff',
     'x-frame-options': 'DENY',
+    ...headers,
   });
   response.end(body);
 }
