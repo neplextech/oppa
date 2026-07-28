@@ -34,8 +34,5 @@
     "@types/ws": "^8.18.1",
     "typescript": "catalog:",
     "vitest": "catalog:"
-  },
-  "engines": {
-    "node": ">=20"
   }
 }

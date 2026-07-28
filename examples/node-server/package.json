@@ -23,8 +23,5 @@
     "tsx": "^4.20.3",
     "typescript": "catalog:",
     "vitest": "catalog:"
-  },
-  "engines": {
-    "node": ">=20"
   }
 }
