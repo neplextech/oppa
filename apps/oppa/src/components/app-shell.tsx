@@ -1,148 +1,233 @@
-import { Activity, BriefcaseBusiness, FileClock, MonitorCog, Printer, ScrollText, Settings2 } from 'lucide-react';
+import {
+  Activity,
+  Command,
+  FileClock,
+  MonitorCog,
+  Printer,
+  ScrollText,
+  Settings2,
+} from 'lucide-react';
 import type { ReactNode } from 'react';
+import { useState } from 'react';
 
+import { CommandMenu } from '@/components/command-menu';
 import type { AgentStatus } from '@/lib/types';
 import { cn, titleCase } from '@/lib/utils';
 
-import { StatusDot } from './ui';
-
 export type ScreenId = 'overview' | 'printers' | 'virtual' | 'jobs' | 'diagnostics' | 'settings';
 
-const navigation: Array<{
-  id: ScreenId;
-  label: string;
-  icon: typeof Activity;
-}> = [
-  { id: 'overview', label: 'Overview', icon: Activity },
-  { id: 'printers', label: 'Printers', icon: Printer },
-  { id: 'virtual', label: 'Virtual Printers', icon: MonitorCog },
-  { id: 'jobs', label: 'Jobs', icon: FileClock },
-  { id: 'diagnostics', label: 'Diagnostics', icon: ScrollText },
-  { id: 'settings', label: 'Settings', icon: Settings2 },
+const primaryNav: Array<{ id: ScreenId; label: string; icon: typeof Activity; shortcut: string }> = [
+  { id: 'overview', label: 'Overview', icon: Activity, shortcut: '1' },
+  { id: 'jobs', label: 'Jobs', icon: FileClock, shortcut: '2' },
+  { id: 'printers', label: 'Printers', icon: Printer, shortcut: '3' },
+  { id: 'virtual', label: 'Virtual Printer', icon: MonitorCog, shortcut: '4' },
+  { id: 'diagnostics', label: 'Logs', icon: ScrollText, shortcut: '5' },
 ];
 
 export function AppShell({
   activeScreen,
   onNavigate,
   status,
+  onReconnect,
   children,
 }: {
   activeScreen: ScreenId;
   onNavigate: (screen: ScreenId) => void;
   status: AgentStatus;
+  onReconnect: () => Promise<void>;
   children: ReactNode;
 }) {
-  const connected = status.state === 'connected';
+  const [commandOpen, setCommandOpen] = useState(false);
+
+  function openCommand() {
+    setCommandOpen(true);
+  }
 
   return (
-    <div className="flex min-h-screen bg-[#f7f8fa] text-slate-950">
-      <aside className="fixed inset-y-0 left-0 z-20 hidden w-60 flex-col border-r border-slate-200 bg-white lg:flex">
-        <div className="flex h-20 items-center gap-3 border-b border-slate-100 px-5">
-          <div className="flex size-9 items-center justify-center rounded-xl bg-slate-950 text-white shadow-sm">
-            <Printer className="size-[18px]" strokeWidth={2.2} aria-hidden />
-          </div>
-          <div>
-            <div className="text-sm font-bold tracking-[-0.01em]">{status.product.name}</div>
-            <div className="text-[11px] font-medium text-slate-400">Printer agent</div>
-          </div>
-        </div>
+    <div className="bg-background text-foreground flex h-dvh flex-col overflow-hidden">
+      {/* Title bar */}
+      <TitleBar status={status} />
 
-        <nav className="flex-1 space-y-1 px-3 py-5" aria-label="Primary">
-          {navigation.map((item) => {
-            const Icon = item.icon;
-            const active = activeScreen === item.id;
-            return (
-              <button
-                key={item.id}
-                className={cn(
-                  'flex h-10 w-full items-center gap-3 rounded-lg px-3 text-left text-sm font-medium transition-colors',
-                  active
-                    ? 'bg-slate-950 text-white shadow-sm'
-                    : 'text-slate-500 hover:bg-slate-100 hover:text-slate-950',
-                )}
-                onClick={() => onNavigate(item.id)}
-                type="button"
-              >
-                <Icon className="size-4" strokeWidth={2} aria-hidden />
-                {item.label}
-              </button>
-            );
-          })}
-        </nav>
+      <div className="flex flex-1 overflow-hidden">
+        {/* Sidebar navigation */}
+        <Sidebar
+          activeScreen={activeScreen}
+          onNavigate={onNavigate}
+          onOpenCommand={openCommand}
+        />
 
-        <div className="p-3">
-          <div className="rounded-xl border border-slate-200 bg-slate-50 p-3.5">
-            <div className="flex items-center gap-2 text-xs font-semibold text-slate-700">
-              <StatusDot tone={connected ? 'green' : 'amber'} pulse={connected} />
-              {titleCase(status.state)}
-            </div>
-            <p className="mt-2 truncate text-[11px] text-slate-400">{status.agentId ?? 'Account not connected'}</p>
-          </div>
-          <div className="mt-3 flex items-center gap-2 px-2 text-[10px] font-medium text-slate-400">
-            <BriefcaseBusiness className="size-3" aria-hidden />
-            {status.product.id} · v{status.version}
-          </div>
-        </div>
-      </aside>
-
-      <div className="flex min-h-screen min-w-0 flex-1 flex-col lg:pl-60">
-        <header className="sticky top-0 z-10 flex h-16 items-center justify-between border-b border-slate-200/80 bg-white/90 px-5 backdrop-blur lg:px-8">
-          <div className="flex min-w-0 items-center gap-3 lg:hidden">
-            <div className="flex shrink-0 items-center gap-2">
-              <div className="flex size-8 items-center justify-center rounded-lg bg-slate-950 text-white">
-                <Printer className="size-4" aria-hidden />
-              </div>
-              <span className="hidden text-sm font-bold sm:inline">{status.product.name}</span>
-            </div>
-            <label>
-              <span className="sr-only">Current screen</span>
-              <select
-                aria-label="Current screen"
-                className="max-w-44 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 outline-none focus:border-blue-500 focus:ring-3 focus:ring-blue-500/10"
-                value={activeScreen}
-                onChange={(event) => onNavigate(event.target.value as ScreenId)}
-              >
-                {navigation.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-          <div className="hidden text-xs font-medium text-slate-400 lg:block">Open Printer Proxy Agent</div>
-          <div className="flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 shadow-sm">
-            <StatusDot tone={connected ? 'green' : 'amber'} pulse={connected} />
-            Gateway {status.gatewayState}
-          </div>
-        </header>
-
-        <main className="flex-1 px-5 py-7 lg:px-8 lg:py-8">{children}</main>
-
-        <nav
-          className="sticky bottom-0 z-20 grid grid-cols-6 border-t border-slate-200 bg-white px-1 py-2 lg:hidden"
-          aria-label="Primary"
-        >
-          {navigation.map((item) => {
-            const Icon = item.icon;
-            const active = item.id === activeScreen;
-            return (
-              <button
-                key={item.id}
-                className={cn(
-                  'flex min-w-0 flex-col items-center gap-1 rounded-lg py-1.5 text-[9px] font-semibold',
-                  active ? 'text-blue-600' : 'text-slate-400',
-                )}
-                onClick={() => onNavigate(item.id)}
-                type="button"
-              >
-                <Icon className="size-4" aria-hidden />
-                <span className="max-w-full truncate">{item.label.replace(' Printers', '')}</span>
-              </button>
-            );
-          })}
-        </nav>
+        {/* Main workspace */}
+        <main className="bg-background flex-1 overflow-x-hidden overflow-y-auto" id="main-content" tabIndex={-1}>
+          {children}
+        </main>
       </div>
+
+      {commandOpen && (
+        <CommandMenu
+          onClose={() => setCommandOpen(false)}
+          onNavigate={onNavigate}
+          onReconnect={onReconnect}
+        />
+      )}
     </div>
+  );
+}
+
+function TitleBar({ status }: { status: AgentStatus }) {
+  const agentId = status.agentId;
+  const connected = status.state === 'connected';
+  const tone =
+    status.state === 'connected'
+      ? 'connected'
+      : status.state === 'degraded'
+        ? 'warning'
+        : status.state === 'disconnected' || status.state === 'shutting_down'
+          ? 'error'
+          : status.state === 'connecting' || status.state === 'authorizing'
+            ? 'pending'
+            : 'offline';
+
+  return (
+    <header
+      data-tauri-drag-region
+      className="border-sidebar-border bg-sidebar flex h-10 shrink-0 items-center border-b select-none"
+    >
+      {/* macOS traffic-light space */}
+      <div className="w-[72px] shrink-0" data-no-drag />
+
+      {/* Product identity */}
+      <div className="flex items-center gap-2 px-2">
+        <div className="bg-primary flex size-5 shrink-0 items-center justify-center rounded-md">
+          <Printer className="text-primary-foreground size-3" strokeWidth={2.5} aria-hidden />
+        </div>
+        <span className="text-foreground/90 text-sm font-semibold">{status.product.name}</span>
+      </div>
+
+      <div className="bg-border mx-3 h-3.5 w-px" />
+
+      {/* Connection state */}
+      <div className="text-muted-foreground flex items-center gap-2 text-xs" data-no-drag>
+        <span className={cn('status-dot', `status-dot--${tone}`)} aria-label={`State: ${titleCase(status.state)}`} />
+        <span className={cn(connected ? 'text-foreground/70' : 'text-muted-foreground')}>
+          {titleCase(status.state)}
+        </span>
+        {agentId && (
+          <>
+            <span className="text-border/60">·</span>
+            <span className="font-mono text-[11px]">{agentId}</span>
+          </>
+        )}
+      </div>
+
+      <div className="flex-1" />
+
+      <div className="text-muted-foreground/50 px-4 font-mono text-[11px]" data-no-drag>
+        v{status.version}
+      </div>
+    </header>
+  );
+}
+
+function Sidebar({
+  activeScreen,
+  onNavigate,
+  onOpenCommand,
+}: {
+  activeScreen: ScreenId;
+  onNavigate: (screen: ScreenId) => void;
+  onOpenCommand: () => void;
+}) {
+  return (
+    <nav
+      className="border-sidebar-border bg-sidebar flex w-52 shrink-0 flex-col border-r"
+      aria-label="Primary navigation"
+    >
+      {/* Primary nav items */}
+      <div className="flex-1 space-y-0.5 p-2 pt-3">
+        {primaryNav.map((item) => {
+          const Icon = item.icon;
+          const active = activeScreen === item.id;
+          return (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => onNavigate(item.id)}
+              aria-current={active ? 'page' : undefined}
+              className={cn(
+                'group relative flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                active
+                  ? 'bg-primary/10 text-primary'
+                  : 'text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
+              )}
+            >
+              {active && (
+                <span className="bg-primary absolute top-1/2 left-0 h-5 w-0.5 -translate-y-1/2 rounded-r" />
+              )}
+              <Icon
+                className={cn(
+                  'size-4 shrink-0',
+                  active ? 'text-primary' : 'text-sidebar-foreground/50 group-hover:text-sidebar-accent-foreground',
+                )}
+                strokeWidth={active ? 2.25 : 1.75}
+                aria-hidden
+              />
+              <span className="truncate">{item.label}</span>
+              <kbd
+                className={cn(
+                  'ml-auto font-mono text-[10px] opacity-0 transition-opacity group-hover:opacity-100',
+                  active ? 'opacity-40' : 'text-muted-foreground',
+                )}
+              >
+                ⌘{item.shortcut}
+              </kbd>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Bottom section: command search + settings */}
+      <div className="border-sidebar-border space-y-0.5 border-t p-2 pb-3">
+        <button
+          type="button"
+          onClick={onOpenCommand}
+          className="text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-colors"
+          aria-label="Open command menu (⌘K)"
+        >
+          <Command className="size-4 shrink-0" strokeWidth={1.75} aria-hidden />
+          <span>Search & commands</span>
+          <kbd className="text-muted-foreground ml-auto font-mono text-[10px] opacity-60">⌘K</kbd>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => onNavigate('settings')}
+          aria-current={activeScreen === 'settings' ? 'page' : undefined}
+          className={cn(
+            'group relative flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+            activeScreen === 'settings'
+              ? 'bg-primary/10 text-primary'
+              : 'text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
+          )}
+        >
+          {activeScreen === 'settings' && (
+            <span className="bg-primary absolute top-1/2 left-0 h-5 w-0.5 -translate-y-1/2 rounded-r" />
+          )}
+          <Settings2
+            className={cn(
+              'size-4 shrink-0',
+              activeScreen === 'settings'
+                ? 'text-primary'
+                : 'text-sidebar-foreground/50 group-hover:text-sidebar-accent-foreground',
+            )}
+            strokeWidth={activeScreen === 'settings' ? 2.25 : 1.75}
+            aria-hidden
+          />
+          Settings
+          <kbd className="text-muted-foreground ml-auto font-mono text-[10px] opacity-0 transition-opacity group-hover:opacity-100">
+            ⌘,
+          </kbd>
+        </button>
+      </div>
+    </nav>
   );
 }

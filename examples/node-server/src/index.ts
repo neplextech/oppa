@@ -161,18 +161,23 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
   const url = new URL(request.url ?? '/', `http://${HOST}:${PORT}`);
 
   if (method === 'GET' && url.pathname === '/') {
-    sendJson(response, 200, {
-      name: 'OpenPrinter Node.js development example',
-      developmentOnly: true,
-      endpoints: {
-        authorize: 'GET /authorize',
-        token: 'POST /token',
-        agents: 'GET /agents',
-        printers: 'GET /agents/:agentId/printers',
-        jobs: 'POST /agents/:agentId/jobs',
-        gateway: 'WS /openprinter/agent',
-      },
-    });
+    const acceptsHtml = (request.headers['accept'] ?? '').includes('text/html');
+    if (acceptsHtml) {
+      sendHtml(response, 200, dashboardPage(HOST, PORT));
+    } else {
+      sendJson(response, 200, {
+        name: 'OpenPrinter Node.js development example',
+        developmentOnly: true,
+        endpoints: {
+          authorize: 'GET /authorize',
+          token: 'POST /token',
+          agents: 'GET /agents',
+          printers: 'GET /agents/:agentId/printers',
+          jobs: 'POST /agents/:agentId/jobs',
+          gateway: 'WS /openprinter/agent',
+        },
+      });
+    }
     return;
   }
 
@@ -353,6 +358,236 @@ function authorizationPage(approvalUrl: string, redirectUri: string): string {
       <p>Loopback callback: <code>${escapeHtml(redirectUri)}</code></p>
       <a href="${escapeHtml(approvalUrl)}">Authorize local agent</a>
     </main>
+  </body>
+</html>`;
+}
+
+function dashboardPage(host: string, port: number): string {
+  const base = `http://${host}:${port}`;
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>OpenPrinter — Development Server</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        font-size: 14px;
+        --bg: #f5f5f7;
+        --card: #ffffff;
+        --text: #1d1d1f;
+        --muted: #6e6e73;
+        --border: rgba(0,0,0,0.1);
+        --primary: #e07428;
+        --success: #34c759;
+        --danger: #ff3b30;
+        --radius: 12px;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #0a0a0a;
+          --card: #1c1c1e;
+          --text: #f5f5f7;
+          --muted: #8e8e93;
+          --border: rgba(255,255,255,0.1);
+        }
+      }
+      *, *::before, *::after { box-sizing: border-box; margin: 0; }
+      body { background: var(--bg); color: var(--text); min-height: 100vh; padding: 2rem 1.5rem; }
+      .header { max-width: 760px; margin: 0 auto 2rem; }
+      .header h1 { font-size: 1.5rem; font-weight: 700; }
+      .header p { color: var(--muted); margin-top: 0.25rem; font-size: 0.875rem; }
+      .badge { display: inline-block; background: #ff9f0a22; color: #b97a00; border-radius: 6px; font-size: 0.75rem; font-weight: 600; padding: 2px 8px; margin-top: 0.5rem; }
+      @media (prefers-color-scheme: dark) { .badge { color: #ffcc00; background: #ffcc0022; } }
+      .container { max-width: 760px; margin: 0 auto; }
+      .card { background: var(--card); border-radius: var(--radius); border: 1px solid var(--border); overflow: hidden; margin-bottom: 1.25rem; }
+      .card-header { padding: 1rem 1.25rem; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 0.75rem; }
+      .card-header h2 { font-size: 0.9rem; font-weight: 600; }
+      .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+      .dot-green { background: var(--success); }
+      .dot-gray { background: var(--muted); }
+      .card-body { padding: 1.25rem; }
+      .empty { color: var(--muted); font-size: 0.875rem; text-align: center; padding: 2rem; }
+      .agent-item { padding: 1rem; border: 1px solid var(--border); border-radius: 10px; margin-bottom: 0.75rem; }
+      .agent-item:last-child { margin-bottom: 0; }
+      .agent-id { font-family: monospace; font-size: 0.8rem; color: var(--muted); margin-top: 0.25rem; word-break: break-all; }
+      .agent-meta { color: var(--muted); font-size: 0.8rem; margin-top: 0.5rem; }
+      .printers { margin-top: 1rem; }
+      .printer-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 0.75rem 1rem; background: var(--bg); border-radius: 8px; margin-top: 0.5rem; }
+      .printer-info { flex: 1; min-width: 0; }
+      .printer-name { font-weight: 500; font-size: 0.875rem; }
+      .printer-sub { color: var(--muted); font-size: 0.75rem; margin-top: 0.1rem; }
+      .btn { display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.45rem 0.9rem; border-radius: 8px; font-size: 0.8rem; font-weight: 600; cursor: pointer; border: none; transition: opacity 0.15s; }
+      .btn:hover { opacity: 0.85; }
+      .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+      .btn-primary { background: var(--primary); color: white; }
+      .btn-outline { background: transparent; border: 1px solid var(--border); color: var(--text); }
+      .result { margin-top: 1rem; padding: 0.85rem 1rem; border-radius: 10px; font-size: 0.8rem; font-family: monospace; white-space: pre-wrap; word-break: break-all; border: 1px solid var(--border); background: var(--bg); display: none; }
+      .result.show { display: block; }
+      .result.ok { border-color: #34c75940; background: #34c75910; }
+      .result.err { border-color: #ff3b3040; background: #ff3b3010; }
+      .section-title { font-size: 0.75rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem; }
+      .refresh-row { display: flex; justify-content: flex-end; margin-bottom: 0.75rem; }
+    </style>
+  </head>
+  <body>
+    <div class="header">
+      <h1>OpenPrinter</h1>
+      <p>Development server — ${escapeHtml(base)}</p>
+      <span class="badge">⚠ Development only</span>
+    </div>
+
+    <div class="container">
+      <div class="card" id="agents-card">
+        <div class="card-header">
+          <span class="dot dot-gray" id="status-dot"></span>
+          <h2>Connected agents</h2>
+          <button class="btn btn-outline" style="margin-left:auto;font-size:0.75rem;" onclick="loadAgents()">Refresh</button>
+        </div>
+        <div class="card-body" id="agents-body">
+          <p class="empty">Loading…</p>
+        </div>
+      </div>
+
+      <div id="result-global" class="result"></div>
+    </div>
+
+    <script>
+      const BASE = ${JSON.stringify(base)};
+
+      async function loadAgents() {
+        const body = document.getElementById('agents-body');
+        const dot = document.getElementById('status-dot');
+        body.innerHTML = '<p class="empty">Loading…</p>';
+        dot.className = 'dot dot-gray';
+        try {
+          const r = await fetch(BASE + '/agents');
+          const data = await r.json();
+          const agents = data.agents ?? [];
+          dot.className = 'dot ' + (agents.length > 0 ? 'dot-green' : 'dot-gray');
+          if (agents.length === 0) {
+            body.innerHTML = '<p class="empty">No agents connected.<br>Open OPPA and complete authorization to connect.</p>';
+            return;
+          }
+          body.innerHTML = '';
+          for (const agent of agents) {
+            const div = document.createElement('div');
+            div.className = 'agent-item';
+            div.innerHTML = \`
+              <div style="display:flex;align-items:center;gap:0.5rem;">
+                <span class="dot dot-green"></span>
+                <strong style="font-size:0.9rem;">\${esc(agent.productId ?? 'Unknown agent')}</strong>
+                <span style="color:var(--muted);font-size:0.75rem;">\${esc(agent.agentVersion ?? '')}</span>
+              </div>
+              <div class="agent-id">\${esc(agent.agentId)}</div>
+              <div class="agent-meta">Connected \${formatRelative(agent.connectedAt)} · \${agent.printerCount ?? 0} printer(s)</div>
+              <div class="printers" id="printers-\${esc(agent.agentId)}">
+                <div class="section-title" style="margin-top:0.75rem;">Printers</div>
+                <p class="empty" style="padding:0.5rem;">Loading printers…</p>
+              </div>
+            \`;
+            body.appendChild(div);
+            loadPrinters(agent.agentId);
+          }
+        } catch (e) {
+          dot.className = 'dot dot-gray';
+          body.innerHTML = '<p class="empty">Could not reach server.</p>';
+        }
+      }
+
+      async function loadPrinters(agentId) {
+        const container = document.getElementById('printers-' + agentId);
+        if (!container) return;
+        try {
+          const r = await fetch(BASE + '/agents/' + encodeURIComponent(agentId) + '/printers');
+          const data = await r.json();
+          const printers = data.printers ?? [];
+          if (printers.length === 0) {
+            container.innerHTML = '<div class="section-title" style="margin-top:0.75rem;">Printers</div><p class="empty" style="padding:0.5rem;">No printers enabled on this agent.</p>';
+            return;
+          }
+          container.innerHTML = '<div class="section-title" style="margin-top:0.75rem;">Printers</div>';
+          for (const p of printers) {
+            const row = document.createElement('div');
+            row.className = 'printer-row';
+            const resultId = 'result-' + agentId + '-' + p.id.replace(/[^a-z0-9]/gi, '-');
+            row.innerHTML = \`
+              <div class="printer-info">
+                <div class="printer-name">\${esc(p.displayName ?? p.id)}</div>
+                <div class="printer-sub">\${esc(p.connectionType ?? '')} · \${p.available ? 'Ready' : 'Offline'}</div>
+              </div>
+              <button class="btn btn-primary" \${!p.available || !p.enabled ? 'disabled' : ''} onclick="sendTestPrint(\${JSON.stringify(agentId)}, \${JSON.stringify(p.id)}, '\${resultId}')">
+                ↗ Test print
+              </button>
+            \`;
+            container.appendChild(row);
+            const resultDiv = document.createElement('div');
+            resultDiv.id = resultId;
+            resultDiv.className = 'result';
+            container.appendChild(resultDiv);
+          }
+        } catch (e) {
+          container.innerHTML = '<div class="section-title" style="margin-top:0.75rem;">Printers</div><p class="empty" style="padding:0.5rem;">Could not load printers.</p>';
+        }
+      }
+
+      async function sendTestPrint(agentId, printerId, resultId) {
+        const resultDiv = document.getElementById(resultId);
+        if (!resultDiv) return;
+        resultDiv.className = 'result show';
+        resultDiv.textContent = 'Sending…';
+
+        const job = {
+          jobId: crypto.randomUUID(),
+          idempotencyKey: crypto.randomUUID(),
+          printerId: printerId,
+          createdAt: new Date().toISOString(),
+          document: {
+            width: 80,
+            sections: [
+              { type: 'text', value: 'Test Print', bold: true, align: 'center' },
+              { type: 'divider' },
+              { type: 'text', value: 'OpenPrinter development server' },
+              { type: 'text', value: new Date().toLocaleString() },
+              { type: 'feed', lines: 3 },
+              { type: 'cut' },
+            ],
+          },
+        };
+
+        try {
+          const r = await fetch(BASE + '/agents/' + encodeURIComponent(agentId) + '/jobs', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(job),
+          });
+          const data = await r.json();
+          resultDiv.className = 'result show ' + (r.ok ? 'ok' : 'err');
+          resultDiv.textContent = JSON.stringify(data, null, 2);
+        } catch (e) {
+          resultDiv.className = 'result show err';
+          resultDiv.textContent = 'Error: ' + (e instanceof Error ? e.message : String(e));
+        }
+      }
+
+      function esc(str) {
+        if (str == null) return '';
+        return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+      }
+
+      function formatRelative(iso) {
+        if (!iso) return '';
+        const diff = Math.round((Date.now() - new Date(iso).getTime()) / 1000);
+        if (diff < 60) return diff + 's ago';
+        if (diff < 3600) return Math.round(diff / 60) + 'm ago';
+        return Math.round(diff / 3600) + 'h ago';
+      }
+
+      loadAgents();
+      setInterval(loadAgents, 15000);
+    </script>
   </body>
 </html>`;
 }

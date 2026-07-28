@@ -212,12 +212,21 @@ export const agentClient = {
     };
   },
 
-  async subscribeNavigation(onNavigate: (screen: 'printers' | 'diagnostics') => void): Promise<() => void> {
+  async subscribeNavigation(
+    onNavigate: (screen: 'overview' | 'printers' | 'virtual' | 'jobs' | 'diagnostics' | 'settings') => void,
+  ): Promise<() => void> {
     if (!isTauri()) {
       return () => undefined;
     }
     return listen<string>('oppa://navigate', ({ payload }) => {
-      if (payload === 'printers' || payload === 'diagnostics') {
+      if (
+        payload === 'overview' ||
+        payload === 'printers' ||
+        payload === 'virtual' ||
+        payload === 'jobs' ||
+        payload === 'diagnostics' ||
+        payload === 'settings'
+      ) {
         onNavigate(payload);
       }
     });

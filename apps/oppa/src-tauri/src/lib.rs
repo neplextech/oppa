@@ -47,8 +47,14 @@ pub fn run() {
                     .log
                     .warn("desktop", format!("System tray is unavailable: {error}"));
             }
+            if let Err(error) = desktop::setup_app_menu(app) {
+                service
+                    .log
+                    .warn("desktop", format!("App menu is unavailable: {error}"));
+            }
             Ok(())
         })
+        .on_menu_event(desktop::handle_app_menu_event)
         .on_window_event(desktop::handle_close_request)
         .invoke_handler(tauri::generate_handler![
             commands::get_agent_status,

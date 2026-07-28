@@ -1,9 +1,9 @@
-import { AlertTriangle, LoaderCircle, RefreshCw } from 'lucide-react';
+import { LoaderCircle, Printer } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useEffect, useState } from 'react';
 
 import { AppShell, type ScreenId } from '@/components/app-shell';
-import { Button, Card } from '@/components/ui';
+import { ErrorBanner } from '@/components/ui';
 import { useAgent } from '@/hooks/use-agent';
 import { agentClient } from '@/lib/agent-client';
 import { DiagnosticsScreen } from '@/screens/diagnostics';
@@ -14,9 +14,49 @@ import { SettingsScreen } from '@/screens/settings';
 import { SetupScreen } from '@/screens/setup';
 import { VirtualPrintersScreen } from '@/screens/virtual-printers';
 
+export type Theme = 'system' | 'light' | 'dark';
+
+function applyThemeClass(t: Theme) {
+  const isDark =
+    t === 'dark' || (t === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+  document.documentElement.classList.toggle('dark', isDark);
+}
+
+// Apply saved theme before first render to prevent flash
+const initialTheme = (localStorage.getItem('oppa-theme') as Theme | null) ?? 'system';
+applyThemeClass(initialTheme);
+
+const SCREEN_SHORTCUTS: Record<string, ScreenId> = {
+  '1': 'overview',
+  '2': 'jobs',
+  '3': 'printers',
+  '4': 'virtual',
+  '5': 'diagnostics',
+  ',': 'settings',
+};
+
 export default function App() {
   const [screen, setScreen] = useState<ScreenId>('overview');
+  const [theme, setThemeState] = useState<Theme>(initialTheme);
   const { status, printers, jobs, diagnostics, loading, busy, error, actions } = useAgent();
+
+  function setTheme(t: Theme) {
+    localStorage.setItem('oppa-theme', t);
+    setThemeState(t);
+    applyThemeClass(t);
+  }
+
+  // Re-apply when system preference changes (while theme === 'system')
+  useEffect(() => {
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    const onChange = () => {
+      if ((localStorage.getItem('oppa-theme') ?? 'system') === 'system') {
+        applyThemeClass('system');
+      }
+    };
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
 
   useEffect(() => {
     let disposed = false;
@@ -24,11 +64,8 @@ export default function App() {
     void agentClient
       .subscribeNavigation(setScreen)
       .then((stop) => {
-        if (disposed) {
-          stop();
-        } else {
-          unsubscribe = stop;
-        }
+        if (disposed) stop();
+        else unsubscribe = stop;
       })
       .catch((cause: unknown) => {
         console.error('Unable to subscribe to tray navigation.', cause);
@@ -39,28 +76,47 @@ export default function App() {
     };
   }, []);
 
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (!event.metaKey && !event.ctrlKey) return;
+      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) return;
+      const target = SCREEN_SHORTCUTS[event.key];
+      if (target) {
+        event.preventDefault();
+        setScreen(target);
+      }
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
+
   if (!loading && error && (!status || !diagnostics)) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-[#f7f8fa] p-6">
-        <Card className="w-full max-w-md border-red-200 bg-red-50 p-6">
-          <AlertTriangle className="size-5 text-red-600" aria-hidden />
-          <h1 className="mt-4 text-lg font-bold text-red-950">The local agent could not start</h1>
-          <p className="mt-2 text-sm leading-6 text-red-700">{error}</p>
-          <Button className="mt-5" onClick={() => void actions.reload()}>
-            <RefreshCw className="size-4" aria-hidden />
+      <main className="bg-background flex min-h-dvh items-center justify-center p-6">
+        <div className="w-full max-w-sm rounded-xl border border-[var(--color-error)]/20 bg-[var(--color-error)]/5 p-6">
+          <div className="flex size-10 items-center justify-center rounded-lg border border-[var(--color-error)]/20 bg-[var(--color-error)]/10">
+            <Printer className="size-5 text-[var(--color-error)]" aria-hidden />
+          </div>
+          <h1 className="text-foreground mt-4 text-base font-semibold">Agent failed to start</h1>
+          <p className="mt-2 text-sm leading-5 text-[var(--color-error)]/80">{error}</p>
+          <button
+            type="button"
+            className="border-border bg-secondary text-foreground hover:bg-accent mt-5 inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium transition-colors"
+            onClick={() => void actions.reload()}
+          >
             Retry startup
-          </Button>
-        </Card>
+          </button>
+        </div>
       </main>
     );
   }
 
   if (loading || !status || !diagnostics) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-[#f7f8fa]">
-        <div className="flex items-center gap-3 text-sm font-semibold text-slate-500">
-          <LoaderCircle className="size-4 animate-spin text-blue-600" aria-hidden />
-          Starting the local agent…
+      <main className="bg-background flex min-h-dvh items-center justify-center">
+        <div className="text-muted-foreground flex items-center gap-3 text-sm">
+          <LoaderCircle className="text-primary size-4 animate-spin" aria-hidden />
+          Starting local agent…
         </div>
       </main>
     );
@@ -137,6 +193,8 @@ export default function App() {
         <SettingsScreen
           status={status}
           busy={busy}
+          theme={theme}
+          onThemeChange={setTheme}
           onStartOnLogin={actions.setStartOnLogin}
           onReconnect={actions.reconnect}
           onOpenProductLink={actions.openProductLink}
@@ -146,20 +204,8 @@ export default function App() {
   }
 
   return (
-    <AppShell activeScreen={screen} onNavigate={setScreen} status={status}>
-      {error ? (
-        <Card className="mx-auto mb-5 flex max-w-6xl items-start gap-3 border-red-200 bg-red-50 p-4">
-          <AlertTriangle className="mt-0.5 size-4 text-red-600" aria-hidden />
-          <div className="min-w-0 flex-1">
-            <div className="text-sm font-semibold text-red-900">Operation failed</div>
-            <div className="mt-1 text-xs text-red-700">{error}</div>
-          </div>
-          <Button variant="ghost" size="sm" onClick={() => void actions.reload()}>
-            <RefreshCw className="size-3.5" aria-hidden />
-            Retry
-          </Button>
-        </Card>
-      ) : null}
+    <AppShell activeScreen={screen} onNavigate={setScreen} status={status} onReconnect={actions.reconnect}>
+      {error ? <ErrorBanner message={error} onRetry={() => void actions.reload()} /> : null}
       {content}
     </AppShell>
   );

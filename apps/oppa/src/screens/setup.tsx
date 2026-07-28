@@ -1,6 +1,6 @@
-import { ArrowRight, CheckCircle2, LockKeyhole, Printer, ShieldCheck } from 'lucide-react';
+import { ArrowRight, LockKeyhole, Printer, RefreshCw, ShieldCheck } from 'lucide-react';
 
-import { Card, Button } from '@/components/ui';
+import { Button } from '@/components/ui/button';
 import type { AgentStatus } from '@/lib/types';
 
 export function SetupScreen({
@@ -15,77 +15,111 @@ export function SetupScreen({
   const authorizing = status.state === 'authorizing';
 
   return (
-    <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[#f7f8fa] p-6">
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(59,130,246,0.08),transparent_35%),radial-gradient(circle_at_bottom_right,rgba(15,23,42,0.07),transparent_30%)]" />
-      <div className="relative grid w-full max-w-4xl overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-[0_28px_80px_rgba(15,23,42,0.12)] md:grid-cols-[0.9fr_1.1fr]">
-        <section className="flex flex-col justify-between bg-slate-950 p-8 text-white md:p-10">
-          <div>
-            <div className="flex size-11 items-center justify-center rounded-2xl bg-white/10 ring-1 ring-white/15">
-              <Printer className="size-5" aria-hidden />
-            </div>
-            <p className="mt-10 text-xs font-bold tracking-[0.2em] text-blue-300 uppercase">{status.product.name}</p>
-            <h1 className="mt-3 text-3xl leading-tight font-bold tracking-[-0.035em]">
-              Connect cloud applications to the printers on this computer.
-            </h1>
-            <p className="mt-4 text-sm leading-6 text-slate-300">
-              {status.product.name} discovers local printers, receives authorized jobs, and records each job before
-              submission.
-            </p>
-          </div>
-          <div className="mt-12 flex items-center gap-2 text-xs text-slate-400">
-            <ShieldCheck className="size-4 text-emerald-400" aria-hidden />
-            No arbitrary files, scripts, or shell commands
-          </div>
-        </section>
-
-        <section className="p-8 md:p-10">
-          <div className="flex items-center gap-2 text-xs font-bold tracking-[0.16em] text-blue-600 uppercase">
-            <span className="flex size-5 items-center justify-center rounded-full bg-blue-50">1</span>
-            Initial setup
-          </div>
-          <h2 className="mt-5 text-2xl font-bold tracking-[-0.025em] text-slate-950">Connect your account</h2>
-          <p className="mt-2 text-sm leading-6 text-slate-500">
-            Your browser will open the authorization page configured by this product build. The agent never sees your
-            password.
-          </p>
-
-          <div className="mt-7 space-y-4">
-            {[
-              ['Authorize in your browser', 'Choose the account and approve this agent.'],
-              ['Discover printers', 'Review system, network, and virtual printers.'],
-              ['Stay connected', `${status.product.name} continues safely in the background.`],
-            ].map(([title, description], index) => (
-              <div key={title} className="flex gap-3">
-                <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-emerald-500" aria-hidden />
-                <div>
-                  <div className="text-sm font-semibold text-slate-800">
-                    {index + 1}. {title}
-                  </div>
-                  <div className="mt-0.5 text-xs leading-5 text-slate-500">{description}</div>
-                </div>
+    <main className="bg-background flex min-h-dvh items-center justify-center p-6">
+      <div className="border-border w-full max-w-3xl overflow-hidden rounded border">
+        <div className="grid md:grid-cols-[0.85fr_1.15fr]">
+          {/* Left panel */}
+          <div className="border-border bg-card flex flex-col justify-between border-r p-8">
+            <div>
+              <div className="border-border bg-primary/10 flex size-9 items-center justify-center rounded border">
+                <Printer className="text-primary size-4" aria-hidden />
               </div>
-            ))}
+
+              <p className="text-primary mt-8 text-[10px] font-semibold tracking-widest uppercase">
+                {status.product.name}
+              </p>
+
+              <h1 className="text-foreground mt-3 text-xl leading-7 font-semibold tracking-tight">
+                Connect cloud applications to the printers on this computer.
+              </h1>
+
+              <p className="text-muted-foreground mt-3 text-[11px] leading-5">
+                {status.product.name} discovers local printers, receives authorized print jobs from a connected server,
+                and records each delivery before submission.
+              </p>
+
+              <div className="mt-8 space-y-2">
+                {[
+                  'No arbitrary file access or shell commands',
+                  'Credentials stay in OS secure storage',
+                  'All jobs persisted before acknowledgement',
+                  'Explicit timeouts on all network operations',
+                ].map((point) => (
+                  <div key={point} className="text-muted-foreground flex items-start gap-2 text-[11px]">
+                    <span className="mt-1.5 size-1 shrink-0 rounded-full bg-[var(--color-connected)]" />
+                    {point}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="text-muted-foreground/50 mt-8 flex items-center gap-2 text-[10px]">
+              <ShieldCheck className="size-3 text-[var(--color-connected)]" aria-hidden />
+              OpenPrinter protocol enforced
+            </div>
           </div>
 
-          <Button className="mt-8 h-11 w-full" busy={busy} disabled={authorizing} onClick={() => void onAuthorize()}>
-            <LockKeyhole className="size-4" aria-hidden />
-            {authorizing ? 'Waiting for browser authorization…' : 'Connect account'}
-            <ArrowRight className="ml-auto size-4" aria-hidden />
-          </Button>
-          <p className="mt-4 text-center text-[11px] leading-5 text-slate-400">
-            Authorization expires quickly and is accepted only on this computer.
-          </p>
-          {status.activeErrors.length > 0 ? (
-            <Card className="mt-5 border-red-200 bg-red-50 p-3 text-xs leading-5 text-red-700">
-              <div className="font-bold text-red-900">Authorization needs attention</div>
-              <ul className="mt-1 list-disc space-y-1 pl-4">
-                {status.activeErrors.map((message) => (
-                  <li key={message}>{message}</li>
-                ))}
-              </ul>
-            </Card>
-          ) : null}
-        </section>
+          {/* Right panel */}
+          <div className="bg-background p-8">
+            <div className="text-muted-foreground/60 flex items-center gap-2 text-[10px] font-semibold tracking-widest uppercase">
+              <span className="border-border bg-card flex size-4 items-center justify-center rounded border text-[9px] font-bold">
+                1
+              </span>
+              Initial setup
+            </div>
+
+            <h2 className="text-foreground mt-5 text-base font-semibold">Connect your account</h2>
+            <p className="text-muted-foreground mt-1.5 text-[11px] leading-5">
+              Your browser will open the authorization page configured for this product build. The agent never sees your
+              password.
+            </p>
+
+            <div className="mt-6 space-y-3">
+              {(
+                [
+                  ['Open browser', 'Choose your account and approve this agent.'],
+                  ['Discover printers', 'Review system, USB, network, and virtual printers.'],
+                  ['Stay connected', `${status.product.name} continues safely in the background.`],
+                ] as const
+              ).map(([title, description], i) => (
+                <div key={title} className="flex gap-3 text-[11px]">
+                  <div className="border-border bg-card text-muted-foreground mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full border text-[9px] font-medium">
+                    {i + 1}
+                  </div>
+                  <div>
+                    <p className="text-foreground/90 font-medium">{title}</p>
+                    <p className="text-muted-foreground/70">{description}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <Button className="mt-8 w-full" disabled={authorizing || busy} onClick={() => void onAuthorize()}>
+              {busy ? (
+                <RefreshCw className="size-3.5 animate-spin" aria-hidden />
+              ) : (
+                <LockKeyhole className="size-3.5" aria-hidden />
+              )}
+              {authorizing ? 'Waiting for browser authorization…' : 'Connect account'}
+              {!authorizing && !busy && <ArrowRight className="ml-auto size-3.5" aria-hidden />}
+            </Button>
+
+            <p className="text-muted-foreground/50 mt-3 text-center text-[10px]">
+              Authorization expires quickly and is accepted only on this computer.
+            </p>
+
+            {status.activeErrors.length > 0 && (
+              <div className="mt-4 rounded border border-[var(--color-error)]/20 bg-[var(--color-error)]/5 p-3">
+                <p className="text-[11px] font-semibold text-[var(--color-error)]">Authorization needs attention</p>
+                <ul className="mt-1.5 space-y-1 text-[11px] text-[var(--color-error)]/70">
+                  {status.activeErrors.map((msg) => (
+                    <li key={msg}>{msg}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
     </main>
   );

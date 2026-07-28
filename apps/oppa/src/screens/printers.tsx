@@ -1,20 +1,22 @@
-import {
-  CirclePlus,
-  EthernetPort,
-  MonitorCog,
-  MoreHorizontal,
-  Printer,
-  RefreshCw,
-  Send,
-  Trash2,
-  Usb,
-} from 'lucide-react';
+import { EthernetPort, MoreHorizontal, MonitorCog, Plus, Printer, RefreshCw, Send, Trash2, Usb } from 'lucide-react';
 import { useState } from 'react';
 
-import { PageHeader } from '@/components/page';
-import { Badge, Button, Card, FieldLabel, StatusDot, Toggle, inputClassName } from '@/components/ui';
+import { EmptyState, FieldLabel, ScreenContainer, ScreenHeader, StatusDot, Toggle, inputClass } from '@/components/ui';
+import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import type { ManualPrinterInput, PrinterSummary } from '@/lib/types';
-import { titleCase } from '@/lib/utils';
+import { cn, titleCase } from '@/lib/utils';
+
+function ConnectionIcon({ type }: { type: PrinterSummary['connectionType'] }) {
+  const Icon = type === 'network' ? EthernetPort : type === 'virtual' ? MonitorCog : type === 'usb' ? Usb : Printer;
+  return <Icon className="size-4" aria-hidden />;
+}
 
 export function PrintersScreen({
   printers,
@@ -28,10 +30,10 @@ export function PrintersScreen({
   printers: PrinterSummary[];
   busy: string | null;
   onRefresh: () => Promise<void>;
-  onConfigure: (printerId: string, changes: { displayName?: string; enabled?: boolean }) => Promise<void>;
+  onConfigure: (id: string, changes: { displayName?: string; enabled?: boolean }) => Promise<void>;
   onAddManual: (input: ManualPrinterInput) => Promise<void>;
-  onRemove: (printerId: string) => Promise<void>;
-  onTest: (printerId: string) => Promise<void>;
+  onRemove: (id: string) => Promise<void>;
+  onTest: (id: string) => Promise<void>;
 }) {
   const [showForm, setShowForm] = useState(false);
   const [input, setInput] = useState<ManualPrinterInput>({
@@ -39,201 +41,408 @@ export function PrintersScreen({
     host: '',
     port: 9100,
   });
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const selected = printers.find((p) => p.id === selectedId) ?? null;
 
   return (
-    <div className="mx-auto max-w-6xl">
-      <PageHeader
-        eyebrow="Local inventory"
+    <ScreenContainer>
+      <ScreenHeader
         title="Printers"
-        description="Enable the printers this agent may use. Logical routing stays in the connected application."
+        description="Enable the local printers this agent may use."
         action={
-          <div className="flex gap-2">
-            <Button variant="secondary" busy={busy === 'refresh-printers'} onClick={() => void onRefresh()}>
-              <RefreshCw className="size-4" aria-hidden />
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" disabled={busy === 'refresh-printers'} onClick={() => void onRefresh()}>
+              {busy === 'refresh-printers' ? (
+                <RefreshCw className="size-3.5 animate-spin" aria-hidden />
+              ) : (
+                <RefreshCw className="size-3.5" aria-hidden />
+              )}
               Refresh
             </Button>
-            <Button onClick={() => setShowForm((value) => !value)}>
-              <CirclePlus className="size-4" aria-hidden />
-              Network printer
+            <Button size="sm" onClick={() => setShowForm((v) => !v)}>
+              <Plus className="size-3.5" aria-hidden />
+              Add printer
             </Button>
           </div>
         }
       />
 
-      {showForm ? (
-        <Card className="mb-6 border-blue-200 bg-blue-50/40 p-5">
-          <div className="grid gap-4 md:grid-cols-[1.2fr_1fr_0.5fr_auto] md:items-end">
+      {showForm && (
+        <div className="border-border bg-card/60 shrink-0 border-b px-6 py-5">
+          <p className="text-foreground mb-4 text-sm font-semibold">Add network printer</p>
+          <div className="flex flex-wrap items-end gap-4">
             <div>
               <FieldLabel htmlFor="manual-name">Display name</FieldLabel>
               <input
                 id="manual-name"
-                className={inputClassName}
+                className={cn(inputClass, 'w-48')}
                 placeholder="Counter printer"
                 value={input.displayName}
-                onChange={(event) => setInput((current) => ({ ...current, displayName: event.target.value }))}
+                onChange={(e) => setInput((c) => ({ ...c, displayName: e.target.value }))}
               />
             </div>
             <div>
-              <FieldLabel htmlFor="manual-host">Host or IP address</FieldLabel>
+              <FieldLabel htmlFor="manual-host">Host / IP</FieldLabel>
               <input
                 id="manual-host"
-                className={inputClassName}
+                className={cn(inputClass, 'w-40')}
                 placeholder="192.168.1.82"
                 value={input.host}
-                onChange={(event) => setInput((current) => ({ ...current, host: event.target.value }))}
+                onChange={(e) => setInput((c) => ({ ...c, host: e.target.value }))}
               />
             </div>
             <div>
               <FieldLabel htmlFor="manual-port">Port</FieldLabel>
               <input
                 id="manual-port"
-                className={inputClassName}
+                className={cn(inputClass, 'w-24')}
+                type="number"
                 min={1}
                 max={65535}
-                type="number"
                 value={input.port}
-                onChange={(event) =>
-                  setInput((current) => ({
-                    ...current,
-                    port: Number(event.target.value),
-                  }))
-                }
+                onChange={(e) => setInput((c) => ({ ...c, port: Number(e.target.value) }))}
               />
             </div>
-            <Button
-              busy={busy === 'add-manual-printer'}
-              disabled={!input.displayName.trim() || !input.host.trim()}
-              onClick={() => {
-                void onAddManual(input).then(() => {
-                  setShowForm(false);
-                  setInput({ displayName: '', host: '', port: 9100 });
-                });
-              }}
-            >
-              Add printer
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                disabled={!input.displayName.trim() || !input.host.trim() || busy === 'add-manual-printer'}
+                onClick={() => {
+                  void onAddManual(input).then(() => {
+                    setShowForm(false);
+                    setInput({ displayName: '', host: '', port: 9100 });
+                  });
+                }}
+              >
+                {busy === 'add-manual-printer' ? <RefreshCw className="size-3.5 animate-spin" aria-hidden /> : null}
+                Add
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => setShowForm(false)}>
+                Cancel
+              </Button>
+            </div>
           </div>
-          <p className="mt-3 text-[11px] text-slate-500">
-            Raw TCP submissions use an explicit timeout. The default port is 9100.
-          </p>
-        </Card>
-      ) : null}
-
-      <Card className="overflow-hidden">
-        <div className="hidden grid-cols-[minmax(220px,1.2fr)_0.8fr_0.8fr_0.55fr_150px] gap-4 border-b border-slate-100 bg-slate-50/70 px-5 py-3 text-[10px] font-bold tracking-[0.12em] text-slate-400 uppercase md:grid">
-          <span>Printer</span>
-          <span>Connection</span>
-          <span>Capabilities</span>
-          <span>Status</span>
-          <span className="text-right">Actions</span>
+          <p className="text-muted-foreground mt-3 text-xs">Default port 9100. Raw TCP with explicit timeout.</p>
         </div>
-        <div className="divide-y divide-slate-100">
-          {printers.map((printer) => (
-            <PrinterRow
-              key={printer.id}
-              printer={printer}
+      )}
+
+      <div className="flex flex-1 overflow-hidden">
+        {/* Printer list */}
+        <div className={cn('flex flex-col overflow-hidden', selected ? 'flex-1' : 'w-full')}>
+          {printers.length === 0 ? (
+            <EmptyState
+              title="No printers discovered"
+              description="Refresh discovery to scan for local system queues and USB printers, or add a network printer manually."
+            />
+          ) : (
+            <>
+              {/* Table header */}
+              <div className="border-border text-muted-foreground grid shrink-0 grid-cols-[1fr_140px_100px_80px_48px] items-center border-b px-5 py-2.5 text-xs font-medium tracking-wide uppercase">
+                <span>Printer</span>
+                <span>Connection</span>
+                <span>Status</span>
+                <span>Enabled</span>
+                <span />
+              </div>
+
+              <div className="flex-1 overflow-y-auto">
+                {printers.map((printer) => (
+                  <PrinterRow
+                    key={printer.id}
+                    printer={printer}
+                    busy={busy}
+                    selected={selectedId === printer.id}
+                    onSelect={() => setSelectedId((prev) => (prev === printer.id ? null : printer.id))}
+                    onConfigure={onConfigure}
+                    onRemove={onRemove}
+                    onTest={onTest}
+                  />
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* Detail pane */}
+        {selected && (
+          <div className="border-border w-72 shrink-0 overflow-y-auto border-l xl:w-80">
+            <PrinterDetail
+              printer={selected}
               busy={busy}
               onConfigure={onConfigure}
               onRemove={onRemove}
               onTest={onTest}
+              onClose={() => setSelectedId(null)}
             />
-          ))}
-        </div>
-      </Card>
-    </div>
+          </div>
+        )}
+      </div>
+    </ScreenContainer>
   );
 }
 
 function PrinterRow({
   printer,
   busy,
+  selected,
+  onSelect,
   onConfigure,
   onRemove,
   onTest,
 }: {
   printer: PrinterSummary;
   busy: string | null;
-  onConfigure: (printerId: string, changes: { displayName?: string; enabled?: boolean }) => Promise<void>;
-  onRemove: (printerId: string) => Promise<void>;
-  onTest: (printerId: string) => Promise<void>;
+  selected: boolean;
+  onSelect: () => void;
+  onConfigure: (id: string, changes: { displayName?: string; enabled?: boolean }) => Promise<void>;
+  onRemove: (id: string) => Promise<void>;
+  onTest: (id: string) => Promise<void>;
 }) {
-  const Icon =
-    printer.connectionType === 'network'
-      ? EthernetPort
-      : printer.connectionType === 'virtual'
-        ? MonitorCog
-        : printer.connectionType === 'usb'
-          ? Usb
-          : Printer;
-
   return (
-    <div className="grid gap-4 px-5 py-4 md:grid-cols-[minmax(220px,1.2fr)_0.8fr_0.8fr_0.55fr_150px] md:items-center">
+    <div
+      className={cn(
+        'group grid cursor-pointer grid-cols-[1fr_140px_100px_80px_48px] items-center border-b border-border/50 px-5 py-3.5 transition-colors',
+        selected ? 'bg-primary/5' : 'hover:bg-accent/30',
+      )}
+      onClick={onSelect}
+      tabIndex={0}
+      role="row"
+      aria-selected={selected}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onSelect();
+        }
+      }}
+    >
+      {/* Name + icon */}
       <div className="flex min-w-0 items-center gap-3">
-        <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-500">
-          <Icon className="size-4" aria-hidden />
+        <div className="border-border bg-secondary text-muted-foreground flex size-8 shrink-0 items-center justify-center rounded-lg border">
+          <ConnectionIcon type={printer.connectionType} />
         </div>
         <div className="min-w-0">
-          <input
-            aria-label={`Display name for ${printer.displayName}`}
-            className="block w-full truncate rounded border border-transparent bg-transparent p-0 text-sm font-semibold text-slate-800 outline-none hover:border-slate-200 focus:border-blue-400 focus:px-1.5"
-            defaultValue={printer.displayName}
-            onBlur={(event) => {
-              const displayName = event.target.value.trim();
-              if (displayName && displayName !== printer.displayName) {
-                void onConfigure(printer.id, { displayName });
-              }
-            }}
-          />
-          <div className="mt-0.5 truncate text-[11px] text-slate-400">{printer.sourceName}</div>
+          <p className="text-foreground truncate text-sm font-medium">{printer.displayName}</p>
+          <p className="text-muted-foreground truncate text-xs">{printer.sourceName}</p>
         </div>
       </div>
-      <div>
-        <div className="text-xs font-semibold text-slate-600">{titleCase(printer.connectionType)}</div>
-        <div className="mt-0.5 truncate text-[11px] text-slate-400">{printer.address ?? 'Local agent'}</div>
+
+      {/* Connection */}
+      <div className="text-sm">
+        <p className="text-foreground/80">{titleCase(printer.connectionType)}</p>
+        {printer.address && (
+          <p className="text-muted-foreground truncate font-mono text-xs">{printer.address}</p>
+        )}
       </div>
-      <div className="flex flex-wrap gap-1">
-        {printer.capabilities?.widths.map((width) => (
-          <Badge key={width}>{width} mm</Badge>
-        ))}
-        {printer.capabilities?.supportsCut ? <Badge>Cut</Badge> : null}
-        {!printer.capabilities ? <span className="text-xs text-slate-400">Unknown</span> : null}
+
+      {/* Status */}
+      <div className="flex items-center gap-2 text-sm">
+        <StatusDot tone={printer.available ? 'connected' : 'offline'} />
+        <span className={printer.available ? 'text-foreground/80' : 'text-muted-foreground'}>
+          {printer.available ? 'Ready' : 'Offline'}
+        </span>
       </div>
-      <div className="flex items-center gap-2 text-xs font-semibold text-slate-600">
-        <StatusDot tone={printer.available ? 'green' : 'red'} />
-        {printer.available ? 'Ready' : 'Unavailable'}
-      </div>
-      <div className="flex items-center justify-end gap-1">
+
+      {/* Enable toggle */}
+      <div onClick={(e) => e.stopPropagation()}>
         <Toggle
           checked={printer.enabled}
           label={`${printer.enabled ? 'Disable' : 'Enable'} ${printer.displayName}`}
           onChange={(enabled) => void onConfigure(printer.id, { enabled })}
         />
-        <Button
-          variant="ghost"
-          size="icon"
-          busy={busy === `test-${printer.id}`}
-          disabled={!printer.enabled || !printer.available}
-          onClick={() => void onTest(printer.id)}
-          title="Send test print"
-        >
-          <Send className="size-4" aria-hidden />
-        </Button>
-        {printer.connectionType === 'network' ? (
-          <Button
-            variant="ghost"
-            size="icon"
-            busy={busy === `remove-${printer.id}`}
-            onClick={() => void onRemove(printer.id)}
-            title="Remove printer"
+      </div>
+
+      {/* Context menu */}
+      <div onClick={(e) => e.stopPropagation()}>
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            render={
+              <button
+                type="button"
+                className="text-muted-foreground hover:text-foreground flex size-8 items-center justify-center rounded-md opacity-0 transition-all group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                aria-label={`Actions for ${printer.displayName}`}
+              />
+            }
           >
-            <Trash2 className="size-4 text-red-500" aria-hidden />
-          </Button>
-        ) : (
-          <Button variant="ghost" size="icon" disabled title="More actions">
-            <MoreHorizontal className="size-4" aria-hidden />
-          </Button>
-        )}
+            <MoreHorizontal className="size-4" strokeWidth={1.75} aria-hidden />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent side="bottom" align="end" sideOffset={4}>
+            <DropdownMenuItem
+              onClick={() => void onConfigure(printer.id, { enabled: !printer.enabled })}
+            >
+              {printer.enabled ? 'Disable' : 'Enable'}
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              disabled={!printer.enabled || !printer.available || !!busy?.startsWith('test')}
+              onClick={() => void onTest(printer.id)}
+            >
+              <Send className="size-3.5" aria-hidden />
+              Test print
+            </DropdownMenuItem>
+            {printer.connectionType === 'network' && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  variant="destructive"
+                  disabled={busy === `remove-${printer.id}`}
+                  onClick={() => void onRemove(printer.id)}
+                >
+                  <Trash2 className="size-3.5" aria-hidden />
+                  Remove
+                </DropdownMenuItem>
+              </>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
     </div>
+  );
+}
+
+function PrinterDetail({
+  printer,
+  busy,
+  onConfigure,
+  onRemove,
+  onTest,
+  onClose,
+}: {
+  printer: PrinterSummary;
+  busy: string | null;
+  onConfigure: (id: string, changes: { displayName?: string; enabled?: boolean }) => Promise<void>;
+  onRemove: (id: string) => Promise<void>;
+  onTest: (id: string) => Promise<void>;
+  onClose: () => void;
+}) {
+  const [nameEdit, setNameEdit] = useState(printer.displayName);
+
+  return (
+    <>
+      <div className="border-border flex items-center justify-between border-b px-5 py-4">
+        <p className="text-foreground text-sm font-semibold">Printer details</p>
+        <button
+          type="button"
+          onClick={onClose}
+          className="text-muted-foreground hover:text-foreground rounded-md p-1 transition-colors"
+          aria-label="Close"
+        >
+          <svg className="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden>
+            <path d="M18 6 6 18M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+
+      <div className="space-y-5 p-5">
+        {/* Editable name */}
+        <div>
+          <FieldLabel htmlFor={`name-${printer.id}`}>Display name</FieldLabel>
+          <input
+            id={`name-${printer.id}`}
+            className={inputClass}
+            value={nameEdit}
+            onChange={(e) => setNameEdit(e.target.value)}
+            onBlur={() => {
+              const name = nameEdit.trim();
+              if (name && name !== printer.displayName) {
+                void onConfigure(printer.id, { displayName: name });
+              }
+            }}
+          />
+        </div>
+
+        {/* State */}
+        <div>
+          <p className="text-muted-foreground mb-2.5 text-xs font-semibold tracking-wide uppercase">Status</p>
+          <div className="flex items-center gap-2.5 text-sm">
+            <StatusDot tone={printer.available ? 'connected' : 'offline'} />
+            <span className="text-foreground/80">{printer.available ? 'Available' : 'Unavailable'}</span>
+            <span className="text-border">·</span>
+            <span className="text-foreground/80">{printer.enabled ? 'Enabled' : 'Disabled'}</span>
+          </div>
+        </div>
+
+        {/* Metadata */}
+        <div>
+          <p className="text-muted-foreground mb-2.5 text-xs font-semibold tracking-wide uppercase">Details</p>
+          <div className="space-y-2">
+            <Row label="Source">{printer.sourceName}</Row>
+            <Row label="Connection">{titleCase(printer.connectionType)}</Row>
+            {printer.address && <Row label="Address">{printer.address}</Row>}
+            <Row label="ID">{printer.id}</Row>
+          </div>
+        </div>
+
+        {/* Capabilities */}
+        {printer.capabilities && (
+          <div>
+            <p className="text-muted-foreground mb-2.5 text-xs font-semibold tracking-wide uppercase">Capabilities</p>
+            <div className="flex flex-wrap gap-1.5">
+              {printer.capabilities.widths.map((w) => (
+                <Cap key={w}>{w}mm</Cap>
+              ))}
+              {printer.capabilities.supportsCut && <Cap>cut</Cap>}
+              {printer.capabilities.supportsQr && <Cap>qr</Cap>}
+              {printer.capabilities.documentTypes.map((t) => (
+                <Cap key={t}>{t}</Cap>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Security boundary */}
+        <div className="border-border bg-card/60 rounded-lg border px-4 py-3 text-xs leading-5">
+          <p className="text-muted-foreground/80 mb-1 font-semibold">Security boundary</p>
+          <p className="text-muted-foreground/70">
+            Discovered locally · {printer.enabled ? 'Enabled for OPPA' : 'Not enabled'} ·{' '}
+            {printer.enabled ? 'Eligible for job routing' : 'Not exposed to server'}
+          </p>
+        </div>
+
+        {/* Actions */}
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={!printer.enabled || !printer.available || !!busy?.startsWith('test')}
+            onClick={() => void onTest(printer.id)}
+          >
+            {busy === `test-${printer.id}` ? (
+              <RefreshCw className="size-3.5 animate-spin" aria-hidden />
+            ) : (
+              <Send className="size-3.5" aria-hidden />
+            )}
+            Test print
+          </Button>
+
+          {printer.connectionType === 'network' && (
+            <Button
+              variant="destructive"
+              size="sm"
+              disabled={busy === `remove-${printer.id}`}
+              onClick={() => void onRemove(printer.id)}
+            >
+              <Trash2 className="size-3.5" aria-hidden />
+              Remove
+            </Button>
+          )}
+        </div>
+      </div>
+    </>
+  );
+}
+
+function Row({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex flex-col gap-0.5">
+      <span className="text-muted-foreground text-xs">{label}</span>
+      <span className="text-foreground/80 font-mono text-xs break-all">{children}</span>
+    </div>
+  );
+}
+
+function Cap({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="border-border bg-secondary text-muted-foreground rounded border px-2 py-0.5 font-mono text-[11px] tracking-wide uppercase">
+      {children}
+    </span>
   );
 }

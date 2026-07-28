@@ -1,11 +1,19 @@
-import { CirclePlus, FileDown, MonitorCog, Send, Trash2 } from 'lucide-react';
+import { MonitorCog, Plus, RefreshCw, Send, Trash2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
-import { PageHeader, SectionHeading } from '@/components/page';
-import { Badge, Button, Card, EmptyState, FieldLabel, inputClassName } from '@/components/ui';
+import { EmptyState, FieldLabel, ScreenContainer, ScreenHeader, inputClass } from '@/components/ui';
+import { Button } from '@/components/ui/button';
 import { isVirtualPrinter } from '@/lib/types';
 import type { PrinterSummary, VirtualPrinterInput, VirtualPrinterMode } from '@/lib/types';
-import { formatRelativeTime, titleCase } from '@/lib/utils';
+import { cn, formatRelativeTime } from '@/lib/utils';
+
+const MODES: Array<{ value: VirtualPrinterMode; label: string; description: string }> = [
+  { value: 'always_succeed', label: 'Always succeed', description: 'All jobs complete immediately' },
+  { value: 'fail_next', label: 'Fail next job', description: 'Next job fails, then resets' },
+  { value: 'always_fail', label: 'Always fail', description: 'All jobs fail permanently' },
+  { value: 'delay', label: 'Delay submission', description: 'Jobs succeed after configured delay' },
+  { value: 'offline', label: 'Offline', description: 'Printer is unavailable' },
+];
 
 export function VirtualPrintersScreen({
   printers,
@@ -18,212 +26,235 @@ export function VirtualPrintersScreen({
   printers: PrinterSummary[];
   busy: string | null;
   onCreate: (input: VirtualPrinterInput) => Promise<void>;
-  onUpdate: (printerId: string, mode: VirtualPrinterMode, delayMs: number) => Promise<void>;
-  onClear: (printerId: string) => Promise<void>;
-  onTest: (printerId: string) => Promise<void>;
+  onUpdate: (id: string, mode: VirtualPrinterMode, delayMs: number) => Promise<void>;
+  onClear: (id: string) => Promise<void>;
+  onTest: (id: string) => Promise<void>;
 }) {
   const virtualPrinters = printers.filter(isVirtualPrinter);
   const [selectedId, setSelectedId] = useState(virtualPrinters[0]?.id ?? '');
   const [showCreate, setShowCreate] = useState(false);
-  const [input, setInput] = useState<VirtualPrinterInput>({
-    displayName: 'Receipt preview',
-    width: 80,
-  });
+  const [input, setInput] = useState<VirtualPrinterInput>({ displayName: 'Receipt preview', width: 80 });
 
   const selected = useMemo(
-    () => virtualPrinters.find((printer) => printer.id === selectedId) ?? virtualPrinters[0],
+    () => virtualPrinters.find((p) => p.id === selectedId) ?? virtualPrinters[0],
     [selectedId, virtualPrinters],
   );
 
   return (
-    <div className="mx-auto max-w-6xl">
-      <PageHeader
-        eyebrow="Development tools"
-        title="Virtual printers"
-        description="Exercise the complete delivery path without physical hardware, and inspect rendered output safely."
+    <ScreenContainer>
+      <ScreenHeader
+        title="Virtual Printer"
+        description="Simulate print delivery without hardware. Exercise the complete protocol lifecycle."
         action={
-          <Button onClick={() => setShowCreate((value) => !value)}>
-            <CirclePlus className="size-4" aria-hidden />
-            Create virtual printer
+          <Button size="sm" onClick={() => setShowCreate((v) => !v)}>
+            <Plus className="size-3" aria-hidden />
+            Create
           </Button>
         }
       />
 
-      {showCreate ? (
-        <Card className="mb-6 grid gap-4 border-blue-200 bg-blue-50/40 p-5 sm:grid-cols-[1fr_160px_auto] sm:items-end">
-          <div>
-            <FieldLabel htmlFor="virtual-name">Display name</FieldLabel>
-            <input
-              id="virtual-name"
-              className={inputClassName}
-              value={input.displayName}
-              onChange={(event) => setInput((current) => ({ ...current, displayName: event.target.value }))}
-            />
+      {showCreate && (
+        <div className="border-border bg-card/50 shrink-0 border-b px-5 py-4">
+          <p className="text-muted-foreground mb-3 text-[11px] font-semibold">New virtual printer</p>
+          <div className="flex flex-wrap items-end gap-3">
+            <div>
+              <FieldLabel htmlFor="virtual-name">Display name</FieldLabel>
+              <input
+                id="virtual-name"
+                className={cn(inputClass, 'w-48')}
+                value={input.displayName}
+                onChange={(e) => setInput((c) => ({ ...c, displayName: e.target.value }))}
+              />
+            </div>
+            <div>
+              <FieldLabel htmlFor="virtual-width">Receipt width</FieldLabel>
+              <select
+                id="virtual-width"
+                className={cn(inputClass, 'w-24')}
+                value={input.width}
+                onChange={(e) => setInput((c) => ({ ...c, width: Number(e.target.value) as 58 | 80 }))}
+              >
+                <option value={58}>58 mm</option>
+                <option value={80}>80 mm</option>
+              </select>
+            </div>
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                disabled={!input.displayName.trim() || busy === 'create-virtual-printer'}
+                onClick={() => void onCreate(input).then(() => setShowCreate(false))}
+              >
+                {busy === 'create-virtual-printer' ? <RefreshCw className="size-3 animate-spin" aria-hidden /> : null}
+                Create
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => setShowCreate(false)}>
+                Cancel
+              </Button>
+            </div>
           </div>
-          <div>
-            <FieldLabel htmlFor="virtual-width">Receipt width</FieldLabel>
-            <select
-              id="virtual-width"
-              className={inputClassName}
-              value={input.width}
-              onChange={(event) =>
-                setInput((current) => ({
-                  ...current,
-                  width: Number(event.target.value) as 58 | 80,
-                }))
-              }
-            >
-              <option value={58}>58 mm</option>
-              <option value={80}>80 mm</option>
-            </select>
-          </div>
-          <Button
-            busy={busy === 'create-virtual-printer'}
-            disabled={!input.displayName.trim()}
-            onClick={() => {
-              void onCreate(input).then(() => setShowCreate(false));
-            }}
-          >
-            Create
-          </Button>
-        </Card>
-      ) : null}
+        </div>
+      )}
 
       {virtualPrinters.length === 0 ? (
-        <Card>
-          <EmptyState
-            icon={<MonitorCog className="size-5" aria-hidden />}
-            title="No virtual printers"
-            description="Create one to test server integrations and receipt rendering without printer hardware."
-            action={<Button onClick={() => setShowCreate(true)}>Create virtual printer</Button>}
-          />
-        </Card>
+        <EmptyState
+          title="No virtual printers"
+          description="Create a virtual printer to test server integrations and inspect rendered output without physical hardware."
+          action={
+            <Button size="sm" onClick={() => setShowCreate(true)}>
+              <Plus className="size-3" aria-hidden />
+              Create virtual printer
+            </Button>
+          }
+        />
       ) : (
-        <div className="grid gap-6 xl:grid-cols-[280px_1fr]">
-          <Card className="h-fit p-3">
-            <div className="px-2 pt-1 pb-2 text-[10px] font-bold tracking-[0.14em] text-slate-400 uppercase">
-              Virtual targets
+        <div className="flex flex-1 overflow-hidden">
+          {/* Sidebar list */}
+          <div className="border-border bg-card/30 w-48 shrink-0 overflow-y-auto border-r xl:w-56">
+            <div className="px-3 pt-3 pb-1">
+              <p className="text-muted-foreground/50 text-[10px] font-semibold tracking-wider uppercase">
+                Virtual targets
+              </p>
             </div>
-            <div className="space-y-1">
+            <div className="space-y-0.5 p-1.5">
               {virtualPrinters.map((printer) => (
                 <button
                   key={printer.id}
-                  className={`flex w-full items-center gap-3 rounded-lg px-3 py-3 text-left transition ${
-                    selected?.id === printer.id ? 'bg-slate-950 text-white' : 'hover:bg-slate-100'
-                  }`}
-                  onClick={() => setSelectedId(printer.id)}
                   type="button"
+                  onClick={() => setSelectedId(printer.id)}
+                  className={cn(
+                    'flex w-full items-center gap-2.5 rounded px-2.5 py-2 text-left text-[11px] transition-colors',
+                    selected?.id === printer.id
+                      ? 'bg-primary/10 text-primary'
+                      : 'text-muted-foreground hover:bg-accent hover:text-foreground',
+                  )}
                 >
-                  <MonitorCog className="size-4 shrink-0" aria-hidden />
+                  <MonitorCog className="size-3.5 shrink-0" aria-hidden />
                   <div className="min-w-0">
-                    <div className="truncate text-sm font-semibold">{printer.displayName}</div>
-                    <div className="mt-0.5 text-[11px] text-slate-400">{printer.history.length} captured outputs</div>
+                    <p className="truncate font-medium">{printer.displayName}</p>
+                    <p className="text-muted-foreground/60 text-[10px]">{printer.history.length} captured</p>
                   </div>
                 </button>
               ))}
             </div>
-          </Card>
+          </div>
 
-          {selected ? (
-            <div className="space-y-6">
-              <Card className="p-5">
-                <SectionHeading
-                  title={selected.displayName}
-                  description="Submission simulation"
-                  action={
-                    <Button
-                      variant="secondary"
-                      busy={busy === `test-${selected.id}`}
-                      onClick={() => void onTest(selected.id)}
-                    >
-                      <Send className="size-4" aria-hidden />
-                      Test print
-                    </Button>
-                  }
-                />
-                <div className="grid gap-4 sm:grid-cols-2">
+          {/* Detail */}
+          {selected && (
+            <div className="flex flex-1 flex-col overflow-hidden">
+              {/* Controls */}
+              <div className="border-border shrink-0 border-b px-5 py-4">
+                <div className="mb-3 flex items-center justify-between">
                   <div>
-                    <FieldLabel htmlFor="simulation-mode">Simulation mode</FieldLabel>
+                    <p className="text-foreground text-sm font-semibold">{selected.displayName}</p>
+                    <p className="text-muted-foreground font-mono text-[11px]">{selected.id}</p>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={busy === `test-${selected.id}`}
+                    onClick={() => void onTest(selected.id)}
+                  >
+                    {busy === `test-${selected.id}` ? (
+                      <RefreshCw className="size-3 animate-spin" aria-hidden />
+                    ) : (
+                      <Send className="size-3" aria-hidden />
+                    )}
+                    Test print
+                  </Button>
+                </div>
+
+                {/* Simulation mode */}
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div>
+                    <FieldLabel htmlFor={`mode-${selected.id}`}>Simulation mode</FieldLabel>
                     <select
-                      id="simulation-mode"
-                      className={inputClassName}
+                      id={`mode-${selected.id}`}
+                      className={inputClass}
                       value={selected.mode}
-                      onChange={(event) => {
-                        const mode = event.target.value as VirtualPrinterMode;
+                      onChange={(e) => {
+                        const mode = e.target.value as VirtualPrinterMode;
                         void onUpdate(selected.id, mode, selected.delayMs);
                       }}
                     >
-                      <option value="always_succeed">Always succeed</option>
-                      <option value="fail_next">Fail next job</option>
-                      <option value="always_fail">Always fail</option>
-                      <option value="delay">Delay submission</option>
-                      <option value="offline">Offline</option>
+                      {MODES.map((m) => (
+                        <option key={m.value} value={m.value}>
+                          {m.label}
+                        </option>
+                      ))}
                     </select>
+                    <p className="text-muted-foreground/60 mt-1 text-[10px]">
+                      {MODES.find((m) => m.value === selected.mode)?.description}
+                    </p>
                   </div>
                   <div>
-                    <FieldLabel htmlFor="simulation-delay">Delay in milliseconds</FieldLabel>
+                    <FieldLabel htmlFor={`delay-${selected.id}`}>Delay (ms)</FieldLabel>
                     <input
-                      id="simulation-delay"
-                      className={inputClassName}
-                      disabled={selected.mode !== 'delay'}
+                      id={`delay-${selected.id}`}
+                      className={inputClass}
+                      type="number"
                       min={0}
                       max={30_000}
-                      type="number"
+                      disabled={selected.mode !== 'delay'}
                       value={selected.delayMs}
-                      onChange={(event) => void onUpdate(selected.id, selected.mode, Number(event.target.value))}
+                      onChange={(e) => void onUpdate(selected.id, selected.mode, Number(e.target.value))}
                     />
+                    <p className="text-muted-foreground/60 mt-1 text-[10px]">Active only in delay mode.</p>
                   </div>
                 </div>
-              </Card>
+              </div>
 
-              <Card className="overflow-hidden">
-                <div className="flex items-center justify-between border-b border-slate-100 p-5">
-                  <div>
-                    <h2 className="text-sm font-bold text-slate-900">Captured output</h2>
-                    <p className="mt-1 text-xs text-slate-500">Structured previews and raw byte metadata</p>
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    busy={busy === `clear-${selected.id}`}
-                    disabled={selected.history.length === 0}
-                    onClick={() => void onClear(selected.id)}
-                  >
-                    <Trash2 className="size-3.5" aria-hidden />
-                    Clear
-                  </Button>
-                </div>
+              {/* Captured output */}
+              <div className="border-border flex shrink-0 items-center justify-between border-b px-5 py-3">
+                <p className="text-muted-foreground text-[11px] font-semibold tracking-wider uppercase">
+                  Captured output
+                </p>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={selected.history.length === 0 || busy === `clear-${selected.id}`}
+                  onClick={() => void onClear(selected.id)}
+                >
+                  <Trash2 className="size-3" aria-hidden />
+                  Clear
+                </Button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto">
                 {selected.history.length === 0 ? (
                   <EmptyState
-                    icon={<FileDown className="size-5" aria-hidden />}
-                    title="No output yet"
+                    title="No output captured"
                     description="Send a test print or deliver a job from the example server."
                   />
                 ) : (
-                  <div className="divide-y divide-slate-100">
+                  <div>
                     {selected.history.map((output) => (
-                      <div key={output.id} className="grid gap-4 p-5 lg:grid-cols-[1fr_260px]">
+                      <div
+                        key={output.id}
+                        className="border-border/50 grid gap-4 border-b px-5 py-4 lg:grid-cols-[1fr_auto]"
+                      >
                         <div>
                           <div className="flex items-center gap-2">
-                            <div className="text-sm font-semibold text-slate-800">{output.jobId}</div>
-                            <Badge tone="info">{titleCase(output.format)}</Badge>
+                            <span className="text-foreground/80 font-mono text-[11px]">{output.jobId}</span>
+                            <span className="border-border bg-secondary text-muted-foreground rounded border px-1.5 py-0.5 font-mono text-[9px] tracking-wide uppercase">
+                              {output.format}
+                            </span>
                           </div>
-                          <div className="mt-1 text-[11px] text-slate-400">
+                          <p className="text-muted-foreground/60 mt-0.5 text-[10px]">
                             {formatRelativeTime(output.createdAt)} · {output.byteLength} bytes
-                          </div>
+                          </p>
                         </div>
-                        <pre className="max-h-48 overflow-auto rounded-lg bg-slate-950 p-4 font-mono text-[10px] leading-4 text-slate-200">
+                        <pre className="border-border text-muted-foreground max-h-36 w-full overflow-auto rounded border bg-[oklch(0.07_0_0)] p-3 font-mono text-[10px] leading-4 lg:w-64">
                           {output.preview}
                         </pre>
                       </div>
                     ))}
                   </div>
                 )}
-              </Card>
+              </div>
             </div>
-          ) : null}
+          )}
         </div>
       )}
-    </div>
+    </ScreenContainer>
   );
 }

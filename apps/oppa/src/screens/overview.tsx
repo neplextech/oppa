@@ -1,10 +1,19 @@
-import { AlertTriangle, ArrowRight, CheckCircle2, Clock3, Cloud, Printer, RefreshCw, Send } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { ArrowRight, RefreshCw, TriangleAlert } from 'lucide-react';
 
-import { PageHeader, SectionHeading } from '@/components/page';
-import { Badge, Button, Card, StatusDot } from '@/components/ui';
+import {
+  DefList,
+  DefTerm,
+  DefValue,
+  EmptyState,
+  ScreenContainer,
+  ScreenHeader,
+  SectionHeader,
+  StateBadge,
+  StatusDot,
+} from '@/components/ui';
+import { Button } from '@/components/ui/button';
 import type { AgentStatus, JobSummary, PrinterSummary } from '@/lib/types';
-import { formatRelativeTime, titleCase } from '@/lib/utils';
+import { cn, formatRelativeTime, titleCase } from '@/lib/utils';
 
 export function OverviewScreen({
   status,
@@ -23,170 +32,229 @@ export function OverviewScreen({
   onNavigateJobs: () => void;
   onReconnect: () => Promise<void>;
 }) {
-  const enabled = printers.filter((printer) => printer.enabled);
-  const online = enabled.filter((printer) => printer.available);
-  const recent = jobs.slice(0, 4);
+  const enabled = printers.filter((p) => p.enabled);
+  const online = enabled.filter((p) => p.available);
+  const recent = jobs.slice(0, 12);
+  const hasErrors = status.activeErrors.length > 0;
+
+  const agentTone =
+    status.state === 'connected'
+      ? 'connected'
+      : status.state === 'degraded'
+        ? 'warning'
+        : status.state === 'disconnected'
+          ? 'error'
+          : 'pending';
 
   return (
-    <div className="mx-auto max-w-6xl">
-      <PageHeader
-        eyebrow="Agent overview"
-        title="Everything is ready to print"
-        description={`${status.product.name} is connected, your configured printers are synchronized, and incoming jobs are processed in the background.`}
+    <ScreenContainer>
+      <ScreenHeader
+        title="Overview"
+        description="Operational status and recent activity"
         action={
-          <Button variant="secondary" busy={busy === 'reconnect'} onClick={() => void onReconnect()}>
-            <RefreshCw className="size-4" aria-hidden />
+          <Button variant="outline" size="sm" disabled={busy === 'reconnect'} onClick={() => void onReconnect()}>
+            {busy === 'reconnect' ? (
+              <RefreshCw className="size-3 animate-spin" aria-hidden />
+            ) : (
+              <RefreshCw className="size-3" aria-hidden />
+            )}
             Reconnect
           </Button>
         }
       />
 
-      {status.activeErrors.length > 0 ? (
-        <Card className="mb-6 flex items-start gap-3 border-amber-200 bg-amber-50 p-4">
-          <AlertTriangle className="mt-0.5 size-4 text-amber-600" aria-hidden />
-          <div>
-            <div className="text-sm font-semibold text-amber-900">Action required</div>
-            <ul className="mt-1 space-y-1 text-xs text-amber-700">
-              {status.activeErrors.map((message) => (
-                <li key={message}>{message}</li>
+      {/* Active errors */}
+      {hasErrors && (
+        <div className="flex shrink-0 items-start gap-3 border-b border-[var(--color-warning)]/20 bg-[var(--color-warning)]/5 px-5 py-3">
+          <TriangleAlert className="mt-0.5 size-3.5 shrink-0 text-[var(--color-warning)]" aria-hidden />
+          <div className="min-w-0 flex-1">
+            <p className="text-[11px] font-semibold text-[var(--color-warning)]">Action required</p>
+            <ul className="mt-1 space-y-0.5 text-[11px] text-[var(--color-warning)]/70">
+              {status.activeErrors.map((msg) => (
+                <li key={msg}>{msg}</li>
               ))}
             </ul>
           </div>
-        </Card>
-      ) : null}
+        </div>
+      )}
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Metric
-          icon={<Cloud className="size-4" aria-hidden />}
-          label="Gateway"
-          value={titleCase(status.gatewayState)}
-          detail={`Connected ${formatRelativeTime(status.lastConnectionAt)}`}
-          tone="blue"
-        />
-        <Metric
-          icon={<Printer className="size-4" aria-hidden />}
-          label="Printers online"
-          value={`${online.length} / ${enabled.length}`}
-          detail={`${printers.length} discovered in total`}
-          tone="emerald"
-        />
-        <Metric
-          icon={<Clock3 className="size-4" aria-hidden />}
-          label="Pending jobs"
-          value={String(status.pendingJobs)}
-          detail="Durably stored on this device"
-          tone="amber"
-        />
-        <Metric
-          icon={<Send className="size-4" aria-hidden />}
-          label="Submitted today"
-          value={String(jobs.filter((job) => job.state === 'submitted').length)}
-          detail="Submission, not physical completion"
-          tone="slate"
-        />
+      {/* Status strip */}
+      <div className="border-border bg-card/50 shrink-0 border-b px-5 py-3">
+        <div className="flex flex-wrap items-center gap-x-8 gap-y-2">
+          <StatusItem label="Agent">
+            <StatusDot tone={agentTone} pulse={status.state === 'connecting'} />
+            <span className={cn('ml-1', agentTone === 'connected' ? 'text-[var(--color-connected)]' : '')}>
+              {titleCase(status.state)}
+            </span>
+          </StatusItem>
+          <StatusItem label="Gateway">
+            <span>{titleCase(status.gatewayState)}</span>
+          </StatusItem>
+          <StatusItem label="Printers">
+            <span>
+              {online.length}/{enabled.length} online
+            </span>
+          </StatusItem>
+          <StatusItem label="Queue">
+            <span className={cn(status.pendingJobs > 0 ? 'text-[var(--color-pending)]' : 'text-muted-foreground')}>
+              {status.pendingJobs} pending
+            </span>
+          </StatusItem>
+          <StatusItem label="Connected">
+            <span>{formatRelativeTime(status.lastConnectionAt)}</span>
+          </StatusItem>
+          {status.agentId && (
+            <StatusItem label="Agent ID">
+              <span className="font-mono text-[10px]">{status.agentId}</span>
+            </StatusItem>
+          )}
+        </div>
       </div>
 
-      <div className="mt-7 grid gap-6 xl:grid-cols-[1.25fr_0.75fr]">
-        <Card className="p-5">
-          <SectionHeading
-            title="Recent jobs"
-            description="Latest local delivery state"
-            action={
-              <Button variant="ghost" size="sm" onClick={onNavigateJobs}>
-                View all
-                <ArrowRight className="size-3.5" aria-hidden />
-              </Button>
-            }
-          />
-          <div className="divide-y divide-slate-100">
-            {recent.map((job) => (
-              <div key={job.id} className="flex items-center gap-3 py-3.5">
-                <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-500">
-                  {job.state === 'submitted' ? (
-                    <CheckCircle2 className="size-4 text-emerald-600" aria-hidden />
-                  ) : job.state === 'failed' ? (
-                    <AlertTriangle className="size-4 text-red-500" aria-hidden />
-                  ) : (
-                    <Clock3 className="size-4 text-amber-500" aria-hidden />
+      {/* Main body */}
+      <div className="flex flex-1 overflow-hidden">
+        {/* Recent jobs */}
+        <div className="border-border flex flex-1 flex-col overflow-hidden border-r">
+          <div className="border-border flex shrink-0 items-center justify-between border-b px-5 py-3">
+            <SectionHeader title="Recent jobs" />
+            <button
+              type="button"
+              onClick={onNavigateJobs}
+              className="text-muted-foreground hover:text-foreground flex items-center gap-1 text-[11px] transition-colors"
+            >
+              All jobs
+              <ArrowRight className="size-3" aria-hidden />
+            </button>
+          </div>
+
+          <div className="flex-1 overflow-y-auto">
+            {recent.length === 0 ? (
+              <EmptyState
+                title="No jobs yet"
+                description="Jobs will appear here once the agent receives work from the server."
+              />
+            ) : (
+              <table className="w-full text-[11px]">
+                <thead className="bg-background/95 sticky top-0 backdrop-blur-sm">
+                  <tr className="border-border border-b text-left">
+                    <th className="text-muted-foreground px-5 py-2 font-medium">State</th>
+                    <th className="text-muted-foreground px-3 py-2 font-medium">Job ID</th>
+                    <th className="text-muted-foreground hidden px-3 py-2 font-medium md:table-cell">Printer</th>
+                    <th className="text-muted-foreground px-3 py-2 text-right font-medium">Received</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {recent.map((job) => (
+                    <JobRow key={job.id} job={job} />
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+
+        {/* Agent health */}
+        <div className="w-64 shrink-0 overflow-y-auto xl:w-72">
+          <div className="border-border flex items-center justify-between border-b px-4 py-3">
+            <SectionHeader title="Health" />
+            <button
+              type="button"
+              onClick={onNavigatePrinters}
+              className="text-muted-foreground hover:text-foreground text-[11px] transition-colors"
+            >
+              Manage
+            </button>
+          </div>
+
+          <div className="space-y-4 px-4 py-3">
+            {/* System health */}
+            <div>
+              <p className="text-muted-foreground/60 mb-2 text-[10px] font-semibold tracking-wider uppercase">System</p>
+              <DefList>
+                <DefTerm>State</DefTerm>
+                <DefValue className={agentTone === 'connected' ? 'text-[var(--color-connected)]' : ''}>
+                  {titleCase(status.state)}
+                </DefValue>
+                <DefTerm>Product</DefTerm>
+                <DefValue>{status.product.id}</DefValue>
+                <DefTerm>Version</DefTerm>
+                <DefValue>v{status.version}</DefValue>
+                <DefTerm>Platform</DefTerm>
+                <DefValue>{status.platform}</DefValue>
+              </DefList>
+            </div>
+
+            {/* Printer health */}
+            <div>
+              <p className="text-muted-foreground/60 mb-2 text-[10px] font-semibold tracking-wider uppercase">
+                Printers
+              </p>
+              {enabled.length === 0 ? (
+                <p className="text-muted-foreground/60 text-[11px]">No printers enabled.</p>
+              ) : (
+                <div className="space-y-1">
+                  {enabled.slice(0, 6).map((printer) => (
+                    <div key={printer.id} className="flex items-center gap-2 text-[11px]">
+                      <StatusDot tone={printer.available ? 'connected' : 'error'} />
+                      <span className="text-foreground/80 flex-1 truncate">{printer.displayName}</span>
+                      <span className="text-muted-foreground/60 shrink-0">
+                        {printer.available ? 'ready' : 'offline'}
+                      </span>
+                    </div>
+                  ))}
+                  {enabled.length > 6 && (
+                    <p className="text-muted-foreground/50 text-[11px]">+{enabled.length - 6} more</p>
                   )}
                 </div>
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-sm font-semibold text-slate-800">{job.id}</div>
-                  <div className="mt-0.5 truncate text-xs text-slate-400">
-                    {job.printerName} · {formatRelativeTime(job.updatedAt)}
-                  </div>
-                </div>
-                <Badge tone={job.state === 'submitted' ? 'success' : job.state === 'failed' ? 'danger' : 'warning'}>
-                  {titleCase(job.state)}
-                </Badge>
-              </div>
-            ))}
-          </div>
-        </Card>
+              )}
+            </div>
 
-        <Card className="overflow-hidden">
-          <div className="border-b border-slate-100 p-5">
-            <SectionHeading
-              title="Printer health"
-              description="Enabled local targets"
-              action={
-                <Button variant="ghost" size="sm" onClick={onNavigatePrinters}>
-                  Manage
-                </Button>
-              }
-            />
+            {/* Queue stats */}
+            <div>
+              <p className="text-muted-foreground/60 mb-2 text-[10px] font-semibold tracking-wider uppercase">Queue</p>
+              <DefList>
+                <DefTerm>Pending</DefTerm>
+                <DefValue>{status.pendingJobs}</DefValue>
+                <DefTerm>Total</DefTerm>
+                <DefValue>{jobs.length}</DefValue>
+                <DefTerm>Failed</DefTerm>
+                <DefValue
+                  className={jobs.filter((j) => j.state === 'failed').length > 0 ? 'text-[var(--color-error)]' : ''}
+                >
+                  {jobs.filter((j) => j.state === 'failed').length}
+                </DefValue>
+              </DefList>
+            </div>
           </div>
-          <div className="space-y-1 p-3">
-            {enabled.slice(0, 5).map((printer) => (
-              <div key={printer.id} className="flex items-center gap-3 rounded-lg px-3 py-2.5 hover:bg-slate-50">
-                <StatusDot tone={printer.available ? 'green' : 'red'} />
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-sm font-semibold text-slate-700">{printer.displayName}</div>
-                  <div className="truncate text-[11px] text-slate-400">{titleCase(printer.connectionType)}</div>
-                </div>
-                <span className="text-[11px] font-medium text-slate-400">
-                  {printer.available ? 'Ready' : 'Unavailable'}
-                </span>
-              </div>
-            ))}
-          </div>
-        </Card>
+        </div>
       </div>
+    </ScreenContainer>
+  );
+}
+
+function StatusItem({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-baseline gap-1.5 text-[11px]">
+      <span className="text-muted-foreground/60">{label}</span>
+      <span className="text-foreground/80 flex items-center gap-1 font-mono">{children}</span>
     </div>
   );
 }
 
-function Metric({
-  icon,
-  label,
-  value,
-  detail,
-  tone,
-}: {
-  icon: ReactNode;
-  label: string;
-  value: string;
-  detail: string;
-  tone: 'blue' | 'emerald' | 'amber' | 'slate';
-}) {
+function JobRow({ job }: { job: JobSummary }) {
   return (
-    <Card className="p-5">
-      <div
-        className={`flex size-8 items-center justify-center rounded-lg ${
-          tone === 'blue'
-            ? 'bg-blue-50 text-blue-600'
-            : tone === 'emerald'
-              ? 'bg-emerald-50 text-emerald-600'
-              : tone === 'amber'
-                ? 'bg-amber-50 text-amber-600'
-                : 'bg-slate-100 text-slate-600'
-        }`}
-      >
-        {icon}
-      </div>
-      <div className="mt-4 text-xs font-semibold text-slate-500">{label}</div>
-      <div className="mt-1 text-2xl font-bold tracking-[-0.025em] text-slate-950">{value}</div>
-      <div className="mt-1 text-[11px] leading-4 text-slate-400">{detail}</div>
-    </Card>
+    <tr className="border-border/50 hover:bg-accent/30 border-b transition-colors">
+      <td className="px-5 py-2">
+        <StateBadge state={job.state} />
+      </td>
+      <td className="px-3 py-2">
+        <span className="text-foreground/80 font-mono text-[10px]">{job.id}</span>
+        {job.error && <p className="mt-0.5 truncate text-[10px] text-[var(--color-error)]/70">{job.error}</p>}
+      </td>
+      <td className="hidden px-3 py-2 md:table-cell">
+        <span className="text-foreground/70 truncate">{job.printerName}</span>
+      </td>
+      <td className="text-muted-foreground px-3 py-2 text-right">{formatRelativeTime(job.updatedAt)}</td>
+    </tr>
   );
 }
