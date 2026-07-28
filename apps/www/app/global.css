@@ -7,11 +7,6 @@
   --font-mono: var(--font-mono);
 }
 
-:root {
-  --brand-blue: #2563eb;
-  --brand-ink: #07111f;
-}
-
 body {
   font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
 }
@@ -21,10 +16,38 @@ pre {
   font-family: var(--font-mono), ui-monospace, monospace;
 }
 
-.landing-grid {
-  background-image:
-    linear-gradient(to right, rgb(148 163 184 / 0.09) 1px, transparent 1px),
-    linear-gradient(to bottom, rgb(148 163 184 / 0.09) 1px, transparent 1px);
-  background-size: 48px 48px;
-  mask-image: linear-gradient(to bottom, black, transparent 88%);
+/* Shiki emits its own inline colors; the block chrome (border, bg,
+   filename row) is supplied by CodeBlock, so the <pre> only needs to
+   go edge-to-edge and stay transparent against it. */
+.code-block pre.shiki {
+  background: transparent !important;
+  margin: 0;
+  padding: 0 1rem;
+}
+
+.code-block code {
+  display: block;
+  counter-reset: line;
+}
+
+.code-block[data-line-numbers] .line::before {
+  counter-increment: line;
+  content: counter(line);
+  display: inline-block;
+  width: 1.75rem;
+  margin-right: 1rem;
+  text-align: right;
+  color: #57534e;
+  user-select: none;
+}
+
+.code-block .line {
+  display: inline-block;
+  width: 100%;
+  padding-inline: 0.125rem;
+}
+
+.code-block .highlighted-line {
+  background: color-mix(in srgb, #f0a568 10%, transparent);
+  box-shadow: inset 2px 0 0 #f0a568;
 }
