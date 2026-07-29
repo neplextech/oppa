@@ -13,10 +13,34 @@ interface Step {
 }
 
 const steps: Step[] = [
-  { hop: 'application', event: 'job.submit', status: 'queued', offset: '+0ms', tone: 'neutral' },
-  { hop: 'openprinter', event: 'job.deliver', status: 'delivered', offset: '+17ms', tone: 'neutral' },
-  { hop: 'oppa', event: 'job.received', status: 'received', offset: '+43ms', tone: 'accent' },
-  { hop: 'oppa', event: 'job.acknowledged', status: 'persisted', offset: '+1501ms', tone: 'success' },
+  {
+    hop: 'application',
+    event: 'job.submit',
+    status: 'queued',
+    offset: '+0ms',
+    tone: 'neutral',
+  },
+  {
+    hop: 'openprinter',
+    event: 'job.deliver',
+    status: 'delivered',
+    offset: '+17ms',
+    tone: 'neutral',
+  },
+  {
+    hop: 'oppa',
+    event: 'job.received',
+    status: 'received',
+    offset: '+43ms',
+    tone: 'accent',
+  },
+  {
+    hop: 'oppa',
+    event: 'job.acknowledged',
+    status: 'persisted',
+    offset: '+1501ms',
+    tone: 'success',
+  },
 ];
 
 const toneDot: Record<Tone, string> = {

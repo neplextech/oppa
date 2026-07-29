@@ -75,9 +75,10 @@ export default function HomePage() {
         <div className="mx-auto max-w-6xl px-6 pt-16 pb-20 lg:px-8 lg:pt-20 lg:pb-24">
           <div className="grid gap-14 lg:grid-cols-[1fr_1fr] lg:items-start">
             <div>
-              <div className="font-mono text-[12px] text-stone-500">OPPA / OPENPRINTER</div>
+              <div className="font-mono text-[12px] text-stone-500">OPENPRINTER / OPPA</div>
               <h1 className="mt-5 max-w-lg text-[2.5rem] leading-[1.1] font-semibold tracking-[-0.02em] text-balance sm:text-[2.9rem]">
-                A safe bridge between cloud applications and <span className="text-orange-400">local printers</span>.
+                A safe bridge between <span className="text-emerald-400">cloud applications</span> and{' '}
+                <span className="text-orange-400">local printers</span>.
               </h1>
               <p className="mt-5 max-w-md text-[14px] leading-6 text-stone-400">
                 The <span className="text-stone-300">Open Printer Proxy Agent (OPPA)</span> discovers printers and
