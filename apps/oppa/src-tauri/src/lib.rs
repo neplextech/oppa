@@ -70,6 +70,7 @@ pub fn run() {
             commands::create_virtual_printer,
             commands::update_virtual_printer,
             commands::clear_virtual_history,
+            commands::set_virtual_printer_sound,
             commands::send_test_print,
             commands::list_recent_jobs,
             commands::get_diagnostics,

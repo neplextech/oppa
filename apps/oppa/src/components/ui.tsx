@@ -108,7 +108,7 @@ export function SectionHeader({
   return (
     <div className={cn('flex items-start justify-between gap-4', className)}>
       <div>
-        <h2 className="text-muted-foreground text-[11px] font-semibold tracking-wider uppercase">{title}</h2>
+        <h2 className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">{title}</h2>
         {description && <p className="text-muted-foreground/70 mt-0.5 text-xs">{description}</p>}
       </div>
       {action}
@@ -132,10 +132,10 @@ export function ScreenHeader({
   action?: ReactNode;
 }) {
   return (
-    <div className="border-border flex shrink-0 items-start justify-between gap-4 border-b px-5 py-4">
+    <div className="border-border flex shrink-0 items-start justify-between gap-4 border-b px-5 py-5">
       <div>
-        <h1 className="text-foreground text-sm font-semibold">{title}</h1>
-        {description && <p className="text-muted-foreground mt-0.5 text-xs">{description}</p>}
+        <h1 className="text-foreground text-base font-semibold">{title}</h1>
+        {description && <p className="text-muted-foreground mt-0.5 text-sm">{description}</p>}
       </div>
       {action && <div className="shrink-0">{action}</div>}
     </div>
@@ -147,8 +147,8 @@ export function ScreenHeader({
 export function EmptyState({ title, description, action }: { title: string; description: string; action?: ReactNode }) {
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 py-12 text-center">
-      <p className="text-foreground/70 text-xs font-semibold">{title}</p>
-      <p className="text-muted-foreground max-w-xs text-[11px] leading-5">{description}</p>
+      <p className="text-foreground/70 text-sm font-semibold">{title}</p>
+      <p className="text-muted-foreground max-w-xs text-xs leading-5">{description}</p>
       {action && <div className="mt-2">{action}</div>}
     </div>
   );
@@ -206,11 +206,11 @@ export function Toggle({
 
 export function FieldLabel({ htmlFor, children }: { htmlFor: string; children: ReactNode }) {
   return (
-    <label htmlFor={htmlFor} className="text-muted-foreground mb-1 block text-[11px] font-medium">
+    <label htmlFor={htmlFor} className="text-muted-foreground mb-1 block text-xs font-medium">
       {children}
     </label>
   );
 }
 
 export const inputClass =
-  'h-8 w-full rounded border border-border bg-secondary px-2.5 text-xs text-foreground outline-none placeholder:text-muted-foreground/50 focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition disabled:opacity-50';
+  'h-9 w-full rounded border border-border bg-secondary px-3 text-sm text-foreground outline-none placeholder:text-muted-foreground/50 focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition disabled:opacity-50';

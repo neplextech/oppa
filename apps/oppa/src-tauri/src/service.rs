@@ -46,6 +46,8 @@ use crate::{
     virtual_spooler::PerPrinterVirtualSpooler,
 };
 
+use oppa_core::PrinterId;
+
 pub const STATE_CHANGED_EVENT: &str = "oppa://state-changed";
 pub const PRINTERS_CHANGED_EVENT: &str = "oppa://printers-changed";
 pub const JOBS_CHANGED_EVENT: &str = "oppa://jobs-changed";
@@ -75,6 +77,7 @@ pub struct DesktopService {
     pub(crate) provider_generation: AtomicU64,
     authorization_active: AtomicBool,
     connection_control: mpsc::Sender<ConnectionControl>,
+    virtual_spooler: Arc<PerPrinterVirtualSpooler>,
 }
 
 impl DesktopService {
@@ -159,7 +162,7 @@ impl DesktopService {
             active_errors: credential_error.into_iter().collect(),
         });
 
-        let virtual_spooler = Arc::new(PerPrinterVirtualSpooler::default());
+        let virtual_spooler = Arc::new(PerPrinterVirtualSpooler::new(app.clone()));
         let catalog = Arc::new(
             PrinterCatalog::load(
                 storage.clone(),
@@ -193,7 +196,9 @@ impl DesktopService {
         let mut spoolers = SpoolerRegistry::new();
         spoolers.register(Arc::new(RawTcpSpooler::default()));
         spoolers.register(Arc::new(SystemQueueSpooler::default()));
-        spoolers.register(virtual_spooler);
+        let virtual_spooler_for_registry: Arc<PerPrinterVirtualSpooler> =
+            Arc::clone(&virtual_spooler);
+        spoolers.register(virtual_spooler_for_registry);
 
         let (outbound_sender, outbound_receiver) =
             mpsc::channel::<OutboundRequest>(OUTBOUND_CHANNEL_CAPACITY);
@@ -238,6 +243,7 @@ impl DesktopService {
             provider_generation: AtomicU64::new(0),
             authorization_active: AtomicBool::new(false),
             connection_control,
+            virtual_spooler,
         });
 
         service.spawn_observers();
@@ -454,6 +460,19 @@ impl DesktopService {
         self.catalog.clear_virtual_history(printer_id).await?;
         self.emit(PRINTERS_CHANGED_EVENT);
         Ok(())
+    }
+
+    pub async fn set_virtual_printer_sound(
+        &self,
+        printer_id: &str,
+        enabled: bool,
+    ) -> Result<(), CommandError> {
+        let id = PrinterId::new(printer_id)
+            .map_err(|_| CommandError::invalid("Invalid printer ID."))?;
+        self.virtual_spooler
+            .set_sound(&id, enabled)
+            .await
+            .map_err(|error| CommandError::new("printer_not_found", error.to_string()))
     }
 
     pub async fn remove_printer(&self, printer_id: &str) -> Result<(), CommandError> {

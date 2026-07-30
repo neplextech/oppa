@@ -1,5 +1,6 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
+import { HashRouter } from 'react-router-dom';
 
 import App from './App';
 import { UpdaterProvider } from './components/updater-provider';
@@ -13,7 +14,9 @@ document.addEventListener('contextmenu', (event) => {
 ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
   <React.StrictMode>
     <UpdaterProvider>
-      <App />
+      <HashRouter>
+        <App />
+      </HashRouter>
     </UpdaterProvider>
   </React.StrictMode>,
 );

@@ -97,6 +97,15 @@ pub async fn clear_virtual_history(
 }
 
 #[tauri::command]
+pub async fn set_virtual_printer_sound(
+    service: State<'_, Arc<DesktopService>>,
+    printer_id: String,
+    enabled: bool,
+) -> Result<(), CommandError> {
+    service.set_virtual_printer_sound(&printer_id, enabled).await
+}
+
+#[tauri::command]
 pub async fn send_test_print(
     service: State<'_, Arc<DesktopService>>,
     printer_id: String,

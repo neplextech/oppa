@@ -168,10 +168,11 @@
     @apply bg-background text-foreground;
     min-height: 100dvh;
     overflow: hidden;
-    font-size: 13px;
+    font-size: 15px;
   }
   html {
     @apply font-sans;
+    font-size: 15px;
   }
 }
 

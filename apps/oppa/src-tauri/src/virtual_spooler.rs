@@ -1,4 +1,11 @@
-use std::{collections::HashMap, sync::Arc, time::Duration};
+use std::{
+    collections::HashMap,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::Duration,
+};
 
 use async_trait::async_trait;
 use oppa_core::PrinterId;
@@ -7,15 +14,20 @@ use oppa_spooler::{
     Spooler, SpoolerError, SpoolerResult, SubmissionRequest, VirtualSimulation, VirtualSpooler,
     VirtualSubmission,
 };
+use tauri::{AppHandle, Emitter};
 use tokio::sync::{Mutex, RwLock};
 use tokio_util::sync::CancellationToken;
 
 use crate::models::VirtualPrinterMode;
 
+pub const PRINTER_SOUND_EVENT: &str = "oppa://printer-sound";
+const SOUND_MIN_DELAY_MS: u64 = 3_500;
+
 struct VirtualDevice {
     spooler: VirtualSpooler,
     policy: Mutex<(VirtualPrinterMode, u64)>,
     submission: Mutex<()>,
+    sound_enabled: AtomicBool,
 }
 
 impl VirtualDevice {
@@ -24,6 +36,7 @@ impl VirtualDevice {
             spooler: VirtualSpooler::default(),
             policy: Mutex::new((mode, delay_ms)),
             submission: Mutex::new(()),
+            sound_enabled: AtomicBool::new(false),
         }
     }
 }
@@ -31,10 +44,18 @@ impl VirtualDevice {
 /// Routes each virtual printer through an isolated bounded `VirtualSpooler`.
 #[derive(Default)]
 pub struct PerPrinterVirtualSpooler {
+    app: Option<AppHandle>,
     devices: RwLock<HashMap<PrinterId, Arc<VirtualDevice>>>,
 }
 
 impl PerPrinterVirtualSpooler {
+    pub fn new(app: AppHandle) -> Self {
+        Self {
+            app: Some(app),
+            devices: RwLock::new(HashMap::new()),
+        }
+    }
+
     pub async fn register(&self, id: PrinterId, mode: VirtualPrinterMode, delay_ms: u64) {
         let device = self
             .devices
@@ -44,6 +65,12 @@ impl PerPrinterVirtualSpooler {
             .or_insert_with(|| Arc::new(VirtualDevice::new(mode, delay_ms)))
             .clone();
         *device.policy.lock().await = (mode, delay_ms);
+    }
+
+    pub async fn set_sound(&self, id: &PrinterId, enabled: bool) -> Result<(), SpoolerError> {
+        let device = self.device(id).await?;
+        device.sound_enabled.store(enabled, Ordering::Relaxed);
+        Ok(())
     }
 
     pub async fn remove(&self, id: &PrinterId) {
@@ -101,7 +128,19 @@ impl Spooler for PerPrinterVirtualSpooler {
             }
         };
         device.spooler.set_simulation(simulation).await;
-        device.spooler.submit(request, cancellation).await
+
+        if device.sound_enabled.load(Ordering::Relaxed) {
+            if let Some(app) = &self.app {
+                let _ = app.emit(PRINTER_SOUND_EVENT, request.printer.id.to_string());
+            }
+            let ((), result) = tokio::join!(
+                tokio::time::sleep(Duration::from_millis(SOUND_MIN_DELAY_MS)),
+                device.spooler.submit(request, cancellation)
+            );
+            result
+        } else {
+            device.spooler.submit(request, cancellation).await
+        }
     }
 }
 

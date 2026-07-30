@@ -1,6 +1,7 @@
 import { LoaderCircle } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useEffect, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 
 import { AppShell, type ScreenId } from '@/components/app-shell';
 import { ErrorBanner } from '@/components/ui';
@@ -25,6 +26,8 @@ function applyThemeClass(t: Theme) {
 const initialTheme = (localStorage.getItem('oppa-theme') as Theme | null) ?? 'system';
 applyThemeClass(initialTheme);
 
+const VALID_SCREENS = new Set<ScreenId>(['overview', 'printers', 'virtual', 'jobs', 'diagnostics', 'settings']);
+
 const SCREEN_SHORTCUTS: Record<string, ScreenId> = {
   '1': 'overview',
   '2': 'jobs',
@@ -35,8 +38,22 @@ const SCREEN_SHORTCUTS: Record<string, ScreenId> = {
 };
 
 export default function App() {
-  const [screen, setScreen] = useState<ScreenId>('overview');
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  // Derive active screen from hash URL path (/#/printers → printers)
+  const rawPath = location.pathname.slice(1) as ScreenId;
+  const screen: ScreenId = VALID_SCREENS.has(rawPath) ? rawPath : 'overview';
+
+  function setScreen(s: ScreenId) {
+    navigate('/' + s);
+  }
+
   const [theme, setThemeState] = useState<Theme>(initialTheme);
+  const [developerMode, setDeveloperModeState] = useState(
+    () => localStorage.getItem('oppa-developer-mode') === 'true',
+  );
+  const [commandOpen, setCommandOpen] = useState(false);
   const { status, printers, jobs, diagnostics, loading, busy, error, actions } = useAgent();
 
   function setTheme(t: Theme) {
@@ -44,6 +61,18 @@ export default function App() {
     setThemeState(t);
     applyThemeClass(t);
   }
+
+  function setDeveloperMode(enabled: boolean) {
+    localStorage.setItem('oppa-developer-mode', String(enabled));
+    setDeveloperModeState(enabled);
+  }
+
+  // Redirect bare root to overview
+  useEffect(() => {
+    if (!location.pathname || location.pathname === '/') {
+      navigate('/overview', { replace: true });
+    }
+  }, [location.pathname, navigate]);
 
   // Re-apply when system preference changes (while theme === 'system')
   useEffect(() => {
@@ -61,7 +90,7 @@ export default function App() {
     let disposed = false;
     let unsubscribe: () => void = () => undefined;
     void agentClient
-      .subscribeNavigation(setScreen)
+      .subscribeNavigation((s) => navigate('/' + s))
       .then((stop) => {
         if (disposed) stop();
         else unsubscribe = stop;
@@ -73,12 +102,43 @@ export default function App() {
       disposed = true;
       unsubscribe();
     };
+  }, [navigate]);
+
+  useEffect(() => {
+    let disposed = false;
+    let unsubscribe: () => void = () => undefined;
+    void agentClient
+      .subscribePrinterSound(() => {
+        const audio = new Audio('/receipt_printer_audio.mp3');
+        void audio.play().catch(() => undefined);
+      })
+      .then((stop) => {
+        if (disposed) stop();
+        else unsubscribe = stop;
+      })
+      .catch((cause: unknown) => {
+        console.error('Unable to subscribe to printer sound events.', cause);
+      });
+    return () => {
+      disposed = true;
+      unsubscribe();
+    };
   }, []);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       if (!event.metaKey && !event.ctrlKey) return;
       if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) return;
+      if (event.key === 'k') {
+        event.preventDefault();
+        setCommandOpen((v) => !v);
+        return;
+      }
+      if (event.key === 'r') {
+        event.preventDefault();
+        window.location.reload();
+        return;
+      }
       const target = SCREEN_SHORTCUTS[event.key];
       if (target) {
         event.preventDefault();
@@ -155,6 +215,7 @@ export default function App() {
         <PrintersScreen
           printers={printers}
           busy={busy}
+          developerMode={developerMode}
           onRefresh={actions.refreshPrinters}
           onConfigure={actions.configurePrinter}
           onAddManual={actions.addManualPrinter}
@@ -168,10 +229,13 @@ export default function App() {
         <VirtualPrintersScreen
           printers={printers}
           busy={busy}
+          developerMode={developerMode}
           onCreate={actions.createVirtualPrinter}
           onUpdate={actions.updateVirtualPrinter}
           onClear={actions.clearVirtualHistory}
+          onDelete={actions.removePrinter}
           onTest={actions.sendTestPrint}
+          onSetSound={actions.setVirtualPrinterSound}
         />
       );
       break;
@@ -194,7 +258,9 @@ export default function App() {
           status={status}
           busy={busy}
           theme={theme}
+          developerMode={developerMode}
           onThemeChange={setTheme}
+          onDeveloperModeChange={setDeveloperMode}
           onStartOnLogin={actions.setStartOnLogin}
           onReconnect={actions.reconnect}
           onSaveServerConfiguration={actions.setServerConfiguration}
@@ -206,7 +272,16 @@ export default function App() {
   }
 
   return (
-    <AppShell activeScreen={screen} onNavigate={setScreen} status={status} onReconnect={actions.reconnect}>
+    <AppShell
+      activeScreen={screen}
+      onNavigate={setScreen}
+      status={status}
+      developerMode={developerMode}
+      commandOpen={commandOpen}
+      onOpenCommand={() => setCommandOpen(true)}
+      onCloseCommand={() => setCommandOpen(false)}
+      onReconnect={actions.reconnect}
+    >
       {error ? <ErrorBanner message={error} onRetry={() => void actions.reload()} /> : null}
       {content}
     </AppShell>

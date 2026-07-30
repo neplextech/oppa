@@ -343,6 +343,19 @@ export const agentClient = {
     }
   },
 
+  async setVirtualPrinterSound(printerId: string, enabled: boolean): Promise<void> {
+    if (isTauri()) {
+      await command('set_virtual_printer_sound', { printerId, enabled });
+    }
+  },
+
+  async subscribePrinterSound(onSound: (printerId: string) => void): Promise<() => void> {
+    if (!isTauri()) return () => undefined;
+    return listen<string>('oppa://printer-sound', ({ payload }) => {
+      onSound(payload);
+    });
+  },
+
   async sendTestPrint(printerId: string): Promise<JobSummary> {
     if (isTauri()) {
       return command('send_test_print', { printerId });

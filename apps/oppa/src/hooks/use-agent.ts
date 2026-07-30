@@ -126,6 +126,9 @@ export function useAgent() {
           ),
         );
       },
+      setVirtualPrinterSound: async (printerId: string, enabled: boolean) => {
+        await agentClient.setVirtualPrinterSound(printerId, enabled);
+      },
       sendTestPrint: async (printerId: string) => {
         const created = await run(`test-${printerId}`, () => agentClient.sendTestPrint(printerId));
         setJobs((current) => [created, ...current]);

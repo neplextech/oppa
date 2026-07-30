@@ -1,4 +1,5 @@
 import {
+  Code2,
   Download,
   ExternalLink,
   Globe2,
@@ -35,7 +36,9 @@ export function SettingsScreen({
   status,
   busy,
   theme,
+  developerMode,
   onThemeChange,
+  onDeveloperModeChange,
   onStartOnLogin,
   onReconnect,
   onSaveServerConfiguration,
@@ -45,7 +48,9 @@ export function SettingsScreen({
   status: AgentStatus;
   busy: string | null;
   theme: Theme;
+  developerMode: boolean;
   onThemeChange: (t: Theme) => void;
+  onDeveloperModeChange: (enabled: boolean) => void;
   onStartOnLogin: (enabled: boolean) => Promise<void>;
   onReconnect: () => Promise<void>;
   onSaveServerConfiguration: (
@@ -255,6 +260,25 @@ export function SettingsScreen({
           </div>
         </Section>
 
+        {/* Developer */}
+        <Section
+          title="Developer"
+          description="Tools for integration testing and diagnostics"
+        >
+          <SettingRow
+            icon={<Code2 className="size-4" aria-hidden />}
+            title="Developer Mode"
+            description="Reveals virtual printer controls, enables Copy ID in context menus, and shows a DEV badge in the title bar."
+            control={
+              <Toggle
+                checked={developerMode}
+                label="Enable developer mode"
+                onChange={onDeveloperModeChange}
+              />
+            }
+          />
+        </Section>
+
         {/* Security */}
         <Section title="Security">
           <div className="flex items-start gap-4 px-5 py-4">
@@ -306,17 +330,17 @@ function SettingRow({
 }: {
   icon: ReactNode;
   title: string;
-  description: string;
+  description: string | ReactNode;
   control: ReactNode;
 }) {
   return (
     <div className="bg-card/30 flex items-center gap-4 px-5 py-4">
-      <div className="border-border bg-secondary text-muted-foreground flex size-8 shrink-0 items-center justify-center rounded-lg border">
+      <div className="border-border bg-secondary text-muted-foreground flex size-9 shrink-0 items-center justify-center rounded-lg border">
         {icon}
       </div>
       <div className="min-w-0 flex-1">
         <p className="text-foreground text-sm font-medium">{title}</p>
-        <p className="text-muted-foreground mt-0.5 text-xs leading-4">
+        <p className="text-muted-foreground mt-0.5 text-xs leading-5">
           {description}
         </p>
       </div>

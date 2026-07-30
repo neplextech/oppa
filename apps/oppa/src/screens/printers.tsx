@@ -1,4 +1,5 @@
 import {
+  ClipboardCopy,
   EthernetPort,
   MoreHorizontal,
   MonitorCog,
@@ -41,6 +42,7 @@ function ConnectionIcon({ type }: { type: PrinterSummary['connectionType'] }) {
 export function PrintersScreen({
   printers,
   busy,
+  developerMode,
   onRefresh,
   onConfigure,
   onAddManual,
@@ -49,6 +51,7 @@ export function PrintersScreen({
 }: {
   printers: PrinterSummary[];
   busy: string | null;
+  developerMode: boolean;
   onRefresh: () => Promise<void>;
   onConfigure: (id: string, changes: { displayName?: string; enabled?: boolean }) => Promise<void>;
   onAddManual: (input: ManualPrinterInput) => Promise<void>;
@@ -172,6 +175,7 @@ export function PrintersScreen({
                     printer={printer}
                     busy={busy}
                     selected={selectedId === printer.id}
+                    developerMode={developerMode}
                     onSelect={() => setSelectedId((prev) => (prev === printer.id ? null : printer.id))}
                     onOpenDetails={() => setSelectedId(printer.id)}
                     onConfigure={onConfigure}
@@ -206,6 +210,7 @@ function PrinterRow({
   printer,
   busy,
   selected,
+  developerMode,
   onSelect,
   onOpenDetails,
   onConfigure,
@@ -215,6 +220,7 @@ function PrinterRow({
   printer: PrinterSummary;
   busy: string | null;
   selected: boolean;
+  developerMode: boolean;
   onSelect: () => void;
   onOpenDetails: () => void;
   onConfigure: (id: string, changes: { displayName?: string; enabled?: boolean }) => Promise<void>;
@@ -299,6 +305,15 @@ function PrinterRow({
                 <Send className="size-3.5" aria-hidden />
                 Test print
               </DropdownMenuItem>
+              {developerMode && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => void navigator.clipboard.writeText(printer.id)}>
+                    <ClipboardCopy className="size-3.5" aria-hidden />
+                    Copy ID
+                  </DropdownMenuItem>
+                </>
+              )}
               {printer.connectionType === 'network' && (
                 <>
                   <DropdownMenuSeparator />
@@ -334,6 +349,17 @@ function PrinterRow({
             Send test print
           </ContextMenuItem>
         </ContextMenuGroup>
+        {developerMode && (
+          <>
+            <ContextMenuSeparator />
+            <ContextMenuGroup>
+              <ContextMenuItem onClick={() => void navigator.clipboard.writeText(printer.id)}>
+                <ClipboardCopy className="size-4" aria-hidden />
+                Copy ID
+              </ContextMenuItem>
+            </ContextMenuGroup>
+          </>
+        )}
         {printer.connectionType === 'network' ? (
           <>
             <ContextMenuSeparator />

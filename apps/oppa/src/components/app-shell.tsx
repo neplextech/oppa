@@ -1,6 +1,5 @@
 import { Activity, Command, FileClock, Globe2, MonitorCog, Printer, ScrollText, Settings2 } from 'lucide-react';
 import type { ReactNode } from 'react';
-import { useState } from 'react';
 
 import { CommandMenu } from '@/components/command-menu';
 import type { AgentStatus } from '@/lib/types';
@@ -8,11 +7,11 @@ import { cn, titleCase } from '@/lib/utils';
 
 export type ScreenId = 'overview' | 'printers' | 'virtual' | 'jobs' | 'diagnostics' | 'settings';
 
-const primaryNav: Array<{ id: ScreenId; label: string; icon: typeof Activity; shortcut: string }> = [
+const ALL_NAV: Array<{ id: ScreenId; label: string; icon: typeof Activity; shortcut: string; devOnly?: boolean }> = [
   { id: 'overview', label: 'Overview', icon: Activity, shortcut: '1' },
   { id: 'jobs', label: 'Jobs', icon: FileClock, shortcut: '2' },
   { id: 'printers', label: 'Printers', icon: Printer, shortcut: '3' },
-  { id: 'virtual', label: 'Virtual Printer', icon: MonitorCog, shortcut: '4' },
+  { id: 'virtual', label: 'Virtual Printer', icon: MonitorCog, shortcut: '4', devOnly: true },
   { id: 'diagnostics', label: 'Logs', icon: ScrollText, shortcut: '5' },
 ];
 
@@ -20,29 +19,36 @@ export function AppShell({
   activeScreen,
   onNavigate,
   status,
+  developerMode,
+  commandOpen,
+  onOpenCommand,
+  onCloseCommand,
   onReconnect,
   children,
 }: {
   activeScreen: ScreenId;
   onNavigate: (screen: ScreenId) => void;
   status: AgentStatus;
+  developerMode: boolean;
+  commandOpen: boolean;
+  onOpenCommand: () => void;
+  onCloseCommand: () => void;
   onReconnect: () => Promise<void>;
   children: ReactNode;
 }) {
-  const [commandOpen, setCommandOpen] = useState(false);
-
-  function openCommand() {
-    setCommandOpen(true);
-  }
-
   return (
     <div className="bg-background text-foreground flex h-dvh flex-col overflow-hidden">
       {/* Title bar */}
-      <TitleBar status={status} />
+      <TitleBar status={status} developerMode={developerMode} />
 
       <div className="flex flex-1 overflow-hidden">
         {/* Sidebar navigation */}
-        <Sidebar activeScreen={activeScreen} onNavigate={onNavigate} onOpenCommand={openCommand} />
+        <Sidebar
+          activeScreen={activeScreen}
+          onNavigate={onNavigate}
+          onOpenCommand={onOpenCommand}
+          developerMode={developerMode}
+        />
 
         {/* Main workspace */}
         <main className="bg-background flex-1 overflow-x-hidden overflow-y-auto" id="main-content" tabIndex={-1}>
@@ -51,13 +57,13 @@ export function AppShell({
       </div>
 
       {commandOpen && (
-        <CommandMenu onClose={() => setCommandOpen(false)} onNavigate={onNavigate} onReconnect={onReconnect} />
+        <CommandMenu onClose={onCloseCommand} onNavigate={onNavigate} onReconnect={onReconnect} />
       )}
     </div>
   );
 }
 
-function TitleBar({ status }: { status: AgentStatus }) {
+function TitleBar({ status, developerMode }: { status: AgentStatus; developerMode: boolean }) {
   const agentId = status.agentId;
   const connected = status.state === 'connected';
   const tone =
@@ -74,7 +80,7 @@ function TitleBar({ status }: { status: AgentStatus }) {
   return (
     <header
       data-tauri-drag-region
-      className="border-sidebar-border bg-sidebar flex h-10 shrink-0 items-center border-b select-none"
+      className="border-sidebar-border bg-sidebar flex h-11 shrink-0 items-center border-b select-none"
     >
       {/* macOS traffic-light space */}
       <div className="w-[72px] shrink-0" data-no-drag />
@@ -88,7 +94,7 @@ function TitleBar({ status }: { status: AgentStatus }) {
       <div className="bg-border mx-3 h-3.5 w-px" />
 
       {/* Connection state */}
-      <div className="text-muted-foreground flex items-center gap-2 text-xs" data-no-drag>
+      <div className="text-muted-foreground flex items-center gap-2 text-sm" data-no-drag>
         <span className={cn('status-dot', `status-dot--${tone}`)} aria-label={`State: ${titleCase(status.state)}`} />
         <span className={cn(connected ? 'text-foreground/70' : 'text-muted-foreground')}>
           {titleCase(status.state)}
@@ -115,8 +121,13 @@ function TitleBar({ status }: { status: AgentStatus }) {
 
       <div className="flex-1" />
 
-      <div className="text-muted-foreground/50 px-4 font-mono text-[11px]" data-no-drag>
-        v{status.version}
+      <div className="flex items-center gap-2 px-4" data-no-drag>
+        {developerMode && (
+          <span className="border-primary/30 text-primary bg-primary/10 rounded px-1.5 py-0.5 font-mono text-[10px] font-medium tracking-wide">
+            DEV
+          </span>
+        )}
+        <span className="text-muted-foreground/50 font-mono text-[11px]">v{status.version}</span>
       </div>
     </header>
   );
@@ -126,19 +137,23 @@ function Sidebar({
   activeScreen,
   onNavigate,
   onOpenCommand,
+  developerMode,
 }: {
   activeScreen: ScreenId;
   onNavigate: (screen: ScreenId) => void;
   onOpenCommand: () => void;
+  developerMode: boolean;
 }) {
+  const visibleNav = ALL_NAV.filter((item) => !item.devOnly || developerMode);
+
   return (
     <nav
-      className="border-sidebar-border bg-sidebar flex w-52 shrink-0 flex-col border-r"
+      className="border-sidebar-border bg-sidebar flex w-52 shrink-0 flex-col border-r select-none"
       aria-label="Primary navigation"
     >
       {/* Primary nav items */}
       <div className="flex-1 space-y-0.5 p-2 pt-3">
-        {primaryNav.map((item) => {
+        {visibleNav.map((item) => {
           const Icon = item.icon;
           const active = activeScreen === item.id;
           return (
@@ -148,7 +163,7 @@ function Sidebar({
               onClick={() => onNavigate(item.id)}
               aria-current={active ? 'page' : undefined}
               className={cn(
-                'group relative flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                'group relative flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                 active
                   ? 'bg-primary/10 text-primary'
                   : 'text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
@@ -157,7 +172,7 @@ function Sidebar({
               {active && <span className="bg-primary absolute top-1/2 left-0 h-5 w-0.5 -translate-y-1/2 rounded-r" />}
               <Icon
                 className={cn(
-                  'size-4 shrink-0',
+                  'size-[18px] shrink-0',
                   active ? 'text-primary' : 'text-sidebar-foreground/50 group-hover:text-sidebar-accent-foreground',
                 )}
                 strokeWidth={active ? 2.25 : 1.75}
@@ -166,7 +181,7 @@ function Sidebar({
               <span className="truncate">{item.label}</span>
               <kbd
                 className={cn(
-                  'ml-auto font-mono text-[10px] opacity-0 transition-opacity group-hover:opacity-100',
+                  'ml-auto font-mono text-xs opacity-0 transition-opacity group-hover:opacity-100',
                   active ? 'opacity-40' : 'text-muted-foreground',
                 )}
               >
@@ -182,12 +197,12 @@ function Sidebar({
         <button
           type="button"
           onClick={onOpenCommand}
-          className="text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-colors"
+          className="text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-sm transition-colors"
           aria-label="Open command menu (⌘K)"
         >
-          <Command className="size-4 shrink-0" strokeWidth={1.75} aria-hidden />
+          <Command className="size-[18px] shrink-0" strokeWidth={1.75} aria-hidden />
           <span>Search & commands</span>
-          <kbd className="text-muted-foreground ml-auto font-mono text-[10px] opacity-60">⌘K</kbd>
+          <kbd className="text-muted-foreground ml-auto font-mono text-xs opacity-60">⌘K</kbd>
         </button>
 
         <button
@@ -195,7 +210,7 @@ function Sidebar({
           onClick={() => onNavigate('settings')}
           aria-current={activeScreen === 'settings' ? 'page' : undefined}
           className={cn(
-            'group relative flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+            'group relative flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
             activeScreen === 'settings'
               ? 'bg-primary/10 text-primary'
               : 'text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
@@ -206,7 +221,7 @@ function Sidebar({
           )}
           <Settings2
             className={cn(
-              'size-4 shrink-0',
+              'size-[18px] shrink-0',
               activeScreen === 'settings'
                 ? 'text-primary'
                 : 'text-sidebar-foreground/50 group-hover:text-sidebar-accent-foreground',
@@ -215,7 +230,7 @@ function Sidebar({
             aria-hidden
           />
           Settings
-          <kbd className="text-muted-foreground ml-auto font-mono text-[10px] opacity-0 transition-opacity group-hover:opacity-100">
+          <kbd className="text-muted-foreground ml-auto font-mono text-xs opacity-0 transition-opacity group-hover:opacity-100">
             ⌘,
           </kbd>
         </button>

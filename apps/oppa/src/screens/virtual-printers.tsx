@@ -1,7 +1,7 @@
-import { MonitorCog, Plus, RefreshCw, Send, Trash2 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { ClipboardCopy, MonitorCog, Plus, RefreshCw, Send, Trash2, Volume2 } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
-import { EmptyState, FieldLabel, ScreenContainer, ScreenHeader, inputClass } from '@/components/ui';
+import { EmptyState, FieldLabel, ScreenContainer, ScreenHeader, Toggle, inputClass } from '@/components/ui';
 import { Button } from '@/components/ui/button';
 import {
   ContextMenu,
@@ -26,22 +26,59 @@ const MODES: Array<{ value: VirtualPrinterMode; label: string; description: stri
 export function VirtualPrintersScreen({
   printers,
   busy,
+  developerMode,
   onCreate,
   onUpdate,
   onClear,
+  onDelete,
   onTest,
+  onSetSound,
 }: {
   printers: PrinterSummary[];
   busy: string | null;
+  developerMode: boolean;
   onCreate: (input: VirtualPrinterInput) => Promise<void>;
   onUpdate: (id: string, mode: VirtualPrinterMode, delayMs: number) => Promise<void>;
   onClear: (id: string) => Promise<void>;
+  onDelete: (id: string) => Promise<void>;
   onTest: (id: string) => Promise<void>;
+  onSetSound: (id: string, enabled: boolean) => Promise<void>;
 }) {
   const virtualPrinters = printers.filter(isVirtualPrinter);
   const [selectedId, setSelectedId] = useState(virtualPrinters[0]?.id ?? '');
   const [showCreate, setShowCreate] = useState(false);
   const [input, setInput] = useState<VirtualPrinterInput>({ displayName: 'Receipt preview', width: 80 });
+
+  // Per-printer sound enabled flags, persisted to localStorage
+  const [soundEnabled, setSoundEnabledMap] = useState<Record<string, boolean>>(() => {
+    try {
+      return JSON.parse(localStorage.getItem('oppa-virtual-printer-sounds') ?? '{}') as Record<string, boolean>;
+    } catch {
+      return {};
+    }
+  });
+
+  // Sync localStorage sound state to Rust on mount so remote jobs also trigger sound
+  useEffect(() => {
+    const stored = soundEnabled;
+    for (const [id, enabled] of Object.entries(stored)) {
+      if (enabled) void onSetSound(id, true).catch(() => undefined);
+    }
+    // intentionally run once on mount only
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleSetSound = useCallback(
+    (printerId: string, enabled: boolean) => {
+      setSoundEnabledMap((prev) => {
+        const next = { ...prev, [printerId]: enabled };
+        localStorage.setItem('oppa-virtual-printer-sounds', JSON.stringify(next));
+        return next;
+      });
+      void onSetSound(printerId, enabled).catch(() => undefined);
+    },
+    [onSetSound],
+  );
 
   const selected = useMemo(
     () => virtualPrinters.find((p) => p.id === selectedId) ?? virtualPrinters[0],
@@ -163,6 +200,25 @@ export function VirtualPrintersScreen({
                         Clear captured output
                       </ContextMenuItem>
                     </ContextMenuGroup>
+                    {developerMode && (
+                      <>
+                        <ContextMenuSeparator />
+                        <ContextMenuGroup>
+                          <ContextMenuItem onClick={() => void navigator.clipboard.writeText(printer.id)}>
+                            <ClipboardCopy className="size-4" aria-hidden />
+                            Copy ID
+                          </ContextMenuItem>
+                          <ContextMenuItem
+                            variant="destructive"
+                            disabled={busy === `remove-${printer.id}`}
+                            onClick={() => void onDelete(printer.id)}
+                          >
+                            <Trash2 className="size-4" aria-hidden />
+                            Delete printer
+                          </ContextMenuItem>
+                        </ContextMenuGroup>
+                      </>
+                    )}
                   </ContextMenuContent>
                 </ContextMenu>
               ))}
@@ -232,6 +288,26 @@ export function VirtualPrintersScreen({
                     <p className="text-muted-foreground/60 mt-1 text-[10px]">Active only in delay mode.</p>
                   </div>
                 </div>
+
+                {/* Printer sound — developer mode only */}
+                {developerMode && (
+                  <div className="border-border/50 mt-3 flex items-center justify-between border-t pt-3">
+                    <div className="flex items-center gap-2">
+                      <Volume2 className="text-muted-foreground size-4 shrink-0" aria-hidden />
+                      <div>
+                        <p className="text-foreground text-xs font-medium">Printer sound</p>
+                        <p className="text-muted-foreground/70 text-[11px] leading-4">
+                          Plays audio on any print job with a ≥3.5 s enforced delay.
+                        </p>
+                      </div>
+                    </div>
+                    <Toggle
+                      checked={soundEnabled[selected.id] ?? false}
+                      label="Enable printer sound"
+                      onChange={(enabled) => handleSetSound(selected.id, enabled)}
+                    />
+                  </div>
+                )}
               </div>
 
               {/* Captured output */}

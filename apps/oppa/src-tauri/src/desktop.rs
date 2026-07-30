@@ -28,6 +28,7 @@ const APP_NAV_VIRTUAL: &str = "app-nav-virtual";
 const APP_NAV_LOGS: &str = "app-nav-logs";
 const APP_NAV_SETTINGS: &str = "app-nav-settings";
 const APP_RECONNECT: &str = "app-reconnect";
+const APP_WINDOW_CENTER: &str = "app-window-center";
 
 /// Explicit quit guard used by close-to-background handling.
 pub struct QuitState(pub AtomicBool);
@@ -209,10 +210,52 @@ fn build_app_menu(app: &App) -> tauri::Result<Menu<tauri::Wry>> {
     )?;
     menu.append(&view_menu)?;
 
+    // Edit — enables standard keyboard shortcuts (Cmd+C/V/X/Z/A) in the webview
+    let edit_undo = PredefinedMenuItem::undo(app, None)?;
+    let edit_redo = PredefinedMenuItem::redo(app, None)?;
+    let edit_sep1 = PredefinedMenuItem::separator(app)?;
+    let edit_cut = PredefinedMenuItem::cut(app, None)?;
+    let edit_copy = PredefinedMenuItem::copy(app, None)?;
+    let edit_paste = PredefinedMenuItem::paste(app, None)?;
+    let edit_sep2 = PredefinedMenuItem::separator(app)?;
+    let edit_select_all = PredefinedMenuItem::select_all(app, None)?;
+    let edit_menu = Submenu::with_items(
+        app,
+        "Edit",
+        true,
+        &[
+            &edit_undo,
+            &edit_redo,
+            &edit_sep1,
+            &edit_cut,
+            &edit_copy,
+            &edit_paste,
+            &edit_sep2,
+            &edit_select_all,
+        ],
+    )?;
+    menu.append(&edit_menu)?;
+
     // Agent
     let reconnect = MenuItem::with_id(app, APP_RECONNECT, "Reconnect", true, None::<&str>)?;
     let agent_menu = Submenu::with_items(app, "Agent", true, &[&reconnect])?;
     menu.append(&agent_menu)?;
+
+    // Window
+    let window_submenu = Submenu::new(app, "Window", true)?;
+    window_submenu.append(&PredefinedMenuItem::minimize(app, None)?)?;
+    window_submenu.append(&PredefinedMenuItem::maximize(app, None)?)?;
+    window_submenu.append(&PredefinedMenuItem::fullscreen(app, None)?)?;
+    window_submenu.append(&PredefinedMenuItem::separator(app)?)?;
+    window_submenu.append(&MenuItem::with_id(
+        app,
+        APP_WINDOW_CENTER,
+        "Center Window",
+        true,
+        None::<&str>,
+    )?)?;
+    window_submenu.append(&PredefinedMenuItem::bring_all_to_front(app, None)?)?;
+    menu.append(&window_submenu)?;
 
     Ok(menu)
 }
@@ -255,6 +298,11 @@ pub fn handle_app_menu_event(app: &AppHandle, event: &tauri::menu::MenuEvent) {
                     service.log.warn("transport", error.to_string());
                 }
             });
+        }
+        APP_WINDOW_CENTER => {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.center();
+            }
         }
         _ => {}
     }
