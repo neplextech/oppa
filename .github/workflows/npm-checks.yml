@@ -54,6 +54,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Build protocol package
+        run: pnpm --filter @openprinter/protocol build
+
       - name: Lint packages
         run: pnpm exec eslint packages --max-warnings=0
 
