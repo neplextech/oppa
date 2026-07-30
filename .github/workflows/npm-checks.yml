@@ -57,6 +57,9 @@ jobs:
       - name: Build protocol package
         run: pnpm --filter @openprinter/protocol build
 
+      - name: Build server package
+        run: pnpm --filter @openprinter/server build
+
       - name: Lint packages
         run: pnpm exec eslint packages --max-warnings=0
 

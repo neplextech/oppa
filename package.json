@@ -12,7 +12,7 @@
     "test:js": "pnpm --filter @openprinter/protocol build && pnpm --filter @openprinter/server build && pnpm -r --if-present run test",
     "test:rust": "cargo test --workspace",
     "lint": "pnpm lint:js && pnpm lint:rust",
-    "lint:js": "pnpm --filter @openprinter/protocol build && eslint . --max-warnings=0",
+    "lint:js": "pnpm --filter @openprinter/protocol build && pnpm --filter @openprinter/server build && eslint . --max-warnings=0",
     "lint:rust": "cargo clippy --workspace --all-targets --all-features -- -D warnings",
     "format": "oxfmt --write . && cargo fmt --all",
     "format:check": "oxfmt --check . && cargo fmt --all --check",
