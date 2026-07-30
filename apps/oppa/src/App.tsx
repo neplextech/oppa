@@ -15,6 +15,8 @@ import { SettingsScreen } from '@/screens/settings';
 import { SetupScreen } from '@/screens/setup';
 import { VirtualPrintersScreen } from '@/screens/virtual-printers';
 
+import { playPrinterSound } from './lib/printer-sound';
+
 export type Theme = 'system' | 'light' | 'dark';
 
 function applyThemeClass(t: Theme) {
@@ -50,9 +52,7 @@ export default function App() {
   }
 
   const [theme, setThemeState] = useState<Theme>(initialTheme);
-  const [developerMode, setDeveloperModeState] = useState(
-    () => localStorage.getItem('oppa-developer-mode') === 'true',
-  );
+  const [developerMode, setDeveloperModeState] = useState(() => localStorage.getItem('oppa-developer-mode') === 'true');
   const [commandOpen, setCommandOpen] = useState(false);
   const { status, printers, jobs, diagnostics, loading, busy, error, actions } = useAgent();
 
@@ -109,8 +109,7 @@ export default function App() {
     let unsubscribe: () => void = () => undefined;
     void agentClient
       .subscribePrinterSound(() => {
-        const audio = new Audio('/receipt_printer_audio.mp3');
-        void audio.play().catch(() => undefined);
+        playPrinterSound();
       })
       .then((stop) => {
         if (disposed) stop();

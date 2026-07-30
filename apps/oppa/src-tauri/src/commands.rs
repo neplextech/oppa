@@ -102,7 +102,9 @@ pub async fn set_virtual_printer_sound(
     printer_id: String,
     enabled: bool,
 ) -> Result<(), CommandError> {
-    service.set_virtual_printer_sound(&printer_id, enabled).await
+    service
+        .set_virtual_printer_sound(&printer_id, enabled)
+        .await
 }
 
 #[tauri::command]

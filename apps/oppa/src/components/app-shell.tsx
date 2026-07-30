@@ -56,9 +56,7 @@ export function AppShell({
         </main>
       </div>
 
-      {commandOpen && (
-        <CommandMenu onClose={onCloseCommand} onNavigate={onNavigate} onReconnect={onReconnect} />
-      )}
+      {commandOpen && <CommandMenu onClose={onCloseCommand} onNavigate={onNavigate} onReconnect={onReconnect} />}
     </div>
   );
 }

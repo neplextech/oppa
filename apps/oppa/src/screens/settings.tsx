@@ -15,12 +15,7 @@ import type { ReactNode } from 'react';
 
 import type { Theme } from '@/App';
 import { ServerConfigurationForm } from '@/components/server-configuration-form';
-import {
-  ScreenContainer,
-  ScreenHeader,
-  SectionHeader,
-  Toggle,
-} from '@/components/ui';
+import { ScreenContainer, ScreenHeader, SectionHeader, Toggle } from '@/components/ui';
 import { Button } from '@/components/ui/button';
 import { useUpdater } from '@/components/updater-context';
 import type { AgentStatus, OpenPrinterServerConfiguration } from '@/lib/types';
@@ -53,31 +48,21 @@ export function SettingsScreen({
   onDeveloperModeChange: (enabled: boolean) => void;
   onStartOnLogin: (enabled: boolean) => Promise<void>;
   onReconnect: () => Promise<void>;
-  onSaveServerConfiguration: (
-    input: OpenPrinterServerConfiguration,
-  ) => Promise<void>;
+  onSaveServerConfiguration: (input: OpenPrinterServerConfiguration) => Promise<void>;
   onResetServerConfiguration: () => Promise<void>;
-  onOpenProductLink: (
-    link: 'documentation' | 'support',
-    browserFallbackUrl: string,
-  ) => Promise<void>;
+  onOpenProductLink: (link: 'documentation' | 'support', browserFallbackUrl: string) => Promise<void>;
 }) {
   const { checkForUpdates, isChecking, lastResult } = useUpdater();
 
   return (
     <ScreenContainer>
-      <ScreenHeader
-        title="Settings"
-        description="Agent preferences and product configuration."
-      />
+      <ScreenHeader title="Settings" description="Agent preferences and product configuration." />
 
       <div className="max-w-2xl flex-1 space-y-8 overflow-y-auto p-6">
         {/* Appearance */}
         <Section title="Appearance" description="Interface color scheme">
           <div className="bg-card/50 px-5 py-4">
-            <p className="text-foreground mb-3 text-sm font-medium">
-              Color scheme
-            </p>
+            <p className="text-foreground mb-3 text-sm font-medium">Color scheme</p>
             <div className="flex gap-3">
               {THEMES.map(({ value, label, icon: Icon }) => (
                 <button
@@ -101,22 +86,16 @@ export function SettingsScreen({
         </Section>
 
         {/* OpenPrinter service */}
-        <Section
-          title="OpenPrinter service"
-          description="Authorization and gateway endpoints"
-        >
+        <Section title="OpenPrinter service" description="Authorization and gateway endpoints">
           {status.connectedService ? (
             <div className="bg-card/30 flex items-start gap-4 px-5 py-4">
               <div className="border-border bg-primary/10 text-primary flex size-9 shrink-0 items-center justify-center rounded-lg border">
                 <Globe2 className="size-4" aria-hidden />
               </div>
               <div className="min-w-0">
-                <p className="text-foreground text-sm font-semibold">
-                  {status.connectedService.name}
-                </p>
+                <p className="text-foreground text-sm font-semibold">{status.connectedService.name}</p>
                 <p className="text-muted-foreground mt-0.5 text-xs">
-                  Connected service · server{' '}
-                  {status.connectedService.serverVersion}
+                  Connected service · server {status.connectedService.serverVersion}
                 </p>
                 <p className="text-muted-foreground/60 mt-1 truncate font-mono text-[10px]">
                   {status.connectedService.gatewayUrl}
@@ -127,8 +106,7 @@ export function SettingsScreen({
             <div className="bg-card/30 flex items-center gap-3 px-5 py-3">
               <Globe2 className="text-muted-foreground size-4" aria-hidden />
               <p className="text-muted-foreground text-xs">
-                Service identity appears here after the gateway completes its
-                handshake.
+                Service identity appears here after the gateway completes its handshake.
               </p>
             </div>
           )}
@@ -140,9 +118,8 @@ export function SettingsScreen({
             onReset={onResetServerConfiguration}
           />
           <p className="border-border/50 text-muted-foreground/70 border-t px-5 py-3 text-xs leading-4">
-            Changing services removes the current authorization before
-            reconnecting, so credentials are never reused with a different
-            gateway.
+            Changing services removes the current authorization before reconnecting, so credentials are never reused
+            with a different gateway.
           </p>
         </Section>
 
@@ -165,12 +142,7 @@ export function SettingsScreen({
             title="Reconnect gateway"
             description="Close the active transport and establish a fresh connection."
             control={
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={busy === 'reconnect'}
-                onClick={() => void onReconnect()}
-              >
+              <Button variant="outline" size="sm" disabled={busy === 'reconnect'} onClick={() => void onReconnect()}>
                 Reconnect
               </Button>
             }
@@ -178,17 +150,9 @@ export function SettingsScreen({
           <SettingRow
             icon={<Download className="size-4" aria-hidden />}
             title="Software updates"
-            description={
-              lastResult ??
-              'Check GitHub Releases for a signed stable OPPA update.'
-            }
+            description={lastResult ?? 'Check GitHub Releases for a signed stable OPPA update.'}
             control={
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={isChecking}
-                onClick={() => void checkForUpdates()}
-              >
+              <Button variant="outline" size="sm" disabled={isChecking} onClick={() => void checkForUpdates()}>
                 {isChecking ? 'Checking…' : 'Check now'}
               </Button>
             }
@@ -196,104 +160,61 @@ export function SettingsScreen({
         </Section>
 
         {/* Product */}
-        <Section
-          title="Product"
-          description="Application identity and compiled capabilities"
-        >
+        <Section title="Product" description="Application identity and compiled capabilities">
           <div className="bg-card/50 p-5">
             <div className="flex items-start gap-4">
               <div className="border-border bg-secondary flex size-10 shrink-0 items-center justify-center rounded-lg border">
-                <LockKeyhole
-                  className="text-muted-foreground size-4"
-                  aria-hidden
-                />
+                <LockKeyhole className="text-muted-foreground size-4" aria-hidden />
               </div>
               <div className="min-w-0 flex-1">
-                <p className="text-foreground font-semibold">
-                  {status.product.name}
-                </p>
-                <p className="text-muted-foreground font-mono text-xs">
-                  {status.product.id}
-                </p>
-                <p className="text-foreground/70 mt-2 text-sm leading-5">
-                  {status.product.description}
-                </p>
+                <p className="text-foreground font-semibold">{status.product.name}</p>
+                <p className="text-muted-foreground font-mono text-xs">{status.product.id}</p>
+                <p className="text-foreground/70 mt-2 text-sm leading-5">{status.product.description}</p>
                 <div className="mt-3 flex items-center gap-4">
                   <ProductLink
                     label="Documentation"
-                    onClick={() =>
-                      void onOpenProductLink(
-                        'documentation',
-                        status.product.documentationUrl,
-                      )
-                    }
+                    onClick={() => void onOpenProductLink('documentation', status.product.documentationUrl)}
                   />
                   <ProductLink
                     label="Support"
-                    onClick={() =>
-                      void onOpenProductLink(
-                        'support',
-                        status.product.supportUrl,
-                      )
-                    }
+                    onClick={() => void onOpenProductLink('support', status.product.supportUrl)}
                   />
                 </div>
               </div>
             </div>
           </div>
           <div className="bg-card/30 border-border/50 flex items-center gap-2 border-t px-5 py-3">
-            <span className="text-muted-foreground font-mono text-xs">
-              v{status.version}
-            </span>
+            <span className="text-muted-foreground font-mono text-xs">v{status.version}</span>
             <span className="text-border">·</span>
-            <span className="text-muted-foreground text-xs">
-              {status.platform}
-            </span>
+            <span className="text-muted-foreground text-xs">{status.platform}</span>
             {status.agentId && (
               <>
                 <span className="text-border">·</span>
-                <span className="text-muted-foreground truncate font-mono text-xs">
-                  {status.agentId}
-                </span>
+                <span className="text-muted-foreground truncate font-mono text-xs">{status.agentId}</span>
               </>
             )}
           </div>
         </Section>
 
         {/* Developer */}
-        <Section
-          title="Developer"
-          description="Tools for integration testing and diagnostics"
-        >
+        <Section title="Developer" description="Tools for integration testing and diagnostics">
           <SettingRow
             icon={<Code2 className="size-4" aria-hidden />}
             title="Developer Mode"
             description="Reveals virtual printer controls, enables Copy ID in context menus, and shows a DEV badge in the title bar."
-            control={
-              <Toggle
-                checked={developerMode}
-                label="Enable developer mode"
-                onChange={onDeveloperModeChange}
-              />
-            }
+            control={<Toggle checked={developerMode} label="Enable developer mode" onChange={onDeveloperModeChange} />}
           />
         </Section>
 
         {/* Security */}
         <Section title="Security">
           <div className="flex items-start gap-4 px-5 py-4">
-            <ShieldCheck
-              className="mt-0.5 size-5 shrink-0 text-[var(--color-connected)]"
-              aria-hidden
-            />
+            <ShieldCheck className="mt-0.5 size-5 shrink-0 text-[var(--color-connected)]" aria-hidden />
             <div>
-              <p className="text-sm font-semibold text-[var(--color-connected)]">
-                Security boundary active
-              </p>
+              <p className="text-sm font-semibold text-[var(--color-connected)]">Security boundary active</p>
               <p className="mt-1.5 text-sm leading-5 text-[var(--color-connected)]/70">
-                The connected server can send only versioned OpenPrinter
-                messages. It cannot run scripts, browse local files, or proxy
-                arbitrary network requests.
+                The connected server can send only versioned OpenPrinter messages. It cannot run scripts, browse local
+                files, or proxy arbitrary network requests.
               </p>
             </div>
           </div>
@@ -303,21 +224,11 @@ export function SettingsScreen({
   );
 }
 
-function Section({
-  title,
-  description,
-  children,
-}: {
-  title: string;
-  description?: string;
-  children: ReactNode;
-}) {
+function Section({ title, description, children }: { title: string; description?: string; children: ReactNode }) {
   return (
     <div>
       <SectionHeader title={title} description={description} className="mb-3" />
-      <div className="border-border divide-border divide-y overflow-hidden rounded-xl border">
-        {children}
-      </div>
+      <div className="border-border divide-border divide-y overflow-hidden rounded-xl border">{children}</div>
     </div>
   );
 }
@@ -340,22 +251,14 @@ function SettingRow({
       </div>
       <div className="min-w-0 flex-1">
         <p className="text-foreground text-sm font-medium">{title}</p>
-        <p className="text-muted-foreground mt-0.5 text-xs leading-5">
-          {description}
-        </p>
+        <p className="text-muted-foreground mt-0.5 text-xs leading-5">{description}</p>
       </div>
       {control}
     </div>
   );
 }
 
-function ProductLink({
-  label,
-  onClick,
-}: {
-  label: string;
-  onClick: () => void;
-}) {
+function ProductLink({ label, onClick }: { label: string; onClick: () => void }) {
   return (
     <button
       type="button"

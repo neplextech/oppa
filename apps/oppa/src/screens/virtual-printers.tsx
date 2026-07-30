@@ -11,15 +11,36 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from '@/components/ui/context-menu';
+import { playPrinterSound } from '@/lib/printer-sound';
 import { isVirtualPrinter } from '@/lib/types';
 import type { PrinterSummary, VirtualPrinterInput, VirtualPrinterMode } from '@/lib/types';
 import { cn, formatRelativeTime } from '@/lib/utils';
 
-const MODES: Array<{ value: VirtualPrinterMode; label: string; description: string }> = [
-  { value: 'always_succeed', label: 'Always succeed', description: 'All jobs complete immediately' },
-  { value: 'fail_next', label: 'Fail next job', description: 'Next job fails, then resets' },
-  { value: 'always_fail', label: 'Always fail', description: 'All jobs fail permanently' },
-  { value: 'delay', label: 'Delay submission', description: 'Jobs succeed after configured delay' },
+const MODES: Array<{
+  value: VirtualPrinterMode;
+  label: string;
+  description: string;
+}> = [
+  {
+    value: 'always_succeed',
+    label: 'Always succeed',
+    description: 'All jobs complete immediately',
+  },
+  {
+    value: 'fail_next',
+    label: 'Fail next job',
+    description: 'Next job fails, then resets',
+  },
+  {
+    value: 'always_fail',
+    label: 'Always fail',
+    description: 'All jobs fail permanently',
+  },
+  {
+    value: 'delay',
+    label: 'Delay submission',
+    description: 'Jobs succeed after configured delay',
+  },
   { value: 'offline', label: 'Offline', description: 'Printer is unavailable' },
 ];
 
@@ -47,7 +68,10 @@ export function VirtualPrintersScreen({
   const virtualPrinters = printers.filter(isVirtualPrinter);
   const [selectedId, setSelectedId] = useState(virtualPrinters[0]?.id ?? '');
   const [showCreate, setShowCreate] = useState(false);
-  const [input, setInput] = useState<VirtualPrinterInput>({ displayName: 'Receipt preview', width: 80 });
+  const [input, setInput] = useState<VirtualPrinterInput>({
+    displayName: 'Receipt preview',
+    width: 80,
+  });
 
   // Per-printer sound enabled flags, persisted to localStorage
   const [soundEnabled, setSoundEnabledMap] = useState<Record<string, boolean>>(() => {
@@ -117,7 +141,12 @@ export function VirtualPrintersScreen({
                 id="virtual-width"
                 className={cn(inputClass, 'w-24')}
                 value={input.width}
-                onChange={(e) => setInput((c) => ({ ...c, width: Number(e.target.value) as 58 | 80 }))}
+                onChange={(e) =>
+                  setInput((c) => ({
+                    ...c,
+                    width: Number(e.target.value) as 58 | 80,
+                  }))
+                }
               >
                 <option value={58}>58 mm</option>
                 <option value={80}>80 mm</option>
@@ -293,7 +322,11 @@ export function VirtualPrintersScreen({
                 {developerMode && (
                   <div className="border-border/50 mt-3 flex items-center justify-between border-t pt-3">
                     <div className="flex items-center gap-2">
-                      <Volume2 className="text-muted-foreground size-4 shrink-0" aria-hidden />
+                      <Volume2
+                        className="text-muted-foreground hover:text-foreground size-6 shrink-0 cursor-pointer"
+                        aria-hidden
+                        onClick={() => playPrinterSound()}
+                      />
                       <div>
                         <p className="text-foreground text-xs font-medium">Printer sound</p>
                         <p className="text-muted-foreground/70 text-[11px] leading-4">

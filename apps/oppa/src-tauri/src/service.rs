@@ -467,8 +467,8 @@ impl DesktopService {
         printer_id: &str,
         enabled: bool,
     ) -> Result<(), CommandError> {
-        let id = PrinterId::new(printer_id)
-            .map_err(|_| CommandError::invalid("Invalid printer ID."))?;
+        let id =
+            PrinterId::new(printer_id).map_err(|_| CommandError::invalid("Invalid printer ID."))?;
         self.virtual_spooler
             .set_sound(&id, enabled)
             .await
