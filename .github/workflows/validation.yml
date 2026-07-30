@@ -28,7 +28,7 @@ jobs:
       - run: pnpm protocol:generate
       - name: Verify generated protocol artifacts
         run: git diff --exit-code
-      - run: pnpm exec prettier --check .
+      - run: pnpm format:check
       - run: pnpm lint:js
       - run: pnpm typecheck
       - run: pnpm test:js

@@ -48,7 +48,7 @@ export default function App() {
   const screen: ScreenId = VALID_SCREENS.has(rawPath) ? rawPath : 'overview';
 
   function setScreen(s: ScreenId) {
-    navigate('/' + s);
+    void navigate('/' + s);
   }
 
   const [theme, setThemeState] = useState<Theme>(initialTheme);
@@ -70,7 +70,7 @@ export default function App() {
   // Redirect bare root to overview
   useEffect(() => {
     if (!location.pathname || location.pathname === '/') {
-      navigate('/overview', { replace: true });
+      void navigate('/overview', { replace: true });
     }
   }, [location.pathname, navigate]);
 
@@ -90,7 +90,7 @@ export default function App() {
     let disposed = false;
     let unsubscribe: () => void = () => undefined;
     void agentClient
-      .subscribeNavigation((s) => navigate('/' + s))
+      .subscribeNavigation((s) => void navigate('/' + s))
       .then((stop) => {
         if (disposed) stop();
         else unsubscribe = stop;
@@ -146,6 +146,7 @@ export default function App() {
     }
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   if (!loading && error && (!status || !diagnostics)) {
