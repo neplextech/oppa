@@ -1,7 +1,8 @@
 {
   "name": "@openprinter/server",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Transport-neutral protocol session SDK for OpenPrinter-compatible agents",
+  "homepage": "https://oppa.neplex.dev",
   "license": "MIT",
   "repository": {
     "type": "git",

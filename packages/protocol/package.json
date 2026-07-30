@@ -1,7 +1,8 @@
 {
   "name": "@openprinter/protocol",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Canonical OpenPrinter wire protocol schemas, types, validation, and codecs",
+  "homepage": "https://oppa.neplex.dev",
   "license": "MIT",
   "repository": {
     "type": "git",

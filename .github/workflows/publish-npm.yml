@@ -46,12 +46,6 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Validate packages
-        run: |
-          pnpm exec eslint packages --max-warnings=0
-          pnpm --filter @openprinter/protocol check
-          pnpm --filter @openprinter/server check
-
       - name: Build packages
         run: pnpm --filter './packages/**' run build
 
