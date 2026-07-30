@@ -7,6 +7,8 @@ interface with a narrow Tauri boundary around the shell-independent `oppa-agent`
 
 - account pairing and connection-state presentation
 - printer, virtual printer, job, diagnostic, and background settings views
+- validated runtime selection of authorization, token, and gateway endpoints
+- signed stable-update checks and installation through the Tauri updater
 - system tray and close-to-background behavior
 - translating typed frontend requests into agent operations
 
@@ -31,6 +33,14 @@ The Tauri build uses the real Rust command service.
 
 The frontend receives only typed status, printer, job, and sanitized diagnostic objects. It is not
 granted generic shell, filesystem, SQL, or network execution.
+
+OpenPrinter service endpoints are non-secret settings stored in the internal SQLite settings table.
+Only secure `https:` and `wss:` endpoints are accepted outside loopback development. Changing
+services clears the prior provider credentials from operating-system secure storage before the new
+configuration is persisted, then requires a new authorization.
+
+Update artifacts are fetched from GitHub Releases and verified by the native Tauri updater. Replace
+the updater public-key placeholder in `src-tauri/tauri.conf.json` before publishing a release.
 
 ## Status
 

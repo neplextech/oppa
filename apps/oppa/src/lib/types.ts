@@ -19,6 +19,19 @@ export interface ProductSummary {
   supportUrl: string;
 }
 
+export interface OpenPrinterServerConfiguration {
+  authorizationUrl: string;
+  tokenUrl: string;
+  gatewayUrl: string;
+}
+
+export interface ConnectedServiceSummary {
+  name: string;
+  serverId: string;
+  serverVersion: string;
+  gatewayUrl: string;
+}
+
 export interface AgentStatus {
   agentId: string | null;
   configured: boolean;
@@ -32,6 +45,8 @@ export interface AgentStatus {
   startOnLogin: boolean;
   dashboardUrl: string | null;
   platform: string;
+  serverConfiguration: OpenPrinterServerConfiguration;
+  connectedService: ConnectedServiceSummary | null;
 }
 
 export type PrinterConnectionType = 'system_queue' | 'network' | 'virtual' | 'usb';

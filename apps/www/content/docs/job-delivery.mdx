@@ -27,9 +27,11 @@ ownership of the queued job and can retry later.
 
 ## Offline agents
 
-`@openprinter/server` returns a structured offline result. It does not
-retain the payload after the call. The host leaves the durable record
-queued.
+The host resolves an agent through its own connection registry or
+distributed backplane. If no session is available, it reports
+`agent-offline` and leaves the durable record queued. A selected SDK
+session returns structured `session-not-ready`, `connection-closed`,
+or `transport-error` handoff failures and never retains the payload.
 
 ## Cancellation
 

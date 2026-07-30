@@ -34,10 +34,13 @@ serde.workspace = true
 serde_json.workspace = true
 tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-autostart = "2"
+tauri-plugin-process = "2"
 tauri-plugin-single-instance = "2"
+tauri-plugin-updater = "2"
 thiserror.workspace = true
 tokio.workspace = true
 tokio-util = { version = "0.7.17", features = ["rt"] }
+url.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]

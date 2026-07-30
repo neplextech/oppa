@@ -1,8 +1,9 @@
 # OpenPrinter Node.js example
 
 This example is a small host application for local OPPA development. It uses plain Node HTTP,
-attaches `@openprinter/server` to the upgrade event, issues short-lived in-memory credentials
-through a PKCE flow, exposes connected agents and printer inventories, and delivers test jobs.
+owns a `ws` upgrade listener and local session registry, feeds each authenticated connection into
+`@openprinter/server`, issues short-lived in-memory credentials through a PKCE flow, exposes
+connected agents and printer inventories, and delivers test jobs.
 
 The authorization server is intentionally development-only. It binds to `127.0.0.1`, stores
 everything in memory, and loses every code and token on restart. Do not expose it to a network or
@@ -22,7 +23,7 @@ pnpm --filter openprinter-node-example dev
 The server listens at `http://127.0.0.1:8787` by default. Set `PORT` to use another port, then
 update `product/product.json` to match.
 
-## Compile OPPA for the example
+## Point OPPA at the example
 
 The checked-in [`product/product.json`](./product/product.json) points OPPA at:
 
@@ -30,16 +31,20 @@ The checked-in [`product/product.json`](./product/product.json) points OPPA at:
 - `POST /token` for PKCE code exchange
 - `/openprinter/agent` for the WebSocket gateway
 
-Build OPPA with the example product configuration:
+Current OPPA builds can set these three endpoints in the app's server settings
+without recompiling:
 
-```bash
-OPPA_PRODUCT_DIR=examples/node-server/product pnpm oppa:build
+```text
+Authorization URL: http://127.0.0.1:8787/authorize
+Token URL:         http://127.0.0.1:8787/token
+Gateway URL:       ws://127.0.0.1:8787/openprinter/agent
 ```
 
-The product loader embeds and validates this file at build time; it is not an editable runtime
-configuration. The server reads the same file for its registered OAuth client ID, preventing the
-development provider and branded agent from drifting. The example uses insecure `http` and `ws`
-loopback URLs only for local development. Production products must use `https` and `wss`.
+The checked-in [`product/product.json`](./product/product.json) remains useful
+for branded or automated development builds. The server reads its registered
+OAuth client ID from that file so the development provider and agent do not
+drift. The example uses insecure `http` and `ws` loopback URLs only for local
+development. Production deployments must use `https` and `wss`.
 
 ## Development authorization flow
 
@@ -70,6 +75,8 @@ Returns snapshots of authenticated, connected agents. Tokens are never included.
 ### `GET /agents/:agentId/printers`
 
 Returns the most recent validated printer inventory for an online agent.
+The included dashboard renders each descriptor's human-readable `name` as the
+primary label and keeps its stable printer ID as secondary detail.
 
 ### `POST /agents/:agentId/jobs`
 
@@ -107,6 +114,15 @@ queue the job durably. This example does not do that for you.
 The process logs connection, inventory, acknowledgement, submission, failure, authentication,
 heartbeat, and protocol events. It logs identifiers and counts only—not tokens or complete print
 documents.
+
+## Transport ownership
+
+This example intentionally keeps framework and transport responsibilities
+visible. It parses the Bearer header, authenticates the token, accepts the
+WebSocket upgrade, maps `ws` send/close behavior to the SDK transport, and
+stores negotiated sessions in a process-local map. A clustered production host
+would replace that local routing policy with its own affinity and backplane;
+the SDK itself does not coordinate workers or include a broker.
 
 ## Development checks
 

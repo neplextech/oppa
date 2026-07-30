@@ -2,7 +2,7 @@
   "name": "openprinter-node-example",
   "version": "0.1.0",
   "private": true,
-  "description": "Development HTTP and OpenPrinter server for running OPPA locally",
+  "description": "Development HTTP and WebSocket host for running OPPA locally",
   "license": "MIT",
   "type": "module",
   "scripts": {
@@ -16,10 +16,12 @@
   },
   "dependencies": {
     "@openprinter/protocol": "workspace:*",
-    "@openprinter/server": "workspace:*"
+    "@openprinter/server": "workspace:*",
+    "ws": "^8.18.3"
   },
   "devDependencies": {
     "@types/node": "^22.15.30",
+    "@types/ws": "^8.18.1",
     "tsx": "^4.20.3",
     "typescript": "catalog:",
     "vitest": "catalog:"

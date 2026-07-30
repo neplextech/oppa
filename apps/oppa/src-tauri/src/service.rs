@@ -1,16 +1,14 @@
 use std::{
     sync::{
         Arc,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
     },
     time::{Duration, Instant},
 };
 
 use chrono::{Duration as ChronoDuration, Utc};
 use oppa_agent::{Agent, AgentBuilder, AgentHandle, AgentSnapshot, AgentState, ProcessOutcome};
-use oppa_auth::{
-    AuthorizationClient, AuthorizationEndpoints, CredentialManager, DEFAULT_CALLBACK_TIMEOUT,
-};
+use oppa_auth::{AuthorizationClient, CredentialManager, DEFAULT_CALLBACK_TIMEOUT};
 use oppa_core::Timestamp;
 use oppa_platform::{
     AppPaths, BrowserOpener, KeyringCredentialStore, SystemBrowser, platform_info,
@@ -23,7 +21,7 @@ use oppa_protocol::{
 use oppa_spooler::{RawTcpSpooler, SpoolerRegistry, SystemQueueSpooler};
 use oppa_storage::{DEFAULT_MAX_PENDING_JOBS, JobRepository, SqliteStorage};
 use tauri::{AppHandle, Emitter};
-use tokio::sync::{RwLock, mpsc};
+use tokio::sync::{Mutex, RwLock, mpsc};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
@@ -35,11 +33,16 @@ use crate::{
     error::{CommandError, sanitize},
     job_ledger::JobLedger,
     models::{
-        AgentStatus, AuthorizationStart, DesktopJobState, DiagnosticExport, Diagnostics,
-        FeatureAvailability, GatewayState, JobSummary, ManualPrinterInput, PrinterSummary,
-        ProductLink, ProductSummary, VirtualPrinterInput, VirtualPrinterMode,
+        AgentStatus, AuthorizationStart, ConnectedServiceSummary, DesktopJobState,
+        DiagnosticExport, Diagnostics, FeatureAvailability, GatewayState, JobSummary,
+        ManualPrinterInput, PrinterSummary, ProductLink, ProductSummary, VirtualPrinterInput,
+        VirtualPrinterMode,
     },
     printer_catalog::PrinterCatalog,
+    server_configuration::{
+        OpenPrinterServerConfiguration, OpenPrinterServerConfigurationInput,
+        SERVER_CONFIGURATION_SETTING,
+    },
     virtual_spooler::PerPrinterVirtualSpooler,
 };
 
@@ -62,10 +65,14 @@ pub struct DesktopService {
     pub(crate) started_at: Instant,
     pub(crate) last_connection_at: RwLock<Option<String>>,
     pub(crate) agent_id: RwLock<Option<String>>,
+    pub(crate) server_configuration: RwLock<OpenPrinterServerConfiguration>,
+    pub(crate) connected_service: RwLock<Option<ConnectedServiceSummary>>,
     pub(crate) shutdown: CancellationToken,
     pub(crate) startup_recovered_submissions: usize,
     paths: AppPaths,
-    pub(crate) authorization: AuthorizationClient,
+    pub(crate) authorization: RwLock<AuthorizationClient>,
+    pub(crate) provider_operation: Mutex<()>,
+    pub(crate) provider_generation: AtomicU64,
     authorization_active: AtomicBool,
     connection_control: mpsc::Sender<ConnectionControl>,
 }
@@ -96,12 +103,42 @@ impl DesktopService {
             "application",
             format!("{} desktop runtime is starting.", product.product_name),
         );
+        let default_server_configuration = OpenPrinterServerConfiguration::from_product(&product);
+        let (server_configuration, reset_invalid_configuration) = match storage
+            .setting(SERVER_CONFIGURATION_SETTING)
+            .await
+            .map_err(|error| CommandError::internal(error.to_string()))?
+        {
+            Some(value) => match serde_json::from_value::<OpenPrinterServerConfiguration>(value) {
+                Ok(configuration) if configuration.validate().is_ok() => (configuration, false),
+                Ok(_) | Err(_) => {
+                    log.warn(
+                        "configuration",
+                        "Stored OpenPrinter server endpoints were invalid; defaults were restored and prior credentials were cleared.",
+                    );
+                    (default_server_configuration, true)
+                }
+            },
+            None => (default_server_configuration, false),
+        };
 
         let credential_store = Arc::new(
             KeyringCredentialStore::new(product.application_id.clone())
                 .map_err(|error| CommandError::internal(error.to_string()))?,
         );
         let credentials = CredentialManager::new(credential_store);
+        if reset_invalid_configuration {
+            credentials
+                .clear()
+                .await
+                .map_err(|error| CommandError::new("credential_clear_failed", error.to_string()))?;
+            let value = serde_json::to_value(&server_configuration)
+                .map_err(|error| CommandError::internal(error.to_string()))?;
+            storage
+                .set_setting(SERVER_CONFIGURATION_SETTING, &value)
+                .await
+                .map_err(|error| CommandError::internal(error.to_string()))?;
+        }
         let (agent_id, credential_error) = match credentials.load().await {
             Ok(Some(tokens)) => (Some(tokens.agent_id.to_string()), None),
             Ok(None) => (None, None),
@@ -172,7 +209,7 @@ impl DesktopService {
                 .map_err(|error| CommandError::internal(error.to_string()))?,
         );
         let authorization = AuthorizationClient::new(
-            AuthorizationEndpoints::from_product(&product),
+            server_configuration.authorization_endpoints(),
             product.protocol.client_id.clone(),
             vec!["openprinter.agent".to_owned()],
             Duration::from_secs(20),
@@ -191,10 +228,14 @@ impl DesktopService {
             started_at: Instant::now(),
             last_connection_at: RwLock::new(None),
             agent_id: RwLock::new(agent_id),
+            server_configuration: RwLock::new(server_configuration),
+            connected_service: RwLock::new(None),
             shutdown: CancellationToken::new(),
             startup_recovered_submissions: recovery.recovered_submissions,
             paths,
-            authorization,
+            authorization: RwLock::new(authorization),
+            provider_operation: Mutex::new(()),
+            provider_generation: AtomicU64::new(0),
             authorization_active: AtomicBool::new(false),
             connection_control,
         });
@@ -237,10 +278,17 @@ impl DesktopService {
             start_on_login,
             dashboard_url: None,
             platform: platform_label(),
+            server_configuration: self.server_configuration.read().await.clone(),
+            connected_service: self.connected_service.read().await.clone(),
         }
     }
 
+    #[allow(clippy::too_many_lines)]
     pub async fn begin_authorization(self: &Arc<Self>) -> Result<AuthorizationStart, CommandError> {
+        // Claim the provider state while configuration mutations are excluded.
+        // The atomic remains set for the complete browser flow, so endpoint
+        // changes cannot interleave with credential persistence.
+        let provider_operation = self.provider_operation.lock().await;
         if self
             .authorization_active
             .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
@@ -268,7 +316,9 @@ impl DesktopService {
                 CommandError::internal(error.to_string())
             })?;
 
-        let pending = match self.authorization.begin().await {
+        let authorization = self.authorization.read().await.clone();
+        drop(provider_operation);
+        let pending = match authorization.begin().await {
             Ok(pending) => pending,
             Err(error) => {
                 self.authorization_active.store(false, Ordering::Release);
@@ -298,7 +348,7 @@ impl DesktopService {
             .info("authentication", "Browser authorization started.");
         let service = Arc::clone(self);
         tauri::async_runtime::spawn(async move {
-            match pending.complete(&service.authorization).await {
+            match pending.complete(&authorization).await {
                 Ok(tokens) => {
                     let agent_id = tokens.agent_id.to_string();
                     match service.credentials.save(&tokens).await {
@@ -575,6 +625,131 @@ impl DesktopService {
             .map_err(|_| CommandError::internal("Connection supervisor is unavailable."))?;
         self.log.info("transport", "Reconnect requested.");
         Ok(())
+    }
+
+    pub async fn set_server_configuration(
+        &self,
+        input: OpenPrinterServerConfigurationInput,
+    ) -> Result<OpenPrinterServerConfiguration, CommandError> {
+        let configuration = OpenPrinterServerConfiguration::from_input(&input)?;
+        self.apply_server_configuration(configuration).await
+    }
+
+    pub async fn reset_server_configuration(
+        &self,
+    ) -> Result<OpenPrinterServerConfiguration, CommandError> {
+        let configuration = OpenPrinterServerConfiguration::from_product(&self.product);
+        self.apply_server_configuration(configuration).await
+    }
+
+    async fn apply_server_configuration(
+        &self,
+        configuration: OpenPrinterServerConfiguration,
+    ) -> Result<OpenPrinterServerConfiguration, CommandError> {
+        // Serializes save/reset and closes the check-versus-start race with
+        // browser authorization.
+        let provider_operation = self.provider_operation.lock().await;
+        if self.authorization_active.load(Ordering::Acquire) {
+            return Err(CommandError::new(
+                "authorization_in_progress",
+                "Finish or cancel the active authorization before changing server endpoints.",
+            ));
+        }
+        if *self.server_configuration.read().await == configuration {
+            return Ok(configuration);
+        }
+
+        let authorization = AuthorizationClient::new(
+            configuration.authorization_endpoints(),
+            self.product.protocol.client_id.clone(),
+            vec!["openprinter.agent".to_owned()],
+            Duration::from_secs(20),
+        )
+        .map_err(|error| CommandError::new("invalid_server_configuration", error.to_string()))?;
+
+        // Credentials are scoped to the prior provider. Clear them before
+        // persisting a new endpoint so a crash cannot pair an old token with a
+        // newly selected gateway on the next launch.
+        self.credentials
+            .clear()
+            .await
+            .map_err(|error| CommandError::new("credential_clear_failed", error.to_string()))?;
+        let value = serde_json::to_value(&configuration)
+            .map_err(|error| CommandError::internal(error.to_string()))?;
+        if let Err(error) = self
+            .storage
+            .set_setting(SERVER_CONFIGURATION_SETTING, &value)
+            .await
+        {
+            let diagnostic = sanitize(&error.to_string());
+            self.log.error(
+                "configuration",
+                format!(
+                    "Could not persist OpenPrinter server endpoints after clearing credentials: {diagnostic}"
+                ),
+            );
+            self.provider_generation.fetch_add(1, Ordering::AcqRel);
+            self.force_unconfigured(
+                "Server endpoints were not saved. Credentials were cleared; authorize again before reconnecting.",
+            )
+            .await;
+            drop(provider_operation);
+            let _ = self
+                .connection_control
+                .send(ConnectionControl::ConfigurationChanged)
+                .await;
+            self.emit(STATE_CHANGED_EVENT);
+            return Err(CommandError::new(
+                "configuration_store_failed",
+                "Server endpoints could not be saved. Credentials were cleared to keep the connection safe.",
+            ));
+        }
+
+        *self.server_configuration.write().await = configuration.clone();
+        *self.authorization.write().await = authorization;
+        self.provider_generation.fetch_add(1, Ordering::AcqRel);
+        self.force_unconfigured_with_errors(Vec::new()).await;
+        drop(provider_operation);
+        self.connection_control
+            .send(ConnectionControl::ConfigurationChanged)
+            .await
+            .map_err(|_| CommandError::internal("Connection supervisor is unavailable."))?;
+        self.log.info(
+            "configuration",
+            "OpenPrinter server endpoints changed; prior credentials were cleared.",
+        );
+        self.emit(STATE_CHANGED_EVENT);
+        Ok(configuration)
+    }
+
+    async fn force_unconfigured(&self, message: impl AsRef<str>) {
+        self.force_unconfigured_with_errors(vec![sanitize(message.as_ref())])
+            .await;
+    }
+
+    async fn force_unconfigured_with_errors(&self, errors: Vec<String>) {
+        *self.agent_id.write().await = None;
+        *self.connected_service.write().await = None;
+
+        let current = self.agent.handle().snapshot().await.state;
+        if matches!(
+            current,
+            AgentState::Connecting | AgentState::Connected | AgentState::Degraded
+        ) {
+            let _ = self
+                .agent
+                .handle()
+                .transition(AgentState::Disconnected)
+                .await;
+        }
+        if self.agent.handle().snapshot().await.state != AgentState::Unconfigured {
+            let _ = self
+                .agent
+                .handle()
+                .transition(AgentState::Unconfigured)
+                .await;
+        }
+        self.agent.handle().set_active_errors(errors).await;
     }
 
     pub fn open_product_link(&self, link: ProductLink) -> Result<(), CommandError> {

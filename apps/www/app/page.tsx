@@ -50,18 +50,19 @@ const constraints = [
 ];
 
 const serverExample = `const openPrinter = createOpenPrinterServer({
-  authenticateAgent: async ({ token }) => {
-    const agent = await verifyAgentToken(token);
-    return agent ? { agentId: agent.id } : null;
-  },
+  brand: { name: "Acme POS" },
   onJobReceived: ({ agent, message }) => {
     jobs.markReceived(agent.agentId, message.payload.jobId);
   },
 });
 
-httpServer.on("upgrade", openPrinter.handleUpgrade);
+const session = openPrinter.accept({
+  identity: authenticatedAgent,
+  transport: { send, close },
+});
+socket.on("message", (message) => session.receive(message));
 
-await openPrinter.sendJob(agentId, job);`;
+await session.sendJob(job);`;
 
 const installExample = `pnpm install
 pnpm --filter openprinter-node-example dev`;
@@ -149,7 +150,7 @@ export default function HomePage() {
                 'Tauri host around a shell-independent Rust agent',
                 'SQLite job recovery and idempotency',
                 'System, raw TCP, and virtual printer boundaries',
-                'Compile-time product configuration',
+                'Embedded product identity with runtime service endpoints',
               ]}
               href="/docs/build-oppa"
             />
@@ -157,10 +158,10 @@ export default function HomePage() {
               index="02"
               title="OpenPrinter"
               role="Protocol and server SDK"
-              description="A framework-neutral WebSocket integration with runtime validation, authenticated agent sessions, typed callbacks, and no hidden durable queue."
+              description="Framework-neutral protocol sessions over transports your application owns, with runtime validation, typed callbacks, and no hidden durable queue."
               items={[
                 '@openprinter/protocol for codecs and schemas',
-                '@openprinter/server for authenticated sessions',
+                '@openprinter/server for transport-neutral sessions',
                 'Shared Rust and TypeScript fixtures',
                 'At-least-once delivery semantics',
               ]}
@@ -177,8 +178,8 @@ export default function HomePage() {
               Bring your own queue, database, and auth policy.
             </h2>
             <p className="mt-3 text-[14px] leading-6 text-stone-400">
-              The SDK authenticates the WebSocket session and delivers typed messages. Your application stays
-              responsible for job durability, agent authorization, retry policy, and logical printer routing.
+              Your application authenticates and routes each connection; the SDK runs the validated protocol session.
+              You stay responsible for transport ownership, job durability, retry policy, and logical printer routing.
             </p>
             <Link
               className="mt-6 inline-flex items-center gap-1.5 text-[13px] font-medium text-orange-400 hover:text-orange-300"
@@ -188,7 +189,7 @@ export default function HomePage() {
               <ArrowUpRight className="size-3.5" aria-hidden />
             </Link>
           </div>
-          <CodeBlock code={serverExample} filename="server.ts" highlightedLines={[6, 7, 8]} language="typescript" />
+          <CodeBlock code={serverExample} filename="server.ts" highlightedLines={[7, 8, 9]} language="typescript" />
         </div>
       </section>
 
@@ -264,6 +265,9 @@ export default function HomePage() {
             projects.
           </span>
           <div className="flex gap-5">
+            <Link className="hover:text-stone-300" href="/downloads">
+              Downloads
+            </Link>
             <Link className="hover:text-stone-300" href="/docs/security">
               Security
             </Link>

@@ -15,7 +15,7 @@
   },
   "branding": {
     "supportUrl": "https://github.com/neplextech/oppa/issues",
-    "documentationUrl": "https://github.com/neplextech/oppa"
+    "documentationUrl": "https://oppa.neplex.dev"
   },
   "features": {
     "virtualPrinter": true,

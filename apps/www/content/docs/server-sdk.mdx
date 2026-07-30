@@ -1,27 +1,27 @@
 ---
 title: Server SDK
 description:
-  Framework-neutral authenticated WebSocket sessions and job delivery
-  primitives.
+  Framework-neutral protocol sessions over host-owned transports.
 ---
 
-`@openprinter/server` attaches to an existing Node-compatible HTTP
-server. It authenticates agent connections, validates protocol
-messages, tracks live sessions, runs heartbeat checks, and exposes
-typed lifecycle callbacks.
+`@openprinter/server` is a protocol-session SDK. The integrating
+application authenticates a connection, supplies `send` and `close`
+callbacks, and forwards inbound frames. The SDK performs version
+negotiation, validates messages, runs heartbeats, tracks that
+session's printer inventory, and exposes typed lifecycle events.
 
 ```ts
 import { createOpenPrinterServer } from '@openprinter/server';
 
 const openPrinter = createOpenPrinterServer({
-  authenticateAgent: async ({ token, request }) => {
-    const agent = await verifyAgentToken(token, request);
-    return agent
-      ? {
-          agentId: agent.id,
-          metadata: { organizationId: agent.organizationId },
-        }
-      : null;
+  brand: {
+    name: 'Acme POS',
+  },
+  onAgentConnected({ agent, session }) {
+    liveSessions.register(agent.agentId, session);
+  },
+  onAgentDisconnected({ agent, session }) {
+    liveSessions.removeIfCurrent(agent.agentId, session);
   },
   onPrintersChanged({ agent, printers }) {
     inventory.replace(agent.agentId, printers);
@@ -30,37 +30,100 @@ const openPrinter = createOpenPrinterServer({
     jobs.markReceived(agent.agentId, message.payload.jobId);
   },
 });
-
-httpServer.on('upgrade', openPrinter.handleUpgrade);
 ```
+
+After the host authenticates its WebSocket, framework connection, or
+broker route, it accepts one independent protocol session:
+
+```ts
+const session = openPrinter.accept({
+  identity: {
+    agentId: authenticatedAgent.id,
+    metadata: {
+      organizationId: authenticatedAgent.organizationId,
+    },
+  },
+  transport: {
+    send: (message) => connection.send(message),
+    close: ({ reason, detail }) => {
+      connection.close(mapCloseReason(reason), detail);
+    },
+  },
+});
+
+connection.onMessage((message) => {
+  void session.receive(message);
+});
+
+connection.onClose((detail) => {
+  void session.transportClosed({
+    reason: 'peer-closed',
+    detail,
+  });
+});
+```
+
+`brand.name` is required in `server.hello`. OPPA uses it to show the
+service that accepted the connection. Brand metadata cannot contain an
+icon or resource URL, so displaying it never requires a sensitive
+third-party request.
 
 ## What the SDK owns
 
-- WebSocket upgrade and Bearer authentication
-- version negotiation and runtime validation
-- one active session per agent ID
-- bounded heartbeat and message size handling
-- typed inbound lifecycle callbacks
-- server-to-agent message delivery
-- structured offline and protocol errors
+- protocol handshake, version negotiation, and runtime validation
+- ordered inbound processing within one accepted session
+- bounded heartbeat, message, callback, and transport handoff timing
+- per-session printer inventory and typed lifecycle callbacks
+- validated application commands and structured transport failures
+- semantic protocol disconnect messages
 
 ## What the host owns
 
+- HTTP and WebSocket server or broker lifecycle
+- authentication parsing, policy, and token format
+- connection registry, agent affinity, and replacement policy
+- Node cluster coordination or distributed routing
 - durable jobs and retry schedules
-- database, Redis, or queue choice
-- agent authorization policy and token format
-- tenant or organization models
-- logical printer routing
-- billing and user sessions
+- database, Redis, RabbitMQ, NATS, or queue choice
+- tenant models, logical printer routing, billing, and user sessions
+
+Two sessions with the same authenticated agent ID remain independent.
+This prevents a process-local registry from being mistaken for a
+cluster-wide routing solution. The host may keep a local map in a
+single-process application or announce session ownership through its
+chosen backplane.
 
 Every job callback is structurally validated, but the host must still
-match its agent, correlation, job, and idempotency identifiers against
-the durable application record before changing that record. Those
-correlations outlive an in-memory SDK session and therefore cannot be
-authorized by the SDK alone. Lifecycle callbacks have a bounded
-execution time (`callbackTimeoutMs`, five seconds by default);
-failures and timeouts are isolated through `onCallbackError`.
+match agent, correlation, job, and idempotency identifiers against its
+durable application record. Those correlations outlive an SDK session
+and cannot be authorized by the SDK alone.
 
-When an agent is offline, `send` returns a structured unavailable
-result. Invalid outbound protocol values still throw a typed protocol
-error. The SDK never silently creates a durable queue.
+## Session commands
+
+The host selects the session before sending:
+
+```ts
+const session = await liveSessions.resolve(agentId);
+
+if (session === null) {
+  await jobs.keepQueued(job.id, 'agent-offline');
+  return;
+}
+
+const result = await session.sendJob({
+  jobId: job.id,
+  idempotencyKey: job.idempotencyKey,
+  printerId: job.printerId,
+  createdAt: job.createdAt.toISOString(),
+  document: job.document,
+});
+
+if (!result.ok) {
+  await jobs.keepQueued(job.id, result.reason);
+}
+```
+
+`send`, `sendJob`, `requestPrinters`, `cancelJob`, and
+`invalidateConfiguration` report immediate transport handoff only.
+They never silently create a durable queue. The `received` callback is
+the later proof that OPPA persisted a delivered job.

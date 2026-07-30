@@ -3,6 +3,14 @@ import { useMemo, useState } from 'react';
 
 import { EmptyState, FieldLabel, ScreenContainer, ScreenHeader, inputClass } from '@/components/ui';
 import { Button } from '@/components/ui/button';
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuGroup,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from '@/components/ui/context-menu';
 import { isVirtualPrinter } from '@/lib/types';
 import type { PrinterSummary, VirtualPrinterInput, VirtualPrinterMode } from '@/lib/types';
 import { cn, formatRelativeTime } from '@/lib/utils';
@@ -117,23 +125,46 @@ export function VirtualPrintersScreen({
             </div>
             <div className="space-y-0.5 p-1.5">
               {virtualPrinters.map((printer) => (
-                <button
-                  key={printer.id}
-                  type="button"
-                  onClick={() => setSelectedId(printer.id)}
-                  className={cn(
-                    'flex w-full items-center gap-2.5 rounded px-2.5 py-2 text-left text-[11px] transition-colors',
-                    selected?.id === printer.id
-                      ? 'bg-primary/10 text-primary'
-                      : 'text-muted-foreground hover:bg-accent hover:text-foreground',
-                  )}
-                >
-                  <MonitorCog className="size-3.5 shrink-0" aria-hidden />
-                  <div className="min-w-0">
-                    <p className="truncate font-medium">{printer.displayName}</p>
-                    <p className="text-muted-foreground/60 text-[10px]">{printer.history.length} captured</p>
-                  </div>
-                </button>
+                <ContextMenu key={printer.id}>
+                  <ContextMenuTrigger
+                    render={<button type="button" />}
+                    onClick={() => setSelectedId(printer.id)}
+                    className={cn(
+                      'flex w-full items-center gap-2.5 rounded px-2.5 py-2 text-left text-[11px] transition-colors',
+                      selected?.id === printer.id
+                        ? 'bg-primary/10 text-primary'
+                        : 'text-muted-foreground hover:bg-accent hover:text-foreground',
+                    )}
+                  >
+                    <MonitorCog className="size-3.5 shrink-0" aria-hidden />
+                    <div className="min-w-0">
+                      <p className="truncate font-medium">{printer.displayName}</p>
+                      <p className="text-muted-foreground/60 text-[10px]">{printer.history.length} captured</p>
+                    </div>
+                  </ContextMenuTrigger>
+                  <ContextMenuContent className="min-w-48">
+                    <ContextMenuGroup>
+                      <ContextMenuItem onClick={() => setSelectedId(printer.id)}>
+                        <MonitorCog className="size-4" aria-hidden />
+                        Open printer
+                      </ContextMenuItem>
+                      <ContextMenuItem disabled={busy === `test-${printer.id}`} onClick={() => void onTest(printer.id)}>
+                        <Send className="size-4" aria-hidden />
+                        Send test print
+                      </ContextMenuItem>
+                    </ContextMenuGroup>
+                    <ContextMenuSeparator />
+                    <ContextMenuGroup>
+                      <ContextMenuItem
+                        disabled={printer.history.length === 0 || busy === `clear-${printer.id}`}
+                        onClick={() => void onClear(printer.id)}
+                      >
+                        <Trash2 className="size-4" aria-hidden />
+                        Clear captured output
+                      </ContextMenuItem>
+                    </ContextMenuGroup>
+                  </ContextMenuContent>
+                </ContextMenu>
               ))}
             </div>
           </div>

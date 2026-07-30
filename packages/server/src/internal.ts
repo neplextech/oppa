@@ -1,122 +1,68 @@
-import type { Duplex } from 'node:stream';
-
-import type { RawData } from 'ws';
+import { MAX_WIRE_MESSAGE_BYTES, type OpenPrinterBrandMetadata } from '@openprinter/protocol';
 
 import { OpenPrinterServerConfigurationError } from './errors.js';
-import type { AuthenticationFailureReason, OpenPrinterServerOptions } from './types.js';
+import type {
+  AcceptOpenPrinterSessionInput,
+  OpenPrinterServerOptions,
+  OpenPrinterTransportCloseRequest,
+} from './types.js';
 
-const BEARER_PATTERN = /^Bearer ([A-Za-z0-9\-._~+/]+={0,})$/i;
 const IDENTIFIER_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
+const encoder = new TextEncoder();
 
-export interface ParsedBearerToken {
-  readonly ok: true;
-  readonly token: string;
-}
-
-export interface InvalidBearerToken {
-  readonly ok: false;
-  readonly reason: Extract<AuthenticationFailureReason, 'missing-bearer-token' | 'malformed-bearer-token'>;
-}
-
-export function parseBearerToken(
-  header: string | readonly string[] | undefined,
-): ParsedBearerToken | InvalidBearerToken {
-  if (header === undefined) {
-    return { ok: false, reason: 'missing-bearer-token' };
-  }
-
-  if (typeof header !== 'string') {
-    return { ok: false, reason: 'malformed-bearer-token' };
-  }
-
-  const match = BEARER_PATTERN.exec(header);
-  if (match?.[1] === undefined) {
-    return { ok: false, reason: 'malformed-bearer-token' };
-  }
-
-  return { ok: true, token: match[1] };
-}
-
-export function rawDataToBytes(data: RawData): Uint8Array {
-  if (Array.isArray(data)) {
-    return Buffer.concat(data);
-  }
-
-  if (data instanceof ArrayBuffer) {
-    return new Uint8Array(data);
-  }
-
-  return data;
-}
-
-export function rejectUpgrade(socket: Duplex, status: number, reason: string): void {
-  if (socket.destroyed) {
-    return;
-  }
-
-  const safeReason = reason.replaceAll(/[\r\n]/g, ' ');
-
-  try {
-    socket.end(
-      `HTTP/1.1 ${status} ${safeReason}\r\n` +
-        'Connection: close\r\n' +
-        'Content-Length: 0\r\n' +
-        'Cache-Control: no-store\r\n' +
-        '\r\n',
-    );
-  } catch {
-    socket.destroy();
-  }
+/** Validated server configuration shared by all accepted sessions. */
+export interface ResolvedOpenPrinterServerOptions {
+  readonly brand: OpenPrinterBrandMetadata;
+  readonly callbackTimeoutMs: number;
+  readonly handshakeTimeoutMs: number;
+  readonly heartbeatIntervalMs: number;
+  readonly heartbeatTimeoutMs: number;
+  readonly maxMessageBytes: number;
+  readonly serverId: string;
+  readonly serverVersion: string;
+  readonly transportTimeoutMs: number;
 }
 
 export function isValidIdentifier(value: string): boolean {
   return IDENTIFIER_PATTERN.test(value);
 }
 
-export function boundedCloseDetail(value: string): string | undefined {
+export function boundedDetail(value: string): string | undefined {
   let sanitized = '';
   for (const character of value) {
     const codePoint = character.codePointAt(0) ?? 0;
     sanitized += codePoint <= 0x1f || codePoint === 0x7f ? ' ' : character;
   }
   const normalized = sanitized.trim();
-
   return normalized === '' ? undefined : normalized.slice(0, 120);
 }
 
-export function callbackErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : 'Unknown callback error';
+export function utf8ByteLength(value: string): number {
+  return encoder.encode(value).byteLength;
 }
 
 export function validateOptions<Metadata>(
   options: OpenPrinterServerOptions<Metadata>,
-  protocolMaximumMessageBytes: number,
-): {
-  readonly authenticationTimeoutMs: number;
-  readonly callbackTimeoutMs: number;
-  readonly handshakeTimeoutMs: number;
-  readonly heartbeatIntervalMs: number;
-  readonly heartbeatTimeoutMs: number;
-  readonly maxMessageBytes: number;
-  readonly path?: string;
-  readonly serverId: string;
-  readonly serverVersion: string;
-} {
-  const authenticationTimeoutMs = options.authenticationTimeoutMs ?? 10_000;
+): ResolvedOpenPrinterServerOptions {
+  if (typeof options !== 'object' || options === null) {
+    throw new OpenPrinterServerConfigurationError('Server options must be an object.');
+  }
+
   const callbackTimeoutMs = options.callbackTimeoutMs ?? 5_000;
   const handshakeTimeoutMs = options.handshakeTimeoutMs ?? 10_000;
   const heartbeatIntervalMs = options.heartbeatIntervalMs ?? 15_000;
   const heartbeatTimeoutMs = options.heartbeatTimeoutMs ?? 45_000;
-  const maxMessageBytes = options.maxMessageBytes ?? protocolMaximumMessageBytes;
+  const maxMessageBytes = options.maxMessageBytes ?? MAX_WIRE_MESSAGE_BYTES;
   const serverId = options.serverId ?? 'openprinter-server';
   const serverVersion = options.serverVersion ?? '0.1.0';
+  const transportTimeoutMs = options.transportTimeoutMs ?? 10_000;
 
-  requireIntegerInRange('authenticationTimeoutMs', authenticationTimeoutMs, 1, 300_000);
   requireIntegerInRange('callbackTimeoutMs', callbackTimeoutMs, 1, 30_000);
   requireIntegerInRange('handshakeTimeoutMs', handshakeTimeoutMs, 1, 300_000);
   requireIntegerInRange('heartbeatIntervalMs', heartbeatIntervalMs, 5_000, 300_000);
   requireIntegerInRange('heartbeatTimeoutMs', heartbeatTimeoutMs, 1_000, 120_000);
-  requireIntegerInRange('maxMessageBytes', maxMessageBytes, 1_024, protocolMaximumMessageBytes);
+  requireIntegerInRange('maxMessageBytes', maxMessageBytes, 1_024, MAX_WIRE_MESSAGE_BYTES);
+  requireIntegerInRange('transportTimeoutMs', transportTimeoutMs, 1, 120_000);
 
   if (heartbeatTimeoutMs <= heartbeatIntervalMs) {
     throw new OpenPrinterServerConfigurationError('heartbeatTimeoutMs must be greater than heartbeatIntervalMs.');
@@ -124,33 +70,110 @@ export function validateOptions<Metadata>(
   if (callbackTimeoutMs >= heartbeatTimeoutMs) {
     throw new OpenPrinterServerConfigurationError('callbackTimeoutMs must be less than heartbeatTimeoutMs.');
   }
-
+  if (transportTimeoutMs >= heartbeatTimeoutMs) {
+    throw new OpenPrinterServerConfigurationError('transportTimeoutMs must be less than heartbeatTimeoutMs.');
+  }
   if (!isValidIdentifier(serverId)) {
     throw new OpenPrinterServerConfigurationError('serverId must be a valid OpenPrinter identifier.');
   }
-
   if (serverVersion.length < 1 || serverVersion.length > 256) {
     throw new OpenPrinterServerConfigurationError('serverVersion must contain between 1 and 256 characters.');
   }
 
-  if (
-    options.path !== undefined &&
-    (!options.path.startsWith('/') || options.path.includes('?') || options.path.includes('#'))
-  ) {
-    throw new OpenPrinterServerConfigurationError('path must be an absolute URL pathname without a query or fragment.');
-  }
+  const brand = validateBrand(options.brand);
 
   return {
-    authenticationTimeoutMs,
+    brand,
     callbackTimeoutMs,
     handshakeTimeoutMs,
     heartbeatIntervalMs,
     heartbeatTimeoutMs,
     maxMessageBytes,
-    ...(options.path === undefined ? {} : { path: options.path }),
     serverId,
     serverVersion,
+    transportTimeoutMs,
   };
+}
+
+export function validateAcceptInput<Metadata>(input: AcceptOpenPrinterSessionInput<Metadata>): void {
+  if (typeof input !== 'object' || input === null) {
+    throw new OpenPrinterServerConfigurationError('accept() input must be an object.');
+  }
+
+  if (typeof input.identity?.agentId !== 'string' || !isValidIdentifier(input.identity.agentId)) {
+    throw new OpenPrinterServerConfigurationError('accept().identity.agentId must be a valid OpenPrinter identifier.');
+  }
+  if (input.sessionId !== undefined && !isValidIdentifier(input.sessionId)) {
+    throw new OpenPrinterServerConfigurationError('accept().sessionId must be a valid OpenPrinter identifier.');
+  }
+  if (typeof input.transport?.send !== 'function' || typeof input.transport.close !== 'function') {
+    throw new OpenPrinterServerConfigurationError(
+      'accept().transport must provide send(message) and close(request) functions.',
+    );
+  }
+}
+
+export function transportCloseRequest(
+  reason: OpenPrinterTransportCloseRequest['reason'],
+  detail: string,
+): OpenPrinterTransportCloseRequest {
+  const bounded = boundedDetail(detail);
+  return {
+    reason,
+    ...(bounded === undefined ? {} : { detail: bounded }),
+  };
+}
+
+function validateBrand(brand: OpenPrinterBrandMetadata): OpenPrinterBrandMetadata {
+  const name = brand?.name;
+  if (typeof name !== 'string' || name.length < 1 || name.length > 256) {
+    throw new OpenPrinterServerConfigurationError('brand.name must contain between 1 and 256 UTF-16 code units.');
+  }
+
+  const characters = [...name];
+  const firstCodePoint = characters[0]?.codePointAt(0);
+  const lastCodePoint = characters.at(-1)?.codePointAt(0);
+  if (
+    firstCodePoint === undefined ||
+    lastCodePoint === undefined ||
+    isBrandEdgeWhitespace(firstCodePoint) ||
+    isBrandEdgeWhitespace(lastCodePoint) ||
+    characters.some((character) => isBrandUnsafeCharacter(character.codePointAt(0) ?? 0))
+  ) {
+    throw new OpenPrinterServerConfigurationError(
+      'brand.name must not contain leading or trailing whitespace, control characters, invalid Unicode, or direction-formatting controls.',
+    );
+  }
+
+  return { name };
+}
+
+function isBrandUnsafeCharacter(codePoint: number): boolean {
+  return (
+    codePoint <= 0x1f ||
+    (codePoint >= 0x7f && codePoint <= 0x9f) ||
+    codePoint === 0x061c ||
+    codePoint === 0x200e ||
+    codePoint === 0x200f ||
+    (codePoint >= 0x202a && codePoint <= 0x202e) ||
+    (codePoint >= 0x2066 && codePoint <= 0x2069) ||
+    (codePoint >= 0xd800 && codePoint <= 0xdfff)
+  );
+}
+
+function isBrandEdgeWhitespace(codePoint: number): boolean {
+  return (
+    codePoint === 0x20 ||
+    codePoint === 0xa0 ||
+    codePoint === 0x1680 ||
+    (codePoint >= 0x2000 && codePoint <= 0x200a) ||
+    codePoint === 0x2028 ||
+    codePoint === 0x2029 ||
+    codePoint === 0x202f ||
+    codePoint === 0x205f ||
+    codePoint === 0x3000 ||
+    codePoint === 0xfeff
+  );
 }
 
 function requireIntegerInRange(name: string, value: number, minimum: number, maximum: number): void {

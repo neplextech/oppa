@@ -3,6 +3,11 @@
   "version": "0.1.0",
   "description": "Canonical OpenPrinter wire protocol schemas, types, validation, and codecs",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/neplextech/oppa.git",
+    "directory": "packages/protocol"
+  },
   "files": [
     "dist",
     "README.md"
@@ -16,6 +21,9 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     }
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",

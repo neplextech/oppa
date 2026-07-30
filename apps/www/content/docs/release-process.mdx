@@ -5,10 +5,9 @@ description:
   boundaries.
 ---
 
-Releases are coordinated from the workspace root. OPPA desktop
-artifacts and the two `@openprinter/*` packages share protocol
-compatibility but may be published independently once a release policy
-is established.
+Releases are coordinated from the workspace root. A push to the
+`release` branch is the stable release channel. Path filters keep the
+desktop and npm publication jobs independent.
 
 ## 1. Validate
 
@@ -20,8 +19,9 @@ pnpm test
 pnpm build
 ```
 
-Platform compilation runs on Windows, macOS, and Linux. Normal CI does
-not require code signing.
+`cargo-check.yml` validates Windows, macOS, and Linux targets. The npm
+checks lint, test, typecheck, and build the publishable packages.
+Normal CI does not require code signing.
 
 ## 2. Review protocol compatibility
 
@@ -47,18 +47,49 @@ Git Cliff groups conventional commits under features, fixes,
 performance, documentation, refactoring, testing, build, CI, and other
 changes.
 
-## 4. Build artifacts
+## 4. Publish the stable channel
 
-Desktop distributors select and validate their product directory
-before producing signed platform artifacts. Package publication should
-include compiled JavaScript, declarations, README, license, and
-protocol schema where applicable.
+Merge or push the prepared versions to `release`.
+
+`release-desktop.yml` builds signed OPPA artifacts for macOS ARM64 and
+x64, Linux ARM64 and x64, and Windows ARM64 and x64. It first creates
+a stable, non-prerelease draft in GitHub Releases and uploads the
+Tauri updater metadata and signatures. After every platform build
+succeeds, the finalization job adds a sorted `SHA256SUMS.txt` and only
+then publishes the draft as the latest stable release. A checksum or
+upload failure leaves the release unpublished. Configure these
+repository secrets before releasing:
+
+- `OPPA_TAURI_SIGNING_PRIVATE_KEY`
+- `OPPA_TAURI_SIGNING_PRIVATE_KEY_PASSWORD`
+
+Replace the updater public-key placeholder in
+`apps/oppa/src-tauri/tauri.conf.json` with the matching public key
+before the first release.
+
+`publish-npm.yml` builds and publishes `@openprinter/protocol` before
+`@openprinter/server` using npm OIDC trusted publishing. Register that
+workflow as a trusted publisher for both npm packages. The workflow
+uses npm CLI 11.5.1 or newer for the authenticated publish, uses no
+registry token, and skips a version that already exists. Package
+tarballs are staged through pnpm first so workspace dependency ranges
+are converted to publishable versions.
+
+Both release workflows also support a manual dispatch. There is no
+canary channel.
 
 ## 5. Verify
 
-Test the packaged example workflow with a virtual printer: authorize,
-connect, synchronize inventory, deliver a job, observe received and
+Before pushing to `release`, test the packaged example workflow with a
+virtual printer: authorize, connect, confirm the advertised service
+name, synchronize inventory, deliver a job, observe received and
 submitted events, restart OPPA, and confirm local state recovery.
+Exercise the updater from the prior stable version as part of the
+release rehearsal.
+
+After the workflow completes, verify that the published release
+contains signatures, updater metadata, and `SHA256SUMS.txt`, and that
+the downloads page resolves the new stable assets.
 
 Publishing credentials, signing identities, channels, and registry
 provenance are managed outside the source tree and must never appear

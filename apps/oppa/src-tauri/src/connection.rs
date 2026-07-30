@@ -1,4 +1,8 @@
-use std::{collections::VecDeque, sync::Arc, time::Duration};
+use std::{
+    collections::VecDeque,
+    sync::{Arc, atomic::Ordering},
+    time::Duration,
+};
 
 use async_trait::async_trait;
 use chrono::Duration as ChronoDuration;
@@ -6,6 +10,7 @@ use oppa_agent::{
     AgentRuntimeError, AgentState, OutboundReportError, OutboundReporter, ReceiveJobOutcome,
     ServerJobOutcome,
 };
+use oppa_auth::AuthorizationClient;
 use oppa_core::Timestamp;
 use oppa_protocol::{
     AgentHeartbeat, AgentHello, AgentMessage, AgentMessageKind, AuthenticationMetadata,
@@ -20,7 +25,7 @@ use uuid::Uuid;
 
 use crate::{
     error::sanitize,
-    models::{DesktopJobState, JobSummary},
+    models::{ConnectedServiceSummary, DesktopJobState, JobSummary},
     service::{DesktopService, JOBS_CHANGED_EVENT, PRINTERS_CHANGED_EVENT},
 };
 
@@ -68,6 +73,7 @@ impl OutboundReporter for OutboundChannelReporter {
 #[derive(Debug, Clone, Copy)]
 pub enum ConnectionControl {
     Reconnect,
+    ConfigurationChanged,
     PublishInventory,
     Shutdown,
 }
@@ -100,7 +106,9 @@ pub async fn run_connection_supervisor(
                     automatic_reconnect = true;
                     backoff.reset();
                 }
-                Some(ConnectionControl::PublishInventory) => continue,
+                Some(
+                    ConnectionControl::ConfigurationChanged | ConnectionControl::PublishInventory,
+                ) => continue,
                 Some(ConnectionControl::Shutdown) | None => {
                     finish_outbound(&mut outbound, "application is shutting down");
                     return;
@@ -111,6 +119,10 @@ pub async fn run_connection_supervisor(
             match wait_delay_or_control(&service, delay, &mut controls).await {
                 DelayOutcome::Continue => {}
                 DelayOutcome::Reconnect => backoff.reset(),
+                DelayOutcome::Pause => {
+                    automatic_reconnect = false;
+                    continue;
+                }
                 DelayOutcome::Shutdown => {
                     finish_outbound(&mut outbound, "application is shutting down");
                     return;
@@ -118,7 +130,21 @@ pub async fn run_connection_supervisor(
             }
         }
 
-        let tokens = match load_connection_tokens(&service).await {
+        // Credentials, OAuth endpoints, and the gateway endpoint are one
+        // provider snapshot. Configuration changes cannot interleave while
+        // credentials are loaded or refreshed.
+        let (credential_load, gateway_endpoint, provider_generation) = {
+            let _provider_operation = service.provider_operation.lock().await;
+            let server_configuration = service.server_configuration.read().await.clone();
+            let authorization = service.authorization.read().await.clone();
+            let credential_load = load_connection_tokens(&service, &authorization).await;
+            (
+                credential_load,
+                server_configuration.gateway_url,
+                service.provider_generation.load(Ordering::Acquire),
+            )
+        };
+        let tokens = match credential_load {
             CredentialLoad::Ready(tokens) => tokens,
             CredentialLoad::Unconfigured => {
                 automatic_reconnect = false;
@@ -132,6 +158,10 @@ pub async fn run_connection_supervisor(
                 match wait_delay_or_control(&service, delay, &mut controls).await {
                     DelayOutcome::Continue => {}
                     DelayOutcome::Reconnect => backoff.reset(),
+                    DelayOutcome::Pause => {
+                        automatic_reconnect = false;
+                        continue;
+                    }
                     DelayOutcome::Shutdown => {
                         finish_outbound(&mut outbound, "application is shutting down");
                         return;
@@ -140,11 +170,19 @@ pub async fn run_connection_supervisor(
                 continue;
             }
         };
-        *service.agent_id.write().await = Some(tokens.agent_id.to_string());
-        service.transition(AgentState::Connecting).await;
+        {
+            let _provider_operation = service.provider_operation.lock().await;
+            if service.provider_generation.load(Ordering::Acquire) != provider_generation {
+                automatic_reconnect = false;
+                continue;
+            }
+            *service.agent_id.write().await = Some(tokens.agent_id.to_string());
+            *service.connected_service.write().await = None;
+            service.transition(AgentState::Connecting).await;
+        }
 
         let config = TransportConfig {
-            endpoint: service.product.protocol.gateway_url.clone(),
+            endpoint: gateway_endpoint.clone(),
             connect_timeout: CONNECT_TIMEOUT,
             idle_timeout: IDLE_TIMEOUT,
             outbound_buffer_capacity: OUTBOUND_BUFFER_CAPACITY,
@@ -152,6 +190,11 @@ pub async fn run_connection_supervisor(
         let mut transport = match WebSocketTransport::new(config) {
             Ok(transport) => transport,
             Err(error) => {
+                let _provider_operation = service.provider_operation.lock().await;
+                if service.provider_generation.load(Ordering::Acquire) != provider_generation {
+                    automatic_reconnect = false;
+                    continue;
+                }
                 service.transition(AgentState::Disconnected).await;
                 service.set_connection_error(error.to_string()).await;
                 automatic_reconnect = false;
@@ -160,14 +203,21 @@ pub async fn run_connection_supervisor(
         };
         transport.set_bearer_token(tokens.access_token.clone());
         if let Err(error) = transport.connect().await {
-            service.transition(AgentState::Disconnected).await;
-            service.set_connection_error(error.to_string()).await;
-            if matches!(&error, TransportError::AuthenticationRejected { .. }) {
-                service
-                    .invalidate_credentials("Gateway rejected the saved authorization.")
-                    .await;
-                automatic_reconnect = false;
-                continue;
+            {
+                let _provider_operation = service.provider_operation.lock().await;
+                if service.provider_generation.load(Ordering::Acquire) != provider_generation {
+                    automatic_reconnect = false;
+                    continue;
+                }
+                service.transition(AgentState::Disconnected).await;
+                service.set_connection_error(error.to_string()).await;
+                if matches!(&error, TransportError::AuthenticationRejected { .. }) {
+                    service
+                        .invalidate_credentials("Gateway rejected the saved authorization.")
+                        .await;
+                    automatic_reconnect = false;
+                    continue;
+                }
             }
             if !error.is_retryable() {
                 automatic_reconnect = false;
@@ -180,6 +230,10 @@ pub async fn run_connection_supervisor(
             match wait_delay_or_control(&service, delay, &mut controls).await {
                 DelayOutcome::Continue => {}
                 DelayOutcome::Reconnect => backoff.reset(),
+                DelayOutcome::Pause => {
+                    automatic_reconnect = false;
+                    continue;
+                }
                 DelayOutcome::Shutdown => {
                     finish_outbound(&mut outbound, "application is shutting down");
                     return;
@@ -187,10 +241,23 @@ pub async fn run_connection_supervisor(
             }
             continue;
         }
+        {
+            let _provider_operation = service.provider_operation.lock().await;
+            if service.provider_generation.load(Ordering::Acquire) != provider_generation {
+                let _ = transport.close().await;
+                automatic_reconnect = false;
+                continue;
+            }
+        }
 
         let hello = hello_message(&service, tokens.agent_id.as_str());
         let hello_message_id = hello.message_id.clone();
         if let Err(error) = transport.send(hello).await {
+            let _provider_operation = service.provider_operation.lock().await;
+            if service.provider_generation.load(Ordering::Acquire) != provider_generation {
+                automatic_reconnect = false;
+                continue;
+            }
             service.transition(AgentState::Disconnected).await;
             service.set_connection_error(error.to_string()).await;
             retry_after = next_retry_delay(&mut backoff);
@@ -212,13 +279,19 @@ pub async fn run_connection_supervisor(
         while !connection_ended {
             tokio::select! {
                 () = &mut hello_timeout, if !handshaken => {
-                    service
-                        .set_connection_error("Gateway did not complete the server hello handshake in time.")
-                        .await;
-                    reject_pending(&mut awaiting_handshake, "gateway hello timed out");
-                    retry_after = next_retry_delay(&mut backoff);
-                    if retry_after.is_none() {
+                    let _provider_operation = service.provider_operation.lock().await;
+                    if service.provider_generation.load(Ordering::Acquire) == provider_generation {
+                        service
+                            .set_connection_error("Gateway did not complete the server hello handshake in time.")
+                            .await;
+                        reject_pending(&mut awaiting_handshake, "gateway hello timed out");
+                        retry_after = next_retry_delay(&mut backoff);
+                        if retry_after.is_none() {
+                            automatic_reconnect = false;
+                        }
+                    } else {
                         automatic_reconnect = false;
+                        reject_pending(&mut awaiting_handshake, "server configuration changed");
                     }
                     connection_ended = true;
                 }
@@ -236,8 +309,18 @@ pub async fn run_connection_supervisor(
                             backoff.reset();
                             connection_ended = true;
                         }
+                        Some(ConnectionControl::ConfigurationChanged) => {
+                            let _ = transport.close().await;
+                            reject_pending(&mut awaiting_handshake, "server configuration changed");
+                            automatic_reconnect = false;
+                            connection_ended = true;
+                        }
                         Some(ConnectionControl::PublishInventory) if handshaken => {
-                            if let Err(error) = send_inventory(&service, &mut transport, None).await {
+                            let _provider_operation = service.provider_operation.lock().await;
+                            if service.provider_generation.load(Ordering::Acquire) != provider_generation {
+                                automatic_reconnect = false;
+                                connection_ended = true;
+                            } else if let Err(error) = send_inventory(&service, &mut transport, None).await {
                                 service.set_connection_error(error.to_string()).await;
                                 retry_after = next_retry_delay(&mut backoff);
                                 if retry_after.is_none() {
@@ -260,7 +343,12 @@ pub async fn run_connection_supervisor(
                         let _ = transport.close().await;
                         return;
                     };
-                    if handshaken {
+                    let _provider_operation = service.provider_operation.lock().await;
+                    if service.provider_generation.load(Ordering::Acquire) != provider_generation {
+                        let _ = request.completion.send(Err("server configuration changed".to_owned()));
+                        automatic_reconnect = false;
+                        connection_ended = true;
+                    } else if handshaken {
                         match transport.send(request.message).await {
                             Ok(()) => {
                                 let _ = request.completion.send(Ok(()));
@@ -295,6 +383,8 @@ pub async fn run_connection_supervisor(
                                 &hello_message_id,
                                 &mut handshaken,
                                 &mut awaiting_handshake,
+                                gateway_endpoint.as_str(),
+                                provider_generation,
                             )
                             .await
                             {
@@ -317,6 +407,13 @@ pub async fn run_connection_supervisor(
                             }
                         }
                         Err(error) => {
+                            let _provider_operation = service.provider_operation.lock().await;
+                            if service.provider_generation.load(Ordering::Acquire) != provider_generation {
+                                reject_pending(&mut awaiting_handshake, "server configuration changed");
+                                automatic_reconnect = false;
+                                connection_ended = true;
+                                continue;
+                            }
                             let retryable = error.is_retryable();
                             service.set_connection_error(error.to_string()).await;
                             reject_pending(&mut awaiting_handshake, &error.to_string());
@@ -336,7 +433,11 @@ pub async fn run_connection_supervisor(
             }
         }
         let _ = transport.close().await;
-        service.transition(AgentState::Disconnected).await;
+        let _provider_operation = service.provider_operation.lock().await;
+        if service.provider_generation.load(Ordering::Acquire) == provider_generation {
+            *service.connected_service.write().await = None;
+            service.transition(AgentState::Disconnected).await;
+        }
     }
 }
 
@@ -346,7 +447,7 @@ enum MessageDisposition {
     Stop,
 }
 
-#[allow(clippy::too_many_lines)]
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 async fn handle_server_message(
     service: &Arc<DesktopService>,
     transport: &mut WebSocketTransport,
@@ -354,7 +455,13 @@ async fn handle_server_message(
     hello_message_id: &str,
     handshaken: &mut bool,
     awaiting_handshake: &mut VecDeque<OutboundRequest>,
+    gateway_url: &str,
+    provider_generation: u64,
 ) -> MessageDisposition {
+    let _provider_operation = service.provider_operation.lock().await;
+    if service.provider_generation.load(Ordering::Acquire) != provider_generation {
+        return MessageDisposition::Stop;
+    }
     if !*handshaken && !matches!(&message.kind, ServerMessageKind::Hello(_)) {
         service
             .set_connection_error(format!(
@@ -365,7 +472,7 @@ async fn handle_server_message(
         return MessageDisposition::Reconnect { delay: None };
     }
     match &message.kind {
-        ServerMessageKind::Hello(_) => {
+        ServerMessageKind::Hello(hello) => {
             if *handshaken || message.correlation_id.as_deref() != Some(hello_message_id) {
                 service
                     .set_connection_error("Gateway hello did not match the active handshake.")
@@ -374,11 +481,21 @@ async fn handle_server_message(
             }
             *handshaken = true;
             *service.last_connection_at.write().await = Some(Timestamp::now().to_string());
+            *service.connected_service.write().await = Some(ConnectedServiceSummary {
+                name: hello.brand.name.clone(),
+                server_id: hello.server_id.clone(),
+                server_version: hello.server_version.clone(),
+                gateway_url: gateway_url.to_owned(),
+            });
             service.agent.handle().set_active_errors(Vec::new()).await;
             service.transition(AgentState::Connected).await;
-            service
-                .log
-                .info("transport", "Authenticated gateway connection established.");
+            service.log.info(
+                "transport",
+                format!(
+                    "Authenticated connection to {} established.",
+                    hello.brand.name
+                ),
+            );
 
             let auth_metadata = envelope(
                 AgentMessageKind::AuthenticationMetadata(AuthenticationMetadata {
@@ -636,7 +753,10 @@ enum CredentialLoad {
     Retry,
 }
 
-async fn load_connection_tokens(service: &DesktopService) -> CredentialLoad {
+async fn load_connection_tokens(
+    service: &DesktopService,
+    authorization: &AuthorizationClient,
+) -> CredentialLoad {
     let mut tokens = match service.credentials.load().await {
         Ok(Some(tokens)) => tokens,
         Ok(None) => {
@@ -659,7 +779,7 @@ async fn load_connection_tokens(service: &DesktopService) -> CredentialLoad {
         return CredentialLoad::Unconfigured;
     }
     if tokens.expires_within(ChronoDuration::minutes(5)) && tokens.refresh_token.is_some() {
-        match service.authorization.refresh(&tokens).await {
+        match authorization.refresh(&tokens).await {
             Ok(refreshed) => {
                 if let Err(error) = service.credentials.save(&refreshed).await {
                     service.set_connection_error(error.to_string()).await;
@@ -763,6 +883,7 @@ async fn wait_for_reconnect(
 enum DelayOutcome {
     Continue,
     Reconnect,
+    Pause,
     Shutdown,
 }
 
@@ -779,6 +900,7 @@ async fn wait_delay_or_control(
             () = &mut sleep => return DelayOutcome::Continue,
             control = controls.recv() => match control {
                 Some(ConnectionControl::Reconnect) => return DelayOutcome::Reconnect,
+                Some(ConnectionControl::ConfigurationChanged) => return DelayOutcome::Pause,
                 Some(ConnectionControl::PublishInventory) => {}
                 Some(ConnectionControl::Shutdown) | None => return DelayOutcome::Shutdown,
             }

@@ -1,14 +1,15 @@
 ---
 title: Protocol
 description:
-  Versioned WebSocket messages, canonical schemas, negotiation, and
+  Versioned transport messages, canonical schemas, negotiation, and
   validation.
 ---
 
-OpenPrinter version 1 is a JSON message protocol carried over
-WebSocket. Every message has an explicit discriminator and protocol
-version. Messages that participate in a request flow also carry a
-correlation ID.
+OpenPrinter version 1 is an ordered UTF-8 JSON message protocol. OPPA
+currently carries it over WebSocket, while the server SDK stays
+transport-neutral. Every message has an explicit discriminator and
+protocol version. Messages that participate in a request flow also
+carry a correlation ID.
 
 ## Canonical definitions
 
@@ -36,7 +37,7 @@ pass.
 
 ## Server messages
 
-- server hello
+- server hello with bounded service brand name
 - heartbeat request
 - print job
 - cancel job
@@ -49,6 +50,10 @@ pass.
 The first messages establish the supported protocol versions. An
 unsupported version is rejected with a clear protocol error; it is
 never silently interpreted as the current version.
+
+The server hello also identifies the connected service with required
+`OpenPrinterBrandMetadata`. The metadata contains a display name only;
+icons and external resource URLs are excluded.
 
 ## Limits
 

@@ -7,6 +7,9 @@
   "payload": {
     "serverId": "server_example_001",
     "serverVersion": "0.1.0",
+    "brand": {
+      "name": "OpenPrinter Node.js example"
+    },
     "sessionId": "session_001",
     "supportedProtocolVersions": [1],
     "selectedProtocolVersion": 1,

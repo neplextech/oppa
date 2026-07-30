@@ -1,4 +1,4 @@
-import { LoaderCircle, Printer } from 'lucide-react';
+import { LoaderCircle } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useEffect, useState } from 'react';
 
@@ -93,9 +93,7 @@ export default function App() {
     return (
       <main className="bg-background flex min-h-dvh items-center justify-center p-6">
         <div className="w-full max-w-sm rounded-xl border border-[var(--color-error)]/20 bg-[var(--color-error)]/5 p-6">
-          <div className="flex size-10 items-center justify-center rounded-lg border border-[var(--color-error)]/20 bg-[var(--color-error)]/10">
-            <Printer className="size-5 text-[var(--color-error)]" aria-hidden />
-          </div>
+          <img src="/oppa-icon.png" alt="" className="size-11 rounded-xl shadow-sm" draggable={false} />
           <h1 className="text-foreground mt-4 text-base font-semibold">Agent failed to start</h1>
           <p className="mt-2 text-sm leading-5 text-[var(--color-error)]/80">{error}</p>
           <button
@@ -114,6 +112,7 @@ export default function App() {
     return (
       <main className="bg-background flex min-h-dvh items-center justify-center">
         <div className="text-muted-foreground flex items-center gap-3 text-sm">
+          <img src="/oppa-icon.png" alt="" className="size-8 rounded-lg shadow-sm" draggable={false} />
           <LoaderCircle className="text-primary size-4 animate-spin" aria-hidden />
           Starting local agent…
         </div>
@@ -125,10 +124,12 @@ export default function App() {
     return (
       <SetupScreen
         status={status}
-        busy={busy === 'authorize'}
+        busy={busy}
         onAuthorize={async () => {
           await actions.authorize();
         }}
+        onSaveServerConfiguration={actions.setServerConfiguration}
+        onResetServerConfiguration={actions.resetServerConfiguration}
       />
     );
   }
@@ -196,6 +197,8 @@ export default function App() {
           onThemeChange={setTheme}
           onStartOnLogin={actions.setStartOnLogin}
           onReconnect={actions.reconnect}
+          onSaveServerConfiguration={actions.setServerConfiguration}
+          onResetServerConfiguration={actions.resetServerConfiguration}
           onOpenProductLink={actions.openProductLink}
         />
       );

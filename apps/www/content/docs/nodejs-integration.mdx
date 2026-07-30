@@ -1,37 +1,44 @@
 ---
 title: Node.js Integration
 description:
-  Attach OpenPrinter to an existing HTTP server and deliver a
-  structured job.
+  Connect a host-owned WebSocket transport to an OpenPrinter session.
 ---
 
-Install the protocol and server packages:
+Install the protocol and server packages plus the WebSocket transport
+chosen by the host:
 
 ```bash
 pnpm add @openprinter/protocol @openprinter/server ws
 ```
 
-Create an OpenPrinter server and attach its upgrade handler:
+Create the protocol server and an explicitly local registry:
 
 ```ts
 import { createServer } from 'node:http';
 import { createOpenPrinterServer } from '@openprinter/server';
+import { WebSocketServer } from 'ws';
 
 const httpServer = createServer(app);
+const webSockets = new WebSocketServer({
+  noServer: true,
+  clientTracking: false,
+});
+const localSessions = new Map();
 
 const openPrinter = createOpenPrinterServer({
-  authenticateAgent: async ({ token }) => {
-    const record = await agentTokens.verify(token);
-    return record ? { agentId: record.agentId } : null;
+  brand: {
+    name: 'Acme POS',
   },
-  onAgentConnected({ agent }) {
-    agents.markOnline(agent.agentId);
+  onAgentConnected({ agent, session }) {
+    localSessions.set(agent.agentId, session);
   },
-  onAgentDisconnected({ agent }) {
-    agents.markOffline(agent.agentId);
+  onAgentDisconnected({ agent, session }) {
+    if (localSessions.get(agent.agentId) === session) {
+      localSessions.delete(agent.agentId);
+    }
   },
   onJobReceived({ message }) {
-    printJobs.markDelivered(message.payload.jobId);
+    printJobs.markReceived(message.payload.jobId);
   },
   onJobSubmitted({ message }) {
     printJobs.markSubmitted(message.payload.jobId);
@@ -43,17 +50,85 @@ const openPrinter = createOpenPrinterServer({
     );
   },
 });
-
-httpServer.on('upgrade', openPrinter.handleUpgrade);
 ```
+
+The host owns upgrade routing and authentication. Once those complete,
+adapt the accepted socket to the two transport callbacks:
+
+```ts
+function acceptAgentSocket(socket, identity) {
+  const session = openPrinter.accept({
+    identity,
+    transport: {
+      send(message) {
+        return new Promise((resolve, reject) => {
+          socket.send(message, (error) => {
+            if (error) reject(error);
+            else resolve();
+          });
+        });
+      },
+      close({ reason, detail }) {
+        socket.close(webSocketCloseCode(reason), detail);
+      },
+    },
+  });
+
+  socket.on('message', (data, isBinary) => {
+    if (isBinary) {
+      socket.close(1003, 'Text messages required');
+      void session.transportClosed({
+        reason: 'transport-error',
+      });
+      return;
+    }
+
+    void session.receive(data.toString('utf8'));
+  });
+
+  socket.on('close', (_code, reason) => {
+    void session.transportClosed({
+      reason: 'peer-closed',
+      detail: reason.toString('utf8'),
+    });
+  });
+
+  socket.on('error', (error) => {
+    void session.transportClosed({
+      reason: 'transport-error',
+      detail: error.name,
+    });
+  });
+}
+```
+
+Your `upgrade` handler should:
+
+1. match the OpenPrinter gateway path;
+2. parse the authorization data expected by your application;
+3. authenticate it with an explicit timeout;
+4. reject invalid connections before upgrading;
+5. call `webSockets.handleUpgrade`; and
+6. pass the authenticated identity and socket to `acceptAgentSocket`.
+
+Frameworks such as NestJS, Hono, Fastify, and Express may establish
+the connection differently, but the `accept`/`receive` boundary
+remains the same. No adapter needs to give the SDK control of its HTTP
+server.
 
 ## Deliver a job
 
-Only call `sendJob` for a job already stored durably by your
-application:
+Only deliver a job already stored durably by your application:
 
 ```ts
-const result = await openPrinter.sendJob(agentId, {
+const session = localSessions.get(agentId);
+
+if (session === undefined) {
+  await printJobs.keepQueued(job.id, 'agent-offline');
+  return;
+}
+
+const result = await session.sendJob({
   jobId: job.id,
   idempotencyKey: job.idempotencyKey,
   printerId: job.printerId,
@@ -66,6 +141,11 @@ if (!result.ok) {
 }
 ```
 
+This map is deliberately local. A Node cluster deployment must route
+commands to the worker that owns the selected transport, for example
+through application-managed IPC, RabbitMQ, Redis, or another
+backplane. `@openprinter/server` does not synchronize workers.
+
 Treat `job-received` as proof of durable local receipt and
-`job-submitted` as proof that OPPA successfully handed output to its
-selected backend.
+`job-submitted` as proof that OPPA handed output to its selected
+backend, not proof that paper was physically produced.

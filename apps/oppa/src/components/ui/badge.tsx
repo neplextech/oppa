@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components -- variant styles are a shared shadcn API */
 import { mergeProps } from '@base-ui/react/merge-props';
 import { useRender } from '@base-ui/react/use-render';
 import { cva, type VariantProps } from 'class-variance-authority';

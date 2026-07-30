@@ -316,6 +316,44 @@ export const AgentMessageSchema = Type.Union(
 /** TypeScript representation of any validated agent-to-server message. */
 export type AgentMessage = Static<typeof AgentMessageSchema>;
 
+const BRAND_UNSAFE_CHARACTER_CLASS =
+  '\\u0000-\\u001F\\u007F-\\u009F\\u061C\\u200E\\u200F\\u202A-\\u202E\\u2066-\\u2069';
+const BRAND_EDGE_WHITESPACE_CHARACTER_CLASS =
+  '\\u0020\\u00A0\\u1680\\u2000-\\u200A\\u2028\\u2029\\u202F\\u205F\\u3000\\uFEFF';
+const BRAND_SURROGATE_CHARACTER_CLASS = '\\uD800-\\uDFFF';
+const BRAND_UNICODE_SCALAR_PATTERN =
+  `(?:[\\uD800-\\uDBFF][\\uDC00-\\uDFFF]|` + `[^${BRAND_UNSAFE_CHARACTER_CLASS}${BRAND_SURROGATE_CHARACTER_CLASS}])`;
+const BRAND_SAFE_EDGE_PATTERN =
+  `(?:[\\uD800-\\uDBFF][\\uDC00-\\uDFFF]|` +
+  `[^${BRAND_UNSAFE_CHARACTER_CLASS}${BRAND_EDGE_WHITESPACE_CHARACTER_CLASS}${BRAND_SURROGATE_CHARACTER_CLASS}])`;
+const BRAND_NAME_PATTERN = `^${BRAND_SAFE_EDGE_PATTERN}(?:${BRAND_UNICODE_SCALAR_PATTERN}*${BRAND_SAFE_EDGE_PATTERN})?$`;
+
+/** A bounded service name safe to render without Unicode direction spoofing. */
+export const OpenPrinterBrandNameSchema = Type.String({
+  minLength: 1,
+  maxLength: 256,
+  pattern: BRAND_NAME_PATTERN,
+});
+
+/**
+ * Human-readable identity of the service that accepted an agent connection.
+ *
+ * External icon and image URLs are intentionally excluded so an agent never
+ * needs to load a third-party resource merely to present connection identity.
+ */
+export const OpenPrinterBrandMetadataSchema = Type.Object(
+  {
+    name: OpenPrinterBrandNameSchema,
+  },
+  {
+    additionalProperties: false,
+    title: 'OpenPrinterBrandMetadata',
+  },
+);
+
+/** Safe, display-only service identity advertised during the handshake. */
+export type OpenPrinterBrandMetadata = Static<typeof OpenPrinterBrandMetadataSchema>;
+
 /** Server handshake response and selected protocol version. */
 export const ServerHelloMessageSchema = correlatedMessageSchema(
   'server.hello',
@@ -323,6 +361,7 @@ export const ServerHelloMessageSchema = correlatedMessageSchema(
     {
       serverId: IdentifierSchema,
       serverVersion: ShortStringSchema,
+      brand: OpenPrinterBrandMetadataSchema,
       sessionId: IdentifierSchema,
       supportedProtocolVersions: Type.Array(ProtocolVersionSchema, {
         minItems: 1,

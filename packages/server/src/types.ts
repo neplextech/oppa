@@ -1,9 +1,12 @@
-import type { IncomingMessage } from 'node:http';
-import type { Duplex } from 'node:stream';
+import type {
+  AgentMessage,
+  OpenPrinterBrandMetadata,
+  PrintJob,
+  PrinterDescriptor,
+  ServerMessage,
+} from '@openprinter/protocol';
 
-import type { AgentMessage, PrintJob, PrinterDescriptor, ServerMessage } from '@openprinter/protocol';
-
-/** A value or promise accepted by lifecycle callbacks. */
+/** A value or promise accepted by transport and lifecycle callbacks. */
 export type Awaitable<Value> = Value | PromiseLike<Value>;
 
 /** Select one canonical agent message using its wire discriminator. */
@@ -12,31 +15,30 @@ export type AgentMessageOf<Type extends AgentMessage['type']> = Extract<AgentMes
 /** Select one canonical server message using its wire discriminator. */
 export type ServerMessageOf<Type extends ServerMessage['type']> = Extract<ServerMessage, { readonly type: Type }>;
 
-/** Input passed to the host application's Bearer-token verifier. */
-export interface AuthenticateAgentInput {
-  /** The opaque Bearer token, which the SDK never interprets or logs. */
-  readonly token: string;
-  /** The original HTTP upgrade request. */
-  readonly request: IncomingMessage;
-  /** Aborted when authentication times out or the peer disconnects. */
-  readonly signal: AbortSignal;
-}
+/**
+ * Messages an application may send after the SDK owns hello, heartbeat, and
+ * disconnect protocol control.
+ */
+export type OpenPrinterApplicationMessage = Exclude<
+  ServerMessage,
+  ServerMessageOf<'server.hello'> | ServerMessageOf<'server.heartbeat'> | ServerMessageOf<'server.disconnect'>
+>;
 
-/** Authenticated identity returned by the host application. */
+/** Identity authenticated by the host before accepting a protocol session. */
 export interface AuthenticatedAgent<Metadata> {
-  /** Stable identity authorized by the Bearer token. */
+  /** Stable identity authorized by the host application. */
   readonly agentId: string;
-  /** Host-owned, non-secret context retained with the live session. */
+  /** Host-owned, non-secret context retained with this session. */
   readonly metadata?: Metadata;
 }
 
-/** Immutable public snapshot of an authenticated live agent session. */
+/** Immutable public snapshot of an authenticated, negotiated agent session. */
 export interface ConnectedAgent<Metadata> {
   /** Stable identity authorized by the host application. */
   readonly agentId: string;
-  /** Unique identifier for this WebSocket session. */
+  /** Unique identifier for this logical transport session. */
   readonly sessionId: string;
-  /** Host-owned metadata supplied by the authentication callback. */
+  /** Host-owned metadata supplied when the session was accepted. */
   readonly metadata?: Readonly<Metadata>;
   /** Validated agent hello payload. */
   readonly hello: Readonly<AgentMessageOf<'agent.hello'>['payload']>;
@@ -48,8 +50,66 @@ export interface ConnectedAgent<Metadata> {
   readonly printerRevision: number | null;
 }
 
+/** Lifecycle state of one accepted protocol session. */
+export type OpenPrinterSessionState = 'handshaking' | 'connected' | 'closing' | 'closed';
+
+/** Why a negotiated agent session ended. */
+export type AgentDisconnectReason =
+  | 'peer-closed'
+  | 'heartbeat-timeout'
+  | 'protocol-error'
+  | 'server-disconnect'
+  | 'transport-error';
+
+/**
+ * SDK request for the host to close its transport.
+ *
+ * The reason is transport-neutral. A WebSocket host may map it to an
+ * appropriate RFC 6455 close code; a broker transport may release a consumer
+ * or route instead.
+ */
+export interface OpenPrinterTransportCloseRequest {
+  /** Stable lifecycle reason suitable for transport-specific mapping. */
+  readonly reason: Exclude<AgentDisconnectReason, 'peer-closed'>;
+  /** Bounded, non-sensitive human-readable detail. */
+  readonly detail?: string;
+}
+
+/**
+ * Host-owned transport callbacks for one logical agent connection.
+ *
+ * Resolving `send` means the frame was handed to the transport, not that the
+ * agent persisted or printed its contents.
+ */
+export interface OpenPrinterTransport {
+  /** Hand one encoded UTF-8 JSON protocol message to the host transport. */
+  send(message: string): Awaitable<void>;
+  /** Close or release the host transport for an SDK-requested reason. */
+  close(request: OpenPrinterTransportCloseRequest): Awaitable<void>;
+}
+
+/** Host notification that its transport has already ended. */
+export interface OpenPrinterTransportClosedEvent {
+  /** Whether the peer closed normally or the transport itself failed. */
+  readonly reason?: 'peer-closed' | 'transport-error';
+  /** Bounded, sanitized detail that contains no credentials or documents. */
+  readonly detail?: string;
+}
+
+/** Input used to open one protocol session after host authentication. */
+export interface AcceptOpenPrinterSessionInput<Metadata> {
+  /** Host-authenticated identity authoritative for the agent hello. */
+  readonly identity: AuthenticatedAgent<Metadata>;
+  /** Optional host-assigned logical session identifier. */
+  readonly sessionId?: string;
+  /** Host-owned connection, socket, broker, or other message transport. */
+  readonly transport: OpenPrinterTransport;
+}
+
 /** Common context for a validated message from an authenticated agent. */
 export interface AgentMessageEvent<Metadata, Message extends AgentMessage> {
+  /** Protocol session that received the message. */
+  readonly session: OpenPrinterSession<Metadata>;
   /** Snapshot of the agent at callback dispatch time. */
   readonly agent: ConnectedAgent<Metadata>;
   /** Canonical, runtime-validated protocol message. */
@@ -58,51 +118,28 @@ export interface AgentMessageEvent<Metadata, Message extends AgentMessage> {
 
 /** A completed agent handshake. */
 export interface AgentConnectedEvent<Metadata> {
-  /** Newly registered live agent. */
+  /** Protocol session ready for application commands. */
+  readonly session: OpenPrinterSession<Metadata>;
+  /** Newly negotiated agent snapshot. */
   readonly agent: ConnectedAgent<Metadata>;
 }
 
-/** Why a previously connected session left the registry. */
-export type AgentDisconnectReason =
-  | 'peer-closed'
-  | 'connection-replaced'
-  | 'heartbeat-timeout'
-  | 'protocol-error'
-  | 'server-disconnect'
-  | 'server-shutdown'
-  | 'transport-error';
-
-/** A connected agent session leaving the live registry. */
+/** A connected agent session that has ended. */
 export interface AgentDisconnectedEvent<Metadata> {
+  /** Session that ended. */
+  readonly session: OpenPrinterSession<Metadata>;
   /** Final snapshot of the disconnected agent. */
   readonly agent: ConnectedAgent<Metadata>;
-  /** Stable lifecycle reason independent of WebSocket wording. */
+  /** Stable lifecycle reason independent of transport wording. */
   readonly reason: AgentDisconnectReason;
-  /** WebSocket close code, when the peer supplied one. */
-  readonly closeCode?: number;
-  /** Bounded, non-sensitive close detail. */
+  /** Bounded, non-sensitive transport detail. */
   readonly detail?: string;
-}
-
-/** Authentication rejection categories exposed without the rejected token. */
-export type AuthenticationFailureReason =
-  | 'missing-bearer-token'
-  | 'malformed-bearer-token'
-  | 'rejected'
-  | 'callback-error'
-  | 'timeout'
-  | 'invalid-agent';
-
-/** A rejected HTTP upgrade, intentionally excluding authorization headers. */
-export interface AuthenticationFailedEvent {
-  /** Stable rejection category. */
-  readonly reason: AuthenticationFailureReason;
-  /** Remote socket address, when Node supplied one. */
-  readonly remoteAddress?: string;
 }
 
 /** Inventory event emitted after the in-memory session view is updated. */
 export interface PrintersChangedEvent<Metadata> {
+  /** Protocol session that owns the inventory. */
+  readonly session: OpenPrinterSession<Metadata>;
   /** Agent that owns the inventory. */
   readonly agent: ConnectedAgent<Metadata>;
   /** Whether this message replaced or incrementally changed the inventory. */
@@ -117,6 +154,8 @@ export interface PrintersChangedEvent<Metadata> {
 
 /** An authenticated session that did not answer protocol heartbeats in time. */
 export interface HeartbeatTimeoutEvent<Metadata> {
+  /** Timed-out protocol session. */
+  readonly session: OpenPrinterSession<Metadata>;
   /** Timed-out agent. */
   readonly agent: ConnectedAgent<Metadata>;
   /** UTC time of its latest correlated heartbeat response. */
@@ -125,9 +164,8 @@ export interface HeartbeatTimeoutEvent<Metadata> {
   readonly timeoutMs: number;
 }
 
-/** Stable categories for rejected agent transport behavior. */
+/** Stable categories for rejected agent protocol behavior. */
 export type ServerProtocolErrorCode =
-  | 'binary-message'
   | 'handshake-timeout'
   | 'identity-mismatch'
   | 'invalid-message'
@@ -135,13 +173,15 @@ export type ServerProtocolErrorCode =
   | 'unexpected-message'
   | 'unsupported-protocol-version';
 
-/** A payload-free protocol failure from one connection. */
+/** A payload-free protocol failure from one accepted session. */
 export interface ServerProtocolErrorEvent<Metadata> {
+  /** Session that rejected the input. */
+  readonly session: OpenPrinterSession<Metadata>;
   /** Authenticated identity, even when the hello was not completed. */
   readonly agentId: string;
   /** Connected snapshot when the handshake had completed. */
   readonly agent?: ConnectedAgent<Metadata>;
-  /** Stable transport-level error category. */
+  /** Stable protocol error category. */
   readonly code: ServerProtocolErrorCode;
   /** Error object without the rejected payload. */
   readonly error: Error;
@@ -151,7 +191,6 @@ export interface ServerProtocolErrorEvent<Metadata> {
 export type OpenPrinterCallbackName =
   | 'onAgentConnected'
   | 'onAgentDisconnected'
-  | 'onAuthenticationFailed'
   | 'onAuthenticationMetadata'
   | 'onCallbackError'
   | 'onDiagnostics'
@@ -170,37 +209,30 @@ export interface CallbackErrorEvent {
   readonly error: unknown;
 }
 
-/** Configurable SDK construction and lifecycle callbacks. */
+/** Configurable protocol behavior and lifecycle callbacks shared by sessions. */
 export interface OpenPrinterServerOptions<Metadata> {
-  /**
-   * Verify an opaque Bearer token and return its authoritative agent identity.
-   * Returning `null` rejects the upgrade.
-   */
-  readonly authenticateAgent: (input: AuthenticateAgentInput) => Awaitable<AuthenticatedAgent<Metadata> | null>;
-  /** Optional URL pathname exclusively handled by this upgrade listener. */
-  readonly path?: string;
+  /** Required display identity sent to the agent in `server.hello`. */
+  readonly brand: OpenPrinterBrandMetadata;
   /** Stable server identifier advertised during the handshake. */
   readonly serverId?: string;
   /** Human-readable server SDK or host version advertised to agents. */
   readonly serverVersion?: string;
-  /** Maximum accepted WebSocket payload in bytes. */
+  /** Maximum accepted encoded message size in bytes. */
   readonly maxMessageBytes?: number;
   /** Time allowed for the first validated `agent.hello`. */
   readonly handshakeTimeoutMs?: number;
-  /** Time allowed for the host authentication callback. */
-  readonly authenticationTimeoutMs?: number;
+  /** Maximum time allowed for a transport `send` or `close` callback. */
+  readonly transportTimeoutMs?: number;
   /** Maximum time allowed for any lifecycle callback before it is isolated. */
   readonly callbackTimeoutMs?: number;
   /** Frequency of server heartbeat requests. */
   readonly heartbeatIntervalMs?: number;
   /** Maximum time between correlated heartbeat responses. */
   readonly heartbeatTimeoutMs?: number;
-  /** Called after a session is authenticated, negotiated, and registered. */
+  /** Called after a session is negotiated and ready for commands. */
   readonly onAgentConnected?: (event: AgentConnectedEvent<Metadata>) => Awaitable<void>;
-  /** Called exactly once for a session that had entered the live registry. */
+  /** Called exactly once for a session whose handshake had completed. */
   readonly onAgentDisconnected?: (event: AgentDisconnectedEvent<Metadata>) => Awaitable<void>;
-  /** Called for safe, non-secret authentication rejection metadata. */
-  readonly onAuthenticationFailed?: (event: AuthenticationFailedEvent) => Awaitable<void>;
   /** Called for optional, validated, non-secret agent authentication context. */
   readonly onAuthenticationMetadata?: (
     event: AgentMessageEvent<Metadata, AgentMessageOf<'agent.authentication_metadata'>>,
@@ -219,28 +251,30 @@ export interface OpenPrinterServerOptions<Metadata> {
   readonly onJobFailed?: (event: AgentMessageEvent<Metadata, AgentMessageOf<'agent.job_failed'>>) => Awaitable<void>;
   /** Called for a bounded, validated agent diagnostic summary. */
   readonly onDiagnostics?: (event: AgentMessageEvent<Metadata, AgentMessageOf<'agent.diagnostics'>>) => Awaitable<void>;
-  /** Called before a heartbeat-expired session is removed. */
+  /** Called after a heartbeat-expired session has been made unavailable. */
   readonly onHeartbeatTimeout?: (event: HeartbeatTimeoutEvent<Metadata>) => Awaitable<void>;
-  /** Called when an inbound transport or protocol invariant is rejected. */
+  /** Called when an inbound protocol invariant is rejected. */
   readonly onProtocolError?: (event: ServerProtocolErrorEvent<Metadata>) => Awaitable<void>;
-  /** Called when another user-provided callback throws or rejects. */
+  /** Called when another user-provided lifecycle callback throws or rejects. */
   readonly onCallbackError?: (event: CallbackErrorEvent) => Awaitable<void>;
 }
 
-/** Successful immediate handoff to a live WebSocket connection. */
+/** Successful immediate handoff to a host-owned transport. */
 export interface DeliverySuccess {
   /** Distinguishes successful delivery results. */
   readonly ok: true;
   /** Agent selected by the host application. */
   readonly agentId: string;
+  /** Logical session that accepted the handoff. */
+  readonly sessionId: string;
   /** Canonical wire message identifier used for correlation. */
   readonly messageId: string;
   /** UTC time encoded in the delivered protocol message. */
   readonly sentAt: string;
 }
 
-/** Reasons a message could not be handed to a live agent connection. */
-export type DeliveryFailureReason = 'agent-offline' | 'connection-closed' | 'server-closed';
+/** Reasons a message could not be handed to an agent transport. */
+export type DeliveryFailureReason = 'agent-offline' | 'session-not-ready' | 'connection-closed' | 'transport-error';
 
 /** Structured, non-queued delivery failure owned by the host application. */
 export interface DeliveryFailure {
@@ -254,10 +288,10 @@ export interface DeliveryFailure {
   readonly retryable: true;
 }
 
-/** Immediate WebSocket handoff result; it is not a persistence acknowledgement. */
+/** Immediate transport handoff result; it is not a persistence acknowledgement. */
 export type DeliveryResult = DeliverySuccess | DeliveryFailure;
 
-/** Host-supplied reason for intentionally disconnecting one agent. */
+/** Host-supplied reason for intentionally disconnecting one session. */
 export interface DisconnectAgentOptions {
   /** Stable identifier delivered to the agent. */
   readonly code?: string;
@@ -275,35 +309,47 @@ export type ConfigurationInvalidation = ServerMessageOf<'server.configuration_in
 /** Host-supplied cancellation payload. */
 export type JobCancellation = ServerMessageOf<'server.cancel_job'>['payload'];
 
+/** One host-authenticated OpenPrinter protocol session. */
+export interface OpenPrinterSession<Metadata> {
+  /** Stable host-authenticated identity. */
+  readonly identity: AuthenticatedAgent<Metadata>;
+  /** Stable logical session identifier. */
+  readonly sessionId: string;
+  /** Current protocol lifecycle state. */
+  readonly state: OpenPrinterSessionState;
+  /** Return a negotiated agent snapshot, or `null` during/after a failed handshake. */
+  getAgent(): ConnectedAgent<Metadata> | null;
+  /** Return the latest validated printer inventory for this session. */
+  getPrinters(): readonly PrinterDescriptor[];
+  /**
+   * Queue an inbound UTF-8 JSON frame for ordered protocol processing.
+   *
+   * Concurrent calls are processed in invocation order.
+   */
+  receive(message: string | Uint8Array): Promise<void>;
+  /** Tell the protocol session that the host transport has already ended. */
+  transportClosed(event?: OpenPrinterTransportClosedEvent): Promise<void>;
+  /** Send one validated application-level server message. */
+  send(message: OpenPrinterApplicationMessage): Promise<DeliveryResult>;
+  /** Create and immediately hand off a canonical print-job message. */
+  sendJob(job: PrintJob): Promise<DeliveryResult>;
+  /** Ask this agent to report a complete printer inventory. */
+  requestPrinters(): Promise<DeliveryResult>;
+  /** Ask this agent to cancel a job not yet submitted. */
+  cancelJob(cancellation: JobCancellation): Promise<DeliveryResult>;
+  /** Notify this agent that host-owned configuration changed. */
+  invalidateConfiguration(invalidation: ConfigurationInvalidation): Promise<DeliveryResult>;
+  /** Send a semantic disconnect and ask the host to close its transport. */
+  disconnect(options?: DisconnectAgentOptions): Promise<boolean>;
+}
+
 /**
- * Framework-neutral OpenPrinter server attached to an existing HTTP server.
+ * Configured OpenPrinter protocol session factory.
+ *
+ * It owns no HTTP server, WebSocket listener, authentication policy,
+ * connection registry, cluster coordination, or broker.
  */
 export interface OpenPrinterServer<Metadata> {
-  /**
-   * HTTP `upgrade` listener. It is bound and may be passed directly to
-   * `httpServer.on("upgrade", openPrinter.handleUpgrade)`.
-   */
-  readonly handleUpgrade: (request: IncomingMessage, socket: Duplex, head: Buffer) => void;
-  /** Whether this SDK instance has stopped accepting and sending traffic. */
-  readonly closed: boolean;
-  /** Return snapshots of all authenticated and negotiated live agents. */
-  listAgents(): readonly ConnectedAgent<Metadata>[];
-  /** Return one live agent snapshot, or `null` when it is offline. */
-  getAgent(agentId: string): ConnectedAgent<Metadata> | null;
-  /** Return the latest complete in-memory inventory for one live agent. */
-  getPrinters(agentId: string): readonly PrinterDescriptor[];
-  /** Send an already formed, canonical server protocol message. */
-  send(agentId: string, message: ServerMessage): Promise<DeliveryResult>;
-  /** Create and immediately deliver a canonical print-job message. */
-  sendJob(agentId: string, job: PrintJob): Promise<DeliveryResult>;
-  /** Ask a live agent to report a complete printer inventory. */
-  requestPrinters(agentId: string): Promise<DeliveryResult>;
-  /** Ask a live agent to cancel a job not yet submitted. */
-  cancelJob(agentId: string, cancellation: JobCancellation): Promise<DeliveryResult>;
-  /** Notify a live agent that host-owned configuration changed. */
-  invalidateConfiguration(agentId: string, invalidation: ConfigurationInvalidation): Promise<DeliveryResult>;
-  /** Intentionally close one live session. */
-  disconnect(agentId: string, options?: DisconnectAgentOptions): Promise<boolean>;
-  /** Stop upgrades, discard live state, and close every agent connection. */
-  close(): Promise<void>;
+  /** Open one independent protocol session over a host-owned transport. */
+  accept(input: AcceptOpenPrinterSessionInput<Metadata>): OpenPrinterSession<Metadata>;
 }

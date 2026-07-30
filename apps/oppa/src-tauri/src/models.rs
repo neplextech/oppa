@@ -6,6 +6,8 @@ use oppa_printer::{
 use oppa_product::ProductConfig;
 use serde::{Deserialize, Serialize};
 
+use crate::server_configuration::OpenPrinterServerConfiguration;
+
 /// Frontend projection of the compile-time product configuration.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -51,6 +53,18 @@ pub struct AgentStatus {
     pub start_on_login: bool,
     pub dashboard_url: Option<String>,
     pub platform: String,
+    pub server_configuration: OpenPrinterServerConfiguration,
+    pub connected_service: Option<ConnectedServiceSummary>,
+}
+
+/// Validated identity advertised by the connected `OpenPrinter` service.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConnectedServiceSummary {
+    pub name: String,
+    pub server_id: String,
+    pub server_version: String,
+    pub gateway_url: String,
 }
 
 /// Coarse gateway status expected by the frontend.

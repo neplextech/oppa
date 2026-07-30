@@ -13,7 +13,8 @@ issuance, permissions, and revocation.
 
 1. OPPA generates a cryptographically random state and PKCE verifier.
 2. It binds an ephemeral callback listener to `127.0.0.1`.
-3. It opens the compile-time authorization URL in the system browser.
+3. It opens the selected service's validated authorization URL in the
+   system browser.
 4. The platform authenticates the user and redirects a short-lived
    code to the loopback callback.
 5. OPPA compares state in constant time, accepts the code once, and
@@ -46,3 +47,7 @@ An invalid refresh response moves the agent to an
 authentication-required state and removes unusable credentials.
 Network failures do not erase a still-valid credential. Refresh work
 is bounded and never logs the token body.
+
+Changing the authorization, token, or gateway URL is a provider
+boundary change. OPPA clears the previous credentials before saving
+the new endpoints and requires a new pairing flow.

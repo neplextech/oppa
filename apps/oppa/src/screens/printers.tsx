@@ -1,8 +1,28 @@
-import { EthernetPort, MoreHorizontal, MonitorCog, Plus, Printer, RefreshCw, Send, Trash2, Usb } from 'lucide-react';
+import {
+  EthernetPort,
+  MoreHorizontal,
+  MonitorCog,
+  PanelRightOpen,
+  Plus,
+  Power,
+  Printer,
+  RefreshCw,
+  Send,
+  Trash2,
+  Usb,
+} from 'lucide-react';
 import { useState } from 'react';
 
 import { EmptyState, FieldLabel, ScreenContainer, ScreenHeader, StatusDot, Toggle, inputClass } from '@/components/ui';
 import { Button } from '@/components/ui/button';
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuGroup,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from '@/components/ui/context-menu';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -153,6 +173,7 @@ export function PrintersScreen({
                     busy={busy}
                     selected={selectedId === printer.id}
                     onSelect={() => setSelectedId((prev) => (prev === printer.id ? null : printer.id))}
+                    onOpenDetails={() => setSelectedId(printer.id)}
                     onConfigure={onConfigure}
                     onRemove={onRemove}
                     onTest={onTest}
@@ -186,6 +207,7 @@ function PrinterRow({
   busy,
   selected,
   onSelect,
+  onOpenDetails,
   onConfigure,
   onRemove,
   onTest,
@@ -194,103 +216,141 @@ function PrinterRow({
   busy: string | null;
   selected: boolean;
   onSelect: () => void;
+  onOpenDetails: () => void;
   onConfigure: (id: string, changes: { displayName?: string; enabled?: boolean }) => Promise<void>;
   onRemove: (id: string) => Promise<void>;
   onTest: (id: string) => Promise<void>;
 }) {
   return (
-    <div
-      className={cn(
-        'group grid cursor-pointer grid-cols-[1fr_140px_100px_80px_48px] items-center border-b border-border/50 px-5 py-3.5 transition-colors',
-        selected ? 'bg-primary/5' : 'hover:bg-accent/30',
-      )}
-      onClick={onSelect}
-      tabIndex={0}
-      role="row"
-      aria-selected={selected}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          onSelect();
-        }
-      }}
-    >
-      {/* Name + icon */}
-      <div className="flex min-w-0 items-center gap-3">
-        <div className="border-border bg-secondary text-muted-foreground flex size-8 shrink-0 items-center justify-center rounded-lg border">
-          <ConnectionIcon type={printer.connectionType} />
+    <ContextMenu>
+      <ContextMenuTrigger
+        render={<div />}
+        className={cn(
+          'group grid cursor-pointer grid-cols-[1fr_140px_100px_80px_48px] items-center border-b border-border/50 px-5 py-3.5 transition-colors',
+          selected ? 'bg-primary/5' : 'hover:bg-accent/30',
+        )}
+        onClick={onSelect}
+        tabIndex={0}
+        role="row"
+        aria-selected={selected}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            onSelect();
+          }
+        }}
+      >
+        {/* Name + icon */}
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="border-border bg-secondary text-muted-foreground flex size-8 shrink-0 items-center justify-center rounded-lg border">
+            <ConnectionIcon type={printer.connectionType} />
+          </div>
+          <div className="min-w-0">
+            <p className="text-foreground truncate text-sm font-medium">{printer.displayName}</p>
+            <p className="text-muted-foreground truncate text-xs">{printer.sourceName}</p>
+          </div>
         </div>
-        <div className="min-w-0">
-          <p className="text-foreground truncate text-sm font-medium">{printer.displayName}</p>
-          <p className="text-muted-foreground truncate text-xs">{printer.sourceName}</p>
+
+        {/* Connection */}
+        <div className="text-sm">
+          <p className="text-foreground/80">{titleCase(printer.connectionType)}</p>
+          {printer.address && <p className="text-muted-foreground truncate font-mono text-xs">{printer.address}</p>}
         </div>
-      </div>
 
-      {/* Connection */}
-      <div className="text-sm">
-        <p className="text-foreground/80">{titleCase(printer.connectionType)}</p>
-        {printer.address && <p className="text-muted-foreground truncate font-mono text-xs">{printer.address}</p>}
-      </div>
+        {/* Status */}
+        <div className="flex items-center gap-2 text-sm">
+          <StatusDot tone={printer.available ? 'connected' : 'offline'} />
+          <span className={printer.available ? 'text-foreground/80' : 'text-muted-foreground'}>
+            {printer.available ? 'Ready' : 'Offline'}
+          </span>
+        </div>
 
-      {/* Status */}
-      <div className="flex items-center gap-2 text-sm">
-        <StatusDot tone={printer.available ? 'connected' : 'offline'} />
-        <span className={printer.available ? 'text-foreground/80' : 'text-muted-foreground'}>
-          {printer.available ? 'Ready' : 'Offline'}
-        </span>
-      </div>
+        {/* Enable toggle */}
+        <div onClick={(event) => event.stopPropagation()}>
+          <Toggle
+            checked={printer.enabled}
+            label={`${printer.enabled ? 'Disable' : 'Enable'} ${printer.displayName}`}
+            onChange={(enabled) => void onConfigure(printer.id, { enabled })}
+          />
+        </div>
 
-      {/* Enable toggle */}
-      <div onClick={(e) => e.stopPropagation()}>
-        <Toggle
-          checked={printer.enabled}
-          label={`${printer.enabled ? 'Disable' : 'Enable'} ${printer.displayName}`}
-          onChange={(enabled) => void onConfigure(printer.id, { enabled })}
-        />
-      </div>
-
-      {/* Context menu */}
-      <div onClick={(e) => e.stopPropagation()}>
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            render={
-              <button
-                type="button"
-                className="text-muted-foreground hover:text-foreground focus-visible:ring-ring flex size-8 items-center justify-center rounded-md opacity-0 transition-all group-hover:opacity-100 focus-visible:opacity-100 focus-visible:ring-1 focus-visible:outline-none"
-                aria-label={`Actions for ${printer.displayName}`}
-              />
-            }
-          >
-            <MoreHorizontal className="size-4" strokeWidth={1.75} aria-hidden />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent side="bottom" align="end" sideOffset={4}>
-            <DropdownMenuItem onClick={() => void onConfigure(printer.id, { enabled: !printer.enabled })}>
-              {printer.enabled ? 'Disable' : 'Enable'}
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              disabled={!printer.enabled || !printer.available || !!busy?.startsWith('test')}
-              onClick={() => void onTest(printer.id)}
+        {/* Overflow menu */}
+        <div onClick={(event) => event.stopPropagation()}>
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <button
+                  type="button"
+                  className="text-muted-foreground hover:text-foreground focus-visible:ring-ring flex size-8 items-center justify-center rounded-md opacity-0 transition-all group-hover:opacity-100 focus-visible:opacity-100 focus-visible:ring-1 focus-visible:outline-none"
+                  aria-label={`Actions for ${printer.displayName}`}
+                />
+              }
             >
-              <Send className="size-3.5" aria-hidden />
-              Test print
-            </DropdownMenuItem>
-            {printer.connectionType === 'network' && (
-              <>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  variant="destructive"
-                  disabled={busy === `remove-${printer.id}`}
-                  onClick={() => void onRemove(printer.id)}
-                >
-                  <Trash2 className="size-3.5" aria-hidden />
-                  Remove
-                </DropdownMenuItem>
-              </>
-            )}
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
-    </div>
+              <MoreHorizontal className="size-4" strokeWidth={1.75} aria-hidden />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent side="bottom" align="end" sideOffset={4}>
+              <DropdownMenuItem onClick={() => void onConfigure(printer.id, { enabled: !printer.enabled })}>
+                {printer.enabled ? 'Disable' : 'Enable'}
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                disabled={!printer.enabled || !printer.available || !!busy?.startsWith('test')}
+                onClick={() => void onTest(printer.id)}
+              >
+                <Send className="size-3.5" aria-hidden />
+                Test print
+              </DropdownMenuItem>
+              {printer.connectionType === 'network' && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    variant="destructive"
+                    disabled={busy === `remove-${printer.id}`}
+                    onClick={() => void onRemove(printer.id)}
+                  >
+                    <Trash2 className="size-3.5" aria-hidden />
+                    Remove
+                  </DropdownMenuItem>
+                </>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </ContextMenuTrigger>
+      <ContextMenuContent className="min-w-52">
+        <ContextMenuGroup>
+          <ContextMenuItem onClick={onOpenDetails}>
+            <PanelRightOpen className="size-4" aria-hidden />
+            View details
+          </ContextMenuItem>
+          <ContextMenuItem onClick={() => void onConfigure(printer.id, { enabled: !printer.enabled })}>
+            <Power className="size-4" aria-hidden />
+            {printer.enabled ? 'Disable printer' : 'Enable printer'}
+          </ContextMenuItem>
+          <ContextMenuItem
+            disabled={!printer.enabled || !printer.available || !!busy?.startsWith('test')}
+            onClick={() => void onTest(printer.id)}
+          >
+            <Send className="size-4" aria-hidden />
+            Send test print
+          </ContextMenuItem>
+        </ContextMenuGroup>
+        {printer.connectionType === 'network' ? (
+          <>
+            <ContextMenuSeparator />
+            <ContextMenuGroup>
+              <ContextMenuItem
+                variant="destructive"
+                disabled={busy === `remove-${printer.id}`}
+                onClick={() => void onRemove(printer.id)}
+              >
+                <Trash2 className="size-4" aria-hidden />
+                Remove printer
+              </ContextMenuItem>
+            </ContextMenuGroup>
+          </>
+        ) : null}
+      </ContextMenuContent>
+    </ContextMenu>
   );
 }
 

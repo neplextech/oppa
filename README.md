@@ -7,7 +7,7 @@ OpenPrinter is the generic protocol and server SDK ecosystem used to integrate O
 application:
 
 - [`@openprinter/protocol`](packages/protocol) — canonical schemas, codecs, and TypeScript types
-- [`@openprinter/server`](packages/server) — authenticated WebSocket sessions and delivery
+- [`@openprinter/server`](packages/server) — transport-neutral protocol sessions and delivery
 
 OPPA does not contain restaurant, branch, kitchen, billing, tenant, or other integrating-application
 business concepts. The host application owns authorization policy, durable server-side jobs, retry
@@ -105,7 +105,7 @@ pnpm docs:dev
 pnpm build             # JavaScript applications/packages and Cargo workspace
 pnpm test              # Vitest and Rust tests
 pnpm lint              # ESLint and Clippy
-pnpm format            # Prettier and rustfmt
+pnpm format            # oxfmt and rustfmt
 pnpm format:check      # non-mutating format validation
 pnpm typecheck         # TypeScript project checks
 pnpm protocol:generate # regenerate the canonical JSON Schema
@@ -117,17 +117,15 @@ use mocks, fixtures, and virtual printers.
 ## Server integration
 
 ```ts
-import { createOpenPrinterServer } from "@openprinter/server";
+import { createOpenPrinterServer } from '@openprinter/server';
 
 const openPrinter = createOpenPrinterServer({
-  authenticateAgent: async ({ token, request }) => {
-    const agent = await verifyAgentToken(token, request);
-    return agent
-      ? {
-          agentId: agent.id,
-          metadata: { organizationId: agent.organizationId },
-        }
-      : null;
+  brand: { name: 'Acme POS' },
+  onAgentConnected({ agent, session }) {
+    liveSessions.register(agent.agentId, session);
+  },
+  onAgentDisconnected({ agent, session }) {
+    liveSessions.removeIfCurrent(agent.agentId, session);
   },
   onJobReceived({ agent, message }) {
     jobs.markReceived(agent.agentId, message.payload.jobId);
@@ -137,11 +135,21 @@ const openPrinter = createOpenPrinterServer({
   },
 });
 
-httpServer.on("upgrade", openPrinter.handleUpgrade);
+const session = openPrinter.accept({
+  identity: await authenticateConnection(request),
+  transport: {
+    send: (message) => connection.send(message),
+    close: ({ reason, detail }) => connection.close(mapCloseReason(reason), detail),
+  },
+});
+
+connection.onMessage((message) => void session.receive(message));
+connection.onClose(() => void session.transportClosed());
 ```
 
-The application stores a job before calling `sendJob`. If an agent is offline, the SDK returns a
-structured unavailable result and the application retains the queued job.
+The host owns authentication, WebSocket or broker lifecycle, live-session routing, and cluster
+coordination. The application stores a job before selecting a session and calling `sendJob`; if no
+worker owns a live session, the application retains the queued job.
 
 ## Product builds
 
@@ -152,8 +160,13 @@ OPPA_PRODUCT_DIR=products/default pnpm oppa:build
 ```
 
 A product definition controls branding, application identity, the provider-registered OAuth client
-ID, authorization/token/gateway endpoints, support links, update endpoint, and supported feature
-switches. It cannot enable a capability that was not compiled into the binary, and OPPA never
+ID, default authorization/token/gateway endpoints, support links, and supported feature switches.
+Users may replace only those three OpenPrinter service endpoints at runtime through OPPA settings.
+The validated values are stored as non-secret internal configuration; changing them clears the
+prior secure credentials and requires authorization with the new service.
+
+Runtime configuration cannot change product identity, branding, the OAuth client ID, or compiled
+capabilities. It cannot enable a capability that was not compiled into the binary, and OPPA never
 trusts an editable runtime `product.json`.
 
 ## Security

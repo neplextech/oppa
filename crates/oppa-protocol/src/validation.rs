@@ -58,6 +58,47 @@ pub(crate) fn validate_string(
     Ok(())
 }
 
+pub(crate) fn validate_brand_name(
+    value: &str,
+    path: impl Into<String>,
+) -> Result<(), ValidationError> {
+    let path = path.into();
+    validate_string(value, &path, 1, 256)?;
+
+    if value.chars().next().is_some_and(is_brand_edge_whitespace)
+        || value.chars().last().is_some_and(is_brand_edge_whitespace)
+        || value.chars().any(is_brand_unsafe_character)
+    {
+        return Err(ValidationError::new(
+            path,
+            "must not contain leading or trailing whitespace, control characters, or direction-formatting controls",
+        ));
+    }
+
+    Ok(())
+}
+
+fn is_brand_unsafe_character(character: char) -> bool {
+    matches!(
+        character as u32,
+        0x0000..=0x001F
+            | 0x007F..=0x009F
+            | 0x061C
+            | 0x200E
+            | 0x200F
+            | 0x202A..=0x202E
+            | 0x2066..=0x2069
+    )
+}
+
+fn is_brand_edge_whitespace(character: char) -> bool {
+    matches!(
+        character as u32,
+        0x0020 | 0x00A0 | 0x1680 | 0x2000
+            ..=0x200A | 0x2028 | 0x2029 | 0x202F | 0x205F | 0x3000 | 0xFEFF
+    )
+}
+
 fn utf16_code_unit_count(value: &str) -> usize {
     value.encode_utf16().count()
 }

@@ -7,6 +7,7 @@ import type {
   Diagnostics,
   JobSummary,
   ManualPrinterInput,
+  OpenPrinterServerConfiguration,
   PrinterSummary,
   VirtualPrinterInput,
   VirtualPrinterMode,
@@ -136,6 +137,14 @@ export function useAgent() {
       setStartOnLogin: async (enabled: boolean) => {
         const nextValue = await run('start-on-login', () => agentClient.setStartOnLogin(enabled));
         setStatus((current) => (current ? { ...current, startOnLogin: nextValue } : current));
+      },
+      setServerConfiguration: async (input: OpenPrinterServerConfiguration) => {
+        await run('server-configuration', () => agentClient.setServerConfiguration(input));
+        await load();
+      },
+      resetServerConfiguration: async () => {
+        await run('reset-server-configuration', () => agentClient.resetServerConfiguration());
+        await load();
       },
       exportDiagnostics: async () => {
         return run('export-diagnostics', () => agentClient.exportDiagnostics());

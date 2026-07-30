@@ -10,6 +10,7 @@ mod error;
 mod job_ledger;
 mod models;
 mod printer_catalog;
+mod server_configuration;
 mod service;
 mod virtual_spooler;
 
@@ -28,6 +29,8 @@ use tauri_plugin_autostart::MacosLauncher;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_single_instance::init(
             |app, _arguments, _cwd| {
                 desktop::show_main_window(app);
@@ -54,7 +57,7 @@ pub fn run() {
             }
             Ok(())
         })
-        .on_menu_event(desktop::handle_app_menu_event)
+        .on_menu_event(|app, event| desktop::handle_app_menu_event(app, &event))
         .on_window_event(desktop::handle_close_request)
         .invoke_handler(tauri::generate_handler![
             commands::get_agent_status,
@@ -73,6 +76,8 @@ pub fn run() {
             commands::export_diagnostics,
             commands::set_start_on_login,
             commands::reconnect,
+            commands::set_server_configuration,
+            commands::reset_server_configuration,
             commands::open_product_link,
         ])
         .run(tauri::generate_context!())

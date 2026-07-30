@@ -5,7 +5,10 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
 use crate::{
     MAX_PRINTERS_PER_INVENTORY, MAX_WIRE_MESSAGE_BYTES, Metadata, PROTOCOL_VERSION, PrintJob,
     PrinterDescriptor, Validate, ValidationError,
-    validation::{validate_identifier, validate_metadata, validate_string, validate_timestamp},
+    validation::{
+        validate_brand_name, validate_identifier, validate_metadata, validate_string,
+        validate_timestamp,
+    },
 };
 
 const MAX_SAFE_INTEGER: u64 = 9_007_199_254_740_991;
@@ -545,6 +548,20 @@ impl Validate for AgentMessage {
     }
 }
 
+/// Human-readable identity advertised by an OpenPrinter service.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct OpenPrinterBrandMetadata {
+    /// Service brand shown by the agent, for example `Acme POS`.
+    pub name: String,
+}
+
+impl Validate for OpenPrinterBrandMetadata {
+    fn validate(&self) -> Result<(), ValidationError> {
+        validate_brand_name(&self.name, "brand.name")
+    }
+}
+
 /// Server handshake response and selected protocol version.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -553,6 +570,8 @@ pub struct ServerHello {
     pub server_id: String,
     /// Running server SDK version.
     pub server_version: String,
+    /// Human-readable service identity safe to display in the agent UI.
+    pub brand: OpenPrinterBrandMetadata,
     /// Connection session identity.
     pub session_id: String,
     /// Protocol versions understood by the server.
@@ -569,6 +588,7 @@ impl Validate for ServerHello {
     fn validate(&self) -> Result<(), ValidationError> {
         validate_identifier(&self.server_id, "serverId", 128)?;
         validate_string(&self.server_version, "serverVersion", 1, 256)?;
+        self.brand.validate()?;
         validate_identifier(&self.session_id, "sessionId", 128)?;
         validate_versions(
             &self.supported_protocol_versions,

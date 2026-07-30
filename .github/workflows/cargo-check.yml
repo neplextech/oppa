@@ -1,0 +1,88 @@
+name: Cargo checks
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'apps/oppa/src-tauri/**'
+      - 'crates/**'
+      - 'products/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'apps/oppa/src-tauri/**'
+      - 'crates/**'
+      - 'products/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Cargo check (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS ARM
+            runner: macos-latest
+            target: aarch64-apple-darwin
+          - name: macOS x64
+            runner: macos-latest
+            target: x86_64-apple-darwin
+          - name: Linux x64
+            runner: ubuntu-22.04
+            target: ''
+          - name: Linux ARM
+            runner: ubuntu-22.04-arm
+            target: ''
+          - name: Windows x64
+            runner: windows-2022
+            target: ''
+          - name: Windows ARM
+            runner: windows-11-arm
+            target: ''
+
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Install Tauri Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            xdg-utils
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: . -> target
+          cache-on-failure: true
+          shared-key: oppa-check-${{ matrix.name }}
+
+      - name: Check workspace
+        run: cargo check --workspace ${{ matrix.target && format('--target {0}', matrix.target) || '' }}

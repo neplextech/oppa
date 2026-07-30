@@ -1,12 +1,15 @@
 # `@openprinter/server`
 
-`@openprinter/server` attaches OpenPrinter agent connections to an existing Node-compatible HTTP
-server. It authenticates agents, performs the protocol handshake, validates messages, tracks live
-printer inventory, and exposes typed lifecycle callbacks.
+`@openprinter/server` is the framework-neutral protocol-session SDK for
+OpenPrinter-compatible agents. A host application authenticates a connection,
+supplies a small `send`/`close` transport, and forwards inbound frames. The SDK
+then owns the OpenPrinter handshake, validation, heartbeat, printer inventory,
+commands, and typed lifecycle events for that one session.
 
-It deliberately does not provide a database, durable queue, retry scheduler, authorization policy,
-or application-specific printer routing. The integrating application retains a print job until it
-observes the agent's `received` acknowledgement.
+The package does not create an HTTP or WebSocket server, parse credentials, keep
+a global agent registry, coordinate Node cluster workers, or prescribe a
+message broker. It also does not provide durable jobs, retries, application
+authorization, or printer-routing policy.
 
 ## Install
 
@@ -14,120 +17,192 @@ observes the agent's `received` acknowledgement.
 pnpm add @openprinter/server @openprinter/protocol
 ```
 
-The package targets Node.js 20 or newer, Bun, and Deno's Node compatibility layer.
+Install the transport used by your host separately, such as `ws`, a
+framework-native WebSocket adapter, or a broker client.
 
-## Attach to an HTTP server
+## Create the protocol server
 
 ```ts
-import { createServer } from "node:http";
-import { createOpenPrinterServer } from "@openprinter/server";
+import { createOpenPrinterServer } from '@openprinter/server';
 
-const httpServer = createServer();
 const openPrinter = createOpenPrinterServer({
-  path: "/openprinter/agent",
-  authenticateAgent: async ({ token }) => {
-    const agent = await lookupOpaqueToken(token);
-    return agent
-      ? {
-          agentId: agent.id,
-          metadata: { organizationId: agent.organizationId },
-        }
-      : null;
+  brand: {
+    name: 'Acme POS',
   },
-  onAgentConnected: ({ agent }) => {
-    console.info("Agent connected", agent.agentId);
+  serverId: 'acme-openprinter',
+  serverVersion: '1.0.0',
+
+  onAgentConnected: ({ agent, session }) => {
+    // Store `session` in a registry/backplane owned by your application.
+    registerLiveSession(agent.agentId, session);
   },
+
+  onAgentDisconnected: ({ agent, session, reason }) => {
+    removeLiveSessionIfCurrent(agent.agentId, session);
+    console.info('Agent disconnected', agent.agentId, reason);
+  },
+
   onJobReceived: ({ agent, message }) => {
-    // Mark the application's durable job as received.
-    console.info("Job received", agent.agentId, message.payload.jobId);
+    // The agent has durably persisted the job.
+    markJobReceived(agent.agentId, message.payload.jobId);
   },
+
   onJobSubmitted: ({ agent, message }) => {
-    // Submitted means accepted by the printer backend, not physically printed.
-    console.info("Job submitted", agent.agentId, message.payload.jobId);
+    // Submitted means backend acceptance, not verified physical printing.
+    markJobSubmitted(agent.agentId, message.payload.jobId);
   },
+
   onJobFailed: ({ agent, message }) => {
-    console.error(
-      "Job failed",
-      agent.agentId,
-      message.payload.jobId,
-      message.payload.error,
-    );
+    markJobFailed(agent.agentId, message.payload);
+  },
+});
+```
+
+`brand.name` is required and is sent in `server.hello` so OPPA can show which
+service it connected to. Brand metadata intentionally has no icon or external
+resource URL.
+
+## Accept a host-owned transport
+
+Authentication happens before `accept()`. The authenticated identity is
+authoritative and must match the subsequent `agent.hello`.
+
+```ts
+const identity = await authenticateConnection(request);
+
+if (identity === null) {
+  rejectConnection();
+  return;
+}
+
+const session = openPrinter.accept({
+  identity: {
+    agentId: identity.agentId,
+    metadata: {
+      organizationId: identity.organizationId,
+    },
+  },
+  transport: {
+    send: (message) => connection.send(message),
+    close: ({ reason, detail }) => {
+      connection.close(mapTransportClose(reason), detail);
+    },
   },
 });
 
-httpServer.on("upgrade", openPrinter.handleUpgrade);
-httpServer.listen(8787);
+connection.onMessage((message) => {
+  void session.receive(message);
+});
+
+connection.onClose((detail) => {
+  void session.transportClosed({
+    reason: 'peer-closed',
+    detail,
+  });
+});
+
+connection.onError((error) => {
+  void session.transportClosed({
+    reason: 'transport-error',
+    detail: safeErrorName(error),
+  });
+});
 ```
 
-`authenticateAgent` receives the Bearer token and original upgrade request. Return `null` to reject
-it. The SDK neither interprets nor logs the token.
+The transport contract is deliberately small:
 
-## Deliver a job
+- `send(message)` accepts one encoded UTF-8 JSON protocol message. Resolving
+  means immediate handoff to the transport, not agent persistence or printing.
+- `close(request)` lets the host map a stable OpenPrinter reason to its own
+  socket, consumer, route, or connection lifecycle.
+- `receive(message)` accepts `string` or `Uint8Array` input and serializes
+  concurrent calls in invocation order.
+- `transportClosed(event)` tells the protocol session that host-owned
+  connectivity has already ended; it does not call `close` again.
+
+## Deliver jobs through a selected session
+
+The host selects a session using its own local registry or distributed
+backplane:
 
 ```ts
-const result = await openPrinter.sendJob("agent_123", {
-  jobId: "job_123",
-  idempotencyKey: "invoice_123_v1",
-  printerId: "printer_123",
+const session = await resolveAgentSession('agent_123');
+
+if (session === null) {
+  // Keep the job in application-owned durable storage.
+  return {
+    ok: false,
+    agentId: 'agent_123',
+    reason: 'agent-offline',
+    retryable: true,
+  };
+}
+
+const result = await session.sendJob({
+  jobId: 'job_123',
+  idempotencyKey: 'invoice_123_v1',
+  printerId: 'printer_123',
   createdAt: new Date().toISOString(),
   document: {
     width: 80,
     sections: [
       {
-        type: "text",
-        value: "Test receipt",
-        align: "center",
+        type: 'text',
+        value: 'Test receipt',
+        align: 'center',
         bold: true,
       },
-      { type: "cut" },
+      { type: 'cut' },
     ],
   },
 });
 
 if (!result.ok) {
-  // Keep or queue the job in application-owned durable storage.
-  console.error(result.reason, result.retryable);
+  // `session-not-ready`, `connection-closed`, or `transport-error`.
+  retainForApplicationRetry(result);
 }
 ```
 
-`send` and `sendJob` return discriminated results. They do not silently queue jobs. A disconnected
-agent returns `agent-offline`; a connection that closes during delivery returns `connection-closed`.
+Other session-local commands are:
 
-## Live state
+- `send(message)`
+- `requestPrinters()`
+- `cancelJob(cancellation)`
+- `invalidateConfiguration(invalidation)`
+- `disconnect(options)`
 
-- `listAgents()` returns immutable snapshots of authenticated, handshaken sessions.
-- `getAgent(agentId)` returns one session snapshot.
-- `getPrinters(agentId)` returns the most recent validated inventory.
-- `requestPrinters(agentId)` asks an online agent for a fresh snapshot.
-- `disconnect(agentId)` closes a live session.
-- `close()` stops accepting upgrades and closes all sessions.
+`getAgent()` returns the negotiated agent snapshot and `getPrinters()` returns
+that session's latest validated inventory.
 
-State is in memory and disappears when the process exits. A second connection for the same
-authenticated agent replaces the first.
+## Cluster and broker ownership
 
-Inventory revisions must advance within a session. An identical full snapshot may repeat its current
-revision, but a changed snapshot or incremental update must use a newer revision; structurally
-inconsistent changes close only the offending connection.
+Two accepted sessions with the same agent ID remain independent. The SDK does
+not replace one, choose a process, or pretend a process-local map is
+cluster-wide.
 
-Job callbacks contain runtime-validated agent messages, not authorization to mutate arbitrary host
-records. The host must match the correlation, job, idempotency, and agent identifiers against its
-own durable job. The SDK cannot safely preserve that application-owned correlation state across
-process restarts or agent reconnects.
+In a clustered application, the host can announce which worker owns a live
+transport and route application commands to that worker through RabbitMQ,
+Redis, NATS, IPC, or another backplane. The host is responsible for ownership,
+affinity, ordering beyond one session, deduplication of broker redelivery, and
+stale-route expiry. Each ingress worker calls the same `accept`, `receive`, and
+session command APIs.
 
 ## Limits and lifecycle
 
 Defaults are intentionally bounded:
 
-- 2 MiB maximum WebSocket message
+- 2 MiB maximum encoded protocol message
 - 10 second protocol handshake timeout
 - 15 second heartbeat interval
 - 45 second heartbeat timeout
-- 10 second authentication timeout
+- 10 second transport callback timeout
 - 5 second lifecycle callback timeout
 
-All values are configurable. Invalid payloads and handshake violations invoke `onProtocolError` and
-close only the offending connection. Callback failures and timeouts are reported through
-`onCallbackError` and do not become protocol failures or hold a connection open indefinitely.
+Invalid messages and handshake violations invoke `onProtocolError`, send a
+semantic disconnect when possible, and ask the host to close only that
+transport. Lifecycle callback failures and timeouts are isolated through
+`onCallbackError`. A rejected or timed-out transport handoff returns a stable
+structured delivery failure and makes the session unavailable.
 
 ## Development
 
@@ -137,4 +212,6 @@ pnpm --filter @openprinter/server test
 pnpm --filter @openprinter/server build
 ```
 
-See `examples/node-server` for a complete development-only authorization flow and HTTP API.
+See `examples/node-server` for a complete host-owned `ws` adapter,
+development-only authorization flow, explicit local session registry, and HTTP
+API.

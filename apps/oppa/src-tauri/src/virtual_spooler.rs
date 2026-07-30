@@ -50,17 +50,6 @@ impl PerPrinterVirtualSpooler {
         self.devices.write().await.remove(id);
     }
 
-    pub async fn set_policy(
-        &self,
-        id: &PrinterId,
-        mode: VirtualPrinterMode,
-        delay_ms: u64,
-    ) -> Result<(), SpoolerError> {
-        let device = self.device(id).await?;
-        *device.policy.lock().await = (mode, delay_ms);
-        Ok(())
-    }
-
     pub async fn policy(&self, id: &PrinterId) -> Result<(VirtualPrinterMode, u64), SpoolerError> {
         let device = self.device(id).await?;
         let policy = *device.policy.lock().await;

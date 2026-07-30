@@ -1,18 +1,25 @@
-import { ArrowRight, LockKeyhole, Printer, RefreshCw, ShieldCheck } from 'lucide-react';
+import { ArrowRight, LockKeyhole, RefreshCw, Settings2, ShieldCheck } from 'lucide-react';
+import { useState } from 'react';
 
+import { ServerConfigurationForm } from '@/components/server-configuration-form';
 import { Button } from '@/components/ui/button';
-import type { AgentStatus } from '@/lib/types';
+import type { AgentStatus, OpenPrinterServerConfiguration } from '@/lib/types';
 
 export function SetupScreen({
   status,
   busy,
   onAuthorize,
+  onSaveServerConfiguration,
+  onResetServerConfiguration,
 }: {
   status: AgentStatus;
-  busy: boolean;
+  busy: string | null;
   onAuthorize: () => Promise<void>;
+  onSaveServerConfiguration: (input: OpenPrinterServerConfiguration) => Promise<void>;
+  onResetServerConfiguration: () => Promise<void>;
 }) {
   const authorizing = status.state === 'authorizing';
+  const [showServerConfiguration, setShowServerConfiguration] = useState(false);
 
   return (
     <main className="bg-background flex min-h-dvh items-center justify-center p-6">
@@ -21,9 +28,12 @@ export function SetupScreen({
           {/* Left panel */}
           <div className="border-border bg-card flex flex-col justify-between border-r p-8">
             <div>
-              <div className="border-border bg-primary/10 flex size-9 items-center justify-center rounded border">
-                <Printer className="text-primary size-4" aria-hidden />
-              </div>
+              <img
+                src="/oppa-icon.png"
+                alt=""
+                className="border-border size-10 rounded-xl border shadow-sm"
+                draggable={false}
+              />
 
               <p className="text-primary mt-8 text-[10px] font-semibold tracking-widest uppercase">
                 {status.product.name}
@@ -70,8 +80,8 @@ export function SetupScreen({
 
             <h2 className="text-foreground mt-5 text-base font-semibold">Connect your account</h2>
             <p className="text-muted-foreground mt-1.5 text-[11px] leading-5">
-              Your browser will open the authorization page configured for this product build. The agent never sees your
-              password.
+              Your browser will open the authorization page for the selected OpenPrinter service. The agent never sees
+              your password.
             </p>
 
             <div className="mt-6 space-y-3">
@@ -94,19 +104,53 @@ export function SetupScreen({
               ))}
             </div>
 
-            <Button className="mt-8 w-full" disabled={authorizing || busy} onClick={() => void onAuthorize()}>
-              {busy ? (
+            <Button
+              className="mt-8 w-full"
+              disabled={authorizing || busy === 'authorize'}
+              onClick={() => void onAuthorize()}
+            >
+              {busy === 'authorize' ? (
                 <RefreshCw className="size-3.5 animate-spin" aria-hidden />
               ) : (
                 <LockKeyhole className="size-3.5" aria-hidden />
               )}
               {authorizing ? 'Waiting for browser authorization…' : 'Connect account'}
-              {!authorizing && !busy && <ArrowRight className="ml-auto size-3.5" aria-hidden />}
+              {!authorizing && busy !== 'authorize' && <ArrowRight className="ml-auto size-3.5" aria-hidden />}
             </Button>
 
             <p className="text-muted-foreground/50 mt-3 text-center text-[10px]">
               Authorization expires quickly and is accepted only on this computer.
             </p>
+
+            <div className="border-border mt-5 border-t pt-4">
+              <button
+                type="button"
+                className="text-muted-foreground hover:text-foreground flex w-full items-center gap-2 text-left text-[11px] font-medium transition-colors"
+                aria-expanded={showServerConfiguration}
+                onClick={() => setShowServerConfiguration((current) => !current)}
+              >
+                <Settings2 className="size-3.5" aria-hidden />
+                Use a different OpenPrinter service
+                <span className="text-muted-foreground/50 ml-auto font-mono text-[9px]">
+                  {showServerConfiguration ? 'Hide' : 'Configure'}
+                </span>
+              </button>
+              <p className="text-muted-foreground/60 mt-1 truncate pl-5.5 font-mono text-[9px]">
+                {status.serverConfiguration.gatewayUrl}
+              </p>
+              {showServerConfiguration ? (
+                <div className="mt-4">
+                  <ServerConfigurationForm
+                    compact
+                    value={status.serverConfiguration}
+                    saving={busy === 'server-configuration'}
+                    resetting={busy === 'reset-server-configuration'}
+                    onSave={onSaveServerConfiguration}
+                    onReset={onResetServerConfiguration}
+                  />
+                </div>
+              ) : null}
+            </div>
 
             {status.activeErrors.length > 0 && (
               <div className="mt-4 rounded border border-[var(--color-error)]/20 bg-[var(--color-error)]/5 p-3">

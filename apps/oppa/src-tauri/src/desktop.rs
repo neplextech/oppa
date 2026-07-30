@@ -217,12 +217,8 @@ fn build_app_menu(app: &App) -> tauri::Result<Menu<tauri::Wry>> {
     Ok(menu)
 }
 
-pub fn handle_app_menu_event(app: &AppHandle, event: tauri::menu::MenuEvent) {
+pub fn handle_app_menu_event(app: &AppHandle, event: &tauri::menu::MenuEvent) {
     match event.id().as_ref() {
-        APP_ADD_PRINTER => {
-            show_main_window(app);
-            let _ = app.emit(NAVIGATE_EVENT, "printers");
-        }
         APP_CLOSE_WINDOW => {
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.hide();
@@ -236,7 +232,7 @@ pub fn handle_app_menu_event(app: &AppHandle, event: tauri::menu::MenuEvent) {
             show_main_window(app);
             let _ = app.emit(NAVIGATE_EVENT, "jobs");
         }
-        APP_NAV_PRINTERS => {
+        APP_ADD_PRINTER | APP_NAV_PRINTERS => {
             show_main_window(app);
             let _ = app.emit(NAVIGATE_EVENT, "printers");
         }

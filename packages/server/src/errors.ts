@@ -1,6 +1,6 @@
 import type { DeliveryFailure, DeliveryResult, DeliverySuccess } from './types.js';
 
-/** Stable configuration error raised before any network work starts. */
+/** Stable configuration error raised before any protocol session starts. */
 export class OpenPrinterServerConfigurationError extends Error {
   /** Machine-readable configuration category. */
   public readonly code = 'INVALID_SERVER_CONFIGURATION' as const;
@@ -20,7 +20,7 @@ export class OpenPrinterServerConfigurationError extends Error {
 export class OpenPrinterDeliveryError extends Error {
   /** Machine-readable delivery failure reason. */
   public readonly code: DeliveryFailure['reason'];
-  /** Agent that was not reachable. */
+  /** Agent whose selected session did not accept the handoff. */
   public readonly agentId: string;
   /** A later application-owned retry may succeed. */
   public readonly retryable = true as const;

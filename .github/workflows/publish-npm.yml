@@ -1,0 +1,96 @@
+name: Publish npm packages
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - release
+    paths:
+      - 'packages/**'
+      - 'protocol/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish stable packages
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Install Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+
+      - name: Install npm trusted publishing CLI
+        run: npm install --global npm@^11.5.1
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate packages
+        run: |
+          pnpm exec eslint packages --max-warnings=0
+          pnpm --filter @openprinter/protocol check
+          pnpm --filter @openprinter/server check
+
+      - name: Build packages
+        run: pnpm --filter './packages/**' run build
+
+      - name: Publish stable versions with OIDC
+        shell: bash
+        run: |
+          publish_if_needed() {
+            local package_directory="$1"
+            local package_name
+            local package_version
+            local pack_directory
+            local pack_metadata
+            local package_tarball
+
+            package_name="$(node -p "require('./${package_directory}/package.json').name")"
+            package_version="$(node -p "require('./${package_directory}/package.json').version")"
+
+            if npm view "${package_name}@${package_version}" version >/dev/null 2>&1; then
+              echo "${package_name}@${package_version} is already published; skipping."
+              return
+            fi
+
+            pack_directory="${RUNNER_TEMP}/oppa-npm-packages/$(basename "${package_directory}")"
+            pack_metadata="${pack_directory}/pack.json"
+
+            mkdir -p "${pack_directory}"
+            pnpm --dir "${package_directory}" pack \
+              --pack-destination "${pack_directory}" \
+              --json >"${pack_metadata}"
+            package_tarball="$(
+              node -e \
+                "const fs = require('node:fs'); const data = JSON.parse(fs.readFileSync(process.argv[1], 'utf8')); process.stdout.write(data.filename);" \
+                "${pack_metadata}"
+            )"
+
+            npm publish "${package_tarball}" \
+              --access public \
+              --tag latest
+          }
+
+          publish_if_needed packages/protocol
+          publish_if_needed packages/server

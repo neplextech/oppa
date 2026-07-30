@@ -46,6 +46,10 @@ socket.send(encodeServerMessage(heartbeat));
 `agent.job_received` means the job is durably stored. `agent.job_submitted` means a backend accepted
 it. Neither state universally proves that paper was physically printed.
 
+`server.hello` includes required `OpenPrinterBrandMetadata` with a bounded
+human-readable service name. It intentionally supports no icon or external
+resource URL.
+
 Printer descriptors omit `capabilities` when discovery cannot determine them. An absent capability
 block means unknown; senders must not invent a media width or feature flags merely to populate the
 field.

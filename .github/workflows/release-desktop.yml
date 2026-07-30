@@ -1,0 +1,165 @@
+name: Release OPPA desktop
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - release
+    paths:
+      - 'apps/oppa/**'
+      - 'crates/**'
+      - 'products/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  release:
+    name: Release (${{ matrix.name }})
+    permissions:
+      contents: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS ARM
+            runner: macos-latest
+            args: --target aarch64-apple-darwin
+            rust-targets: aarch64-apple-darwin
+          - name: macOS x64
+            runner: macos-latest
+            args: --target x86_64-apple-darwin
+            rust-targets: x86_64-apple-darwin
+          - name: Linux x64
+            runner: ubuntu-22.04
+            args: ''
+            rust-targets: ''
+          - name: Linux ARM
+            runner: ubuntu-22.04-arm
+            args: ''
+            rust-targets: ''
+          - name: Windows x64
+            runner: windows-2022
+            args: ''
+            rust-targets: ''
+          - name: Windows ARM
+            runner: windows-11-arm
+            args: ''
+            rust-targets: ''
+
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Install Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust-targets }}
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: . -> target
+          cache-on-failure: true
+          shared-key: oppa-release-${{ matrix.name }}
+
+      - name: Install Tauri Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            xdg-utils
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build and upload stable release draft
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OPPA_PRODUCT_DIR: ${{ github.workspace }}/products/default
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.OPPA_TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.OPPA_TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          projectPath: apps/oppa
+          tagName: oppa-v__VERSION__
+          releaseName: OPPA v__VERSION__
+          releaseBody: See the attached assets to download and install this version of OPPA.
+          releaseDraft: true
+          prerelease: false
+          updaterJsonPreferNsis: true
+          args: ${{ matrix.args }}
+
+  checksums:
+    name: Finalize stable release
+    needs: release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Generate and upload SHA256SUMS.txt
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          release_tag="oppa-v$(node -p "require('./apps/oppa/src-tauri/tauri.conf.json').version")"
+          asset_directory="${RUNNER_TEMP}/oppa-release-assets"
+          checksum_file="${RUNNER_TEMP}/SHA256SUMS.txt"
+
+          mkdir -p "${asset_directory}"
+          gh release download "${release_tag}" --dir "${asset_directory}"
+
+          find "${asset_directory}" \
+            -maxdepth 1 \
+            -type f \
+            ! -name '*.sig' \
+            ! -name 'latest.json' \
+            ! -name 'SHA256SUMS.txt' \
+            -print0 |
+            LC_ALL=C sort -z |
+            while IFS= read -r -d '' asset; do
+              checksum="$(sha256sum "${asset}" | cut -d ' ' -f 1)"
+              printf '%s  %s\n' "${checksum}" "$(basename "${asset}")"
+            done >"${checksum_file}"
+
+          test -s "${checksum_file}"
+          gh release upload "${release_tag}" "${checksum_file}" --clobber
+
+      - name: Publish latest stable release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          release_tag="oppa-v$(node -p "require('./apps/oppa/src-tauri/tauri.conf.json').version")"
+          gh release edit "${release_tag}" \
+            --draft=false \
+            --prerelease=false \
+            --latest

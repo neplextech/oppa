@@ -1,4 +1,4 @@
-import { Activity, Command, FileClock, MonitorCog, Printer, ScrollText, Settings2 } from 'lucide-react';
+import { Activity, Command, FileClock, Globe2, MonitorCog, Printer, ScrollText, Settings2 } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useState } from 'react';
 
@@ -81,9 +81,7 @@ function TitleBar({ status }: { status: AgentStatus }) {
 
       {/* Product identity */}
       <div className="flex items-center gap-2 px-2">
-        <div className="bg-primary flex size-5 shrink-0 items-center justify-center rounded-md">
-          <Printer className="text-primary-foreground size-3" strokeWidth={2.5} aria-hidden />
-        </div>
+        <img src="/oppa-icon.png" alt="" className="size-5 shrink-0 rounded-md" draggable={false} />
         <span className="text-foreground/90 text-sm font-semibold">{status.product.name}</span>
       </div>
 
@@ -95,6 +93,18 @@ function TitleBar({ status }: { status: AgentStatus }) {
         <span className={cn(connected ? 'text-foreground/70' : 'text-muted-foreground')}>
           {titleCase(status.state)}
         </span>
+        {status.connectedService ? (
+          <>
+            <span className="text-border/60">·</span>
+            <span
+              className="text-foreground/70 flex min-w-0 items-center gap-1"
+              title={`${status.connectedService.name} · ${status.connectedService.gatewayUrl}`}
+            >
+              <Globe2 className="size-3" aria-hidden />
+              <span className="max-w-44 truncate">{status.connectedService.name}</span>
+            </span>
+          </>
+        ) : null}
         {agentId && (
           <>
             <span className="text-border/60">·</span>

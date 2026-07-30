@@ -2,16 +2,19 @@
 
 import { ArrowRight, Github, Menu, X } from 'lucide-react';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
 const navItems = [
-  { label: 'Protocol', href: '#trace' },
-  { label: 'Boundary', href: '#boundary' },
-  { label: 'Integration', href: '#integration' },
-  { label: 'Security', href: '#constraints' },
+  { label: 'Protocol', href: '/#trace', sectionId: 'trace' },
+  { label: 'Boundary', href: '/#boundary', sectionId: 'boundary' },
+  { label: 'Integration', href: '/#integration', sectionId: 'integration' },
+  { label: 'Security', href: '/#constraints', sectionId: 'constraints' },
+  { label: 'Downloads', href: '/downloads', sectionId: null },
 ];
 
 export function SiteHeader() {
+  const pathname = usePathname();
   const [scrolled, setScrolled] = useState(false);
   const [active, setActive] = useState<string>('');
   const [menuOpen, setMenuOpen] = useState(false);
@@ -24,9 +27,15 @@ export function SiteHeader() {
   }, []);
 
   useEffect(() => {
+    if (pathname !== '/') {
+      setActive('');
+      return;
+    }
+
     const sections = navItems
-      .map((item) => document.querySelector(item.href))
-      .filter((el): el is Element => el !== null);
+      .filter((item) => item.sectionId !== null)
+      .map((item) => document.getElementById(item.sectionId ?? ''))
+      .filter((element): element is HTMLElement => element !== null);
 
     if (sections.length === 0) return;
 
@@ -34,7 +43,7 @@ export function SiteHeader() {
       (entries) => {
         for (const entry of entries) {
           if (entry.isIntersecting) {
-            setActive(`#${entry.target.id}`);
+            setActive(entry.target.id);
           }
         }
       },
@@ -43,7 +52,7 @@ export function SiteHeader() {
 
     for (const section of sections) observer.observe(section);
     return () => observer.disconnect();
-  }, []);
+  }, [pathname]);
 
   return (
     <header
@@ -70,7 +79,12 @@ export function SiteHeader() {
           {navItems.map((item) => (
             <Link
               key={item.href}
-              className={`transition ${active === item.href ? 'text-stone-100' : 'text-stone-500 hover:text-stone-300'}`}
+              className={`transition ${
+                (item.sectionId !== null && active === item.sectionId) ||
+                (item.sectionId === null && pathname.startsWith(item.href))
+                  ? 'text-stone-100'
+                  : 'text-stone-500 hover:text-stone-300'
+              }`}
               href={item.href}
             >
               {item.label}
@@ -113,7 +127,11 @@ export function SiteHeader() {
             {navItems.map((item) => (
               <Link
                 key={item.href}
-                className="text-stone-300 transition hover:text-stone-100"
+                className={`transition ${
+                  item.sectionId === null && pathname.startsWith(item.href)
+                    ? 'text-stone-100'
+                    : 'text-stone-300 hover:text-stone-100'
+                }`}
                 href={item.href}
                 onClick={() => setMenuOpen(false)}
               >

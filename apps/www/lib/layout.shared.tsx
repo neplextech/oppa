@@ -1,5 +1,5 @@
 import type { BaseLayoutProps } from 'fumadocs-ui/layouts/shared';
-import { BookOpen, Github } from 'lucide-react';
+import { BookOpen, Download, Github } from 'lucide-react';
 
 export function baseOptions(): BaseLayoutProps {
   return {
@@ -21,6 +21,11 @@ export function baseOptions(): BaseLayoutProps {
         text: 'Documentation',
         url: '/docs',
         active: 'nested-url',
+      },
+      {
+        icon: <Download />,
+        text: 'Download OPPA',
+        url: '/downloads',
       },
       {
         icon: <Github />,

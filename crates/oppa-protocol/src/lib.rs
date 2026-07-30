@@ -28,9 +28,9 @@ pub use message::{
     AgentDiagnostics, AgentHealth, AgentHeartbeat, AgentHello, AgentMessage, AgentMessageKind,
     AuthenticationMetadata, AuthenticationMethod, CancelJob, ConfigurationInvalidated,
     ConfigurationScope, DiagnosticIssue, DiagnosticSeverity, Disconnect, FailureDetail,
-    HeartbeatRequest, JobFailed, JobReceived, JobStatus, JobSubmitted, PrinterInventory,
-    PrinterInventoryChanged, ProtocolMessage, ProtocolVersion, RequestPrinterInventory,
-    ServerHello, ServerMessage, ServerMessageKind,
+    HeartbeatRequest, JobFailed, JobReceived, JobStatus, JobSubmitted, OpenPrinterBrandMetadata,
+    PrinterInventory, PrinterInventoryChanged, ProtocolMessage, ProtocolVersion,
+    RequestPrinterInventory, ServerHello, ServerMessage, ServerMessageKind,
 };
 pub use printer::{
     PrinterAvailability, PrinterCapabilities, PrinterConnection, PrinterDescriptor, PrinterKind,

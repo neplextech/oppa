@@ -113,6 +113,12 @@ fn every_invalid_fixture_is_rejected() {
                 "{} must produce a version error",
                 path.display(),
             );
+        } else if path.ends_with("server-hello-brand-lone-surrogate.json") {
+            assert!(
+                matches!(result, Err(ProtocolError::InvalidJson)),
+                "{} must be rejected before deserialization as invalid Unicode JSON",
+                path.display(),
+            );
         } else {
             assert!(
                 matches!(result, Err(ProtocolError::InvalidMessage(_))),
@@ -197,6 +203,49 @@ fn string_bounds_match_javascript_utf16_code_units() {
         ),
         Err(ProtocolError::InvalidMessage(_))
     ));
+}
+
+#[test]
+fn server_brand_name_rejects_unsafe_display_characters() {
+    let raw = fs::read(fixture_directory("server").join("server-hello.json"))
+        .expect("fixture must be readable");
+    let base: Value = serde_json::from_slice(&raw).expect("fixture must be JSON");
+    let mut valid_non_bmp = base.clone();
+    valid_non_bmp["payload"]["brand"]["name"] = Value::String("Acme 🖨️".to_owned());
+    assert!(
+        decode_server_message(
+            &serde_json::to_vec(&valid_non_bmp).expect("modified fixture must serialize")
+        )
+        .is_ok()
+    );
+
+    let unsafe_names = [
+        " Acme POS".to_owned(),
+        "Acme POS ".to_owned(),
+        "Acme POS\u{00A0}".to_owned(),
+        "Acme\u{0007}POS".to_owned(),
+        "Acme\u{0085}POS".to_owned(),
+        "Acme\u{061C}POS".to_owned(),
+        "Acme\u{200E}POS".to_owned(),
+        "Acme\u{200F}POS".to_owned(),
+    ]
+    .into_iter()
+    .chain(
+        ('\u{202A}'..='\u{202E}')
+            .chain('\u{2066}'..='\u{2069}')
+            .map(|character| format!("Acme{character}POS")),
+    );
+
+    for name in unsafe_names {
+        let mut value = base.clone();
+        value["payload"]["brand"]["name"] = Value::String(name);
+        assert!(matches!(
+            decode_server_message(
+                &serde_json::to_vec(&value).expect("modified fixture must serialize")
+            ),
+            Err(ProtocolError::InvalidMessage(_))
+        ));
+    }
 }
 
 #[test]

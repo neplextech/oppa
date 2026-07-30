@@ -332,10 +332,7 @@ impl PrinterCatalog {
         self.bump_revision();
         self.log.info(
             "discovery",
-            format!(
-                "Printer discovery completed with {} provider failure(s).",
-                failure_count
-            ),
+            format!("Printer discovery completed with {failure_count} provider failure(s)."),
         );
         self.list().await
     }

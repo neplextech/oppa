@@ -1,8 +1,13 @@
 {
   "name": "@openprinter/server",
   "version": "0.1.0",
-  "description": "Framework-neutral server SDK for OpenPrinter-compatible agents",
+  "description": "Transport-neutral protocol session SDK for OpenPrinter-compatible agents",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/neplextech/oppa.git",
+    "directory": "packages/server"
+  },
   "files": [
     "dist",
     "README.md"
@@ -18,6 +23,9 @@
       "default": "./dist/index.js"
     }
   },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "check": "pnpm --filter @openprinter/protocol build && pnpm run typecheck && pnpm run test",
@@ -26,12 +34,10 @@
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit"
   },
   "dependencies": {
-    "@openprinter/protocol": "workspace:*",
-    "ws": "^8.18.3"
+    "@openprinter/protocol": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.15.30",
-    "@types/ws": "^8.18.1",
     "typescript": "catalog:",
     "vitest": "catalog:"
   }

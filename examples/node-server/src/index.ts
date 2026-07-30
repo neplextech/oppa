@@ -1,7 +1,14 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import type { Duplex } from 'node:stream';
 
-import { parsePrintJob, ProtocolError } from '@openprinter/protocol';
-import { createOpenPrinterServer } from '@openprinter/server';
+import { MAX_WIRE_MESSAGE_BYTES, parsePrintJob, ProtocolError } from '@openprinter/protocol';
+import {
+  createOpenPrinterServer,
+  type DeliveryFailure,
+  type OpenPrinterSession,
+  type OpenPrinterTransportCloseRequest,
+} from '@openprinter/server';
+import { WebSocket, WebSocketServer, type RawData } from 'ws';
 
 import { DevelopmentAuthError, DevelopmentAuthStore } from './development-auth.js';
 import { escapeHtml, HttpError, readForm, readJson, sendHtml, sendJson } from './http.js';
@@ -16,43 +23,51 @@ const authorization = new DevelopmentAuthStore({
   clientId: EXAMPLE_CLIENT_ID,
 });
 
-const openPrinter = createOpenPrinterServer({
-  path: '/openprinter/agent',
+interface AgentSessionMetadata {
+  readonly issuedAt: string;
+  readonly expiresAt: string;
+}
+
+const localSessions = new Map<string, OpenPrinterSession<AgentSessionMetadata>>();
+const acceptedSessions = new Set<OpenPrinterSession<AgentSessionMetadata>>();
+const webSocketServer = new WebSocketServer({
+  clientTracking: false,
+  maxPayload: MAX_WIRE_MESSAGE_BYTES,
+  noServer: true,
+  perMessageDeflate: false,
+});
+
+const openPrinter = createOpenPrinterServer<AgentSessionMetadata>({
+  brand: {
+    name: 'OpenPrinter Node.js example',
+  },
   serverId: 'oppa-node-example',
   serverVersion: '0.1.0',
-  authenticateAgent: ({ token }) => {
-    const identity = authorization.authenticateAccessToken(token);
-
-    if (identity === null) {
-      return null;
+  onAgentConnected: ({ agent, session }) => {
+    const previous = localSessions.get(agent.agentId);
+    localSessions.set(agent.agentId, session);
+    if (previous !== undefined && previous !== session) {
+      void previous.disconnect({
+        code: 'connection_replaced',
+        reason: 'A newer connection replaced this local example session.',
+        reconnect: false,
+      });
     }
 
-    return {
-      agentId: identity.agentId,
-      metadata: {
-        issuedAt: identity.issuedAt,
-        expiresAt: identity.expiresAt,
-      },
-    };
-  },
-  onAgentConnected: ({ agent }) => {
     logEvent('agent.connected', {
       agentId: agent.agentId,
       productId: agent.hello.productId,
       agentVersion: agent.hello.agentVersion,
     });
   },
-  onAgentDisconnected: ({ agent, reason, closeCode }) => {
+  onAgentDisconnected: ({ agent, session, reason }) => {
+    if (localSessions.get(agent.agentId) === session) {
+      localSessions.delete(agent.agentId);
+    }
+
     logEvent('agent.disconnected', {
       agentId: agent.agentId,
       reason,
-      ...(closeCode === undefined ? {} : { closeCode }),
-    });
-  },
-  onAuthenticationFailed: ({ reason, remoteAddress }) => {
-    logEvent('agent.authentication_failed', {
-      reason,
-      ...(remoteAddress === undefined ? {} : { remoteAddress }),
     });
   },
   onAuthenticationMetadata: ({ agent, message }) => {
@@ -129,7 +144,7 @@ const httpServer = createServer((request, response) => {
   });
 });
 
-httpServer.on('upgrade', openPrinter.handleUpgrade);
+httpServer.on('upgrade', handleOpenPrinterUpgrade);
 httpServer.on('clientError', (error, socket) => {
   logEvent('http.client_error', {
     code: 'code' in error && typeof error.code === 'string' ? error.code : 'HTTP_CLIENT_ERROR',
@@ -154,6 +169,88 @@ for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   process.once(signal, () => {
     void shutdown(signal);
   });
+}
+
+function handleOpenPrinterUpgrade(request: IncomingMessage, socket: Duplex, head: Buffer): void {
+  let pathname: string;
+  try {
+    pathname = new URL(request.url ?? '/', `http://${HOST}:${PORT}`).pathname;
+  } catch {
+    rejectUpgrade(socket, 400, 'Bad Request');
+    return;
+  }
+
+  if (pathname !== '/openprinter/agent') {
+    rejectUpgrade(socket, 404, 'Not Found');
+    return;
+  }
+
+  const token = bearerToken(request.headers.authorization);
+  if (token === null) {
+    logEvent('agent.authentication_failed', {
+      reason: 'missing-or-malformed-bearer-token',
+      ...(request.socket.remoteAddress === undefined ? {} : { remoteAddress: request.socket.remoteAddress }),
+    });
+    rejectUpgrade(socket, 401, 'Unauthorized');
+    return;
+  }
+
+  const identity = authorization.authenticateAccessToken(token);
+  if (identity === null) {
+    logEvent('agent.authentication_failed', {
+      reason: 'rejected',
+      ...(request.socket.remoteAddress === undefined ? {} : { remoteAddress: request.socket.remoteAddress }),
+    });
+    rejectUpgrade(socket, 401, 'Unauthorized');
+    return;
+  }
+
+  try {
+    webSocketServer.handleUpgrade(request, socket, head, (webSocket) => {
+      const session = openPrinter.accept({
+        identity: {
+          agentId: identity.agentId,
+          metadata: {
+            issuedAt: identity.issuedAt,
+            expiresAt: identity.expiresAt,
+          },
+        },
+        transport: {
+          send: (message) => sendWebSocketMessage(webSocket, message),
+          close: (close) => closeWebSocket(webSocket, close),
+        },
+      });
+      acceptedSessions.add(session);
+
+      webSocket.on('message', (data: RawData, isBinary: boolean) => {
+        if (isBinary) {
+          webSocket.close(1_003, 'Text messages required');
+          void session.transportClosed({
+            reason: 'transport-error',
+            detail: 'The WebSocket host rejected a binary frame.',
+          });
+          return;
+        }
+
+        void session.receive(rawDataToUtf8(data));
+      });
+      webSocket.on('close', (_code: number, reason: Buffer) => {
+        acceptedSessions.delete(session);
+        void session.transportClosed({
+          reason: 'peer-closed',
+          ...(reason.length === 0 ? {} : { detail: reason.toString('utf8') }),
+        });
+      });
+      webSocket.on('error', (error: Error) => {
+        void session.transportClosed({
+          reason: 'transport-error',
+          detail: error.name,
+        });
+      });
+    });
+  } catch {
+    rejectUpgrade(socket, 400, 'Bad Request');
+  }
 }
 
 async function handleRequest(request: IncomingMessage, response: ServerResponse): Promise<void> {
@@ -195,10 +292,19 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
   }
 
   if (method === 'GET' && url.pathname === '/agents') {
-    const agents = openPrinter.listAgents().map((agent) => ({
-      ...agent,
-      printerCount: openPrinter.getPrinters(agent.agentId).length,
-    }));
+    const agents = [...localSessions.values()].flatMap((session) => {
+      const agent = session.getAgent();
+      return agent === null
+        ? []
+        : [
+            {
+              ...agent,
+              agentVersion: agent.hello.agentVersion,
+              productId: agent.hello.productId,
+              printerCount: session.getPrinters().length,
+            },
+          ];
+    });
     sendJson(response, 200, { agents });
     return;
   }
@@ -208,13 +314,14 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
     requireMethod(method, 'GET');
     const agentId = decodePathSegment(printerRoute[1] ?? '');
 
-    if (openPrinter.getAgent(agentId) === null) {
+    const session = localSessions.get(agentId);
+    if (session?.getAgent() === null || session === undefined) {
       throw new HttpError(404, 'agent_offline', 'The requested agent is not connected.');
     }
 
     sendJson(response, 200, {
       agentId,
-      printers: openPrinter.getPrinters(agentId),
+      printers: session.getPrinters(),
     });
     return;
   }
@@ -225,7 +332,16 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
     const agentId = decodePathSegment(jobRoute[1] ?? '');
     const input = await readJson(request, MAX_JOB_REQUEST_BYTES);
     const job = parsePrintJob(input);
-    const delivery = await openPrinter.sendJob(agentId, job);
+    const session = localSessions.get(agentId);
+    const delivery =
+      session === undefined
+        ? ({
+            ok: false,
+            agentId,
+            reason: 'agent-offline',
+            retryable: true,
+          } satisfies DeliveryFailure)
+        : await session.sendJob(job);
 
     logEvent(
       delivery.ok ? 'job.delivered' : 'job.delivery_deferred',
@@ -507,28 +623,34 @@ function dashboardPage(host: string, port: number): string {
           const r = await fetch(BASE + '/agents/' + encodeURIComponent(agentId) + '/printers');
           const data = await r.json();
           const printers = data.printers ?? [];
-            if (printers.length === 0) {
-              container.innerHTML = '<div class="section-title" style="margin-top:0.75rem;">Printers</div><p class="empty" style="padding:0.5rem;">No printers enabled on this agent.</p>';
-              return;
-            }
-            container.innerHTML = '<div class="section-title" style="margin-top:0.75rem;">Printers</div>';
+          if (printers.length === 0) {
+            container.innerHTML = '<div class="section-title" style="margin-top:0.75rem;">Printers</div><p class="empty" style="padding:0.5rem;">No printers enabled on this agent.</p>';
+            return;
+          }
+          container.innerHTML = '<div class="section-title" style="margin-top:0.75rem;">Printers</div>';
           for (const p of printers) {
             const row = document.createElement('div');
             row.className = 'printer-row';
             const resultId = 'result-' + agentId + '-' + p.id.replace(/[^a-z0-9]/gi, '-');
-              const isOnline = p.availability === 'online';
-              const isEnabled = p.enabled !== false;
-              const canPrint = isOnline && isEnabled;
-              const availabilityLabel =
-                p.availability === 'online'
-                  ? 'Ready'
-                  : p.availability === 'offline'
-                    ? 'Offline'
-                    : 'Unknown';
-              row.innerHTML = \`
+            const isOnline = p.availability === 'online';
+            const isEnabled = p.enabled !== false;
+            const canPrint = isOnline && isEnabled;
+            const availabilityLabel =
+              p.availability === 'online'
+                ? 'Ready'
+                : p.availability === 'offline'
+                  ? 'Offline'
+                  : 'Unknown';
+            const connectionLabel =
+              p.kind === 'local'
+                ? 'Local printer'
+                : p.kind === 'network'
+                  ? 'Network printer'
+                  : 'Virtual printer';
+            row.innerHTML = \`
                 <div class="printer-info">
-                  <div class="printer-name">\${esc(p.displayName ?? p.id)}</div>
-                  <div class="printer-sub">\${esc(p.connectionType ?? '')} · \${availabilityLabel}\${isEnabled ? '' : ' · Disabled'}</div>
+                  <div class="printer-name">\${esc(p.name)}</div>
+                  <div class="printer-sub">\${esc(connectionLabel)} · \${availabilityLabel}\${isEnabled ? '' : ' · Disabled'} · \${esc(p.id)}</div>
                 </div>
                 <button class="btn btn-primary" \${canPrint ? '' : 'disabled'} data-result-id="\${esc(resultId)}" data-agent-id="\${esc(agentId)}" data-printer-id="\${esc(p.id)}">
                   ↗ Test print
@@ -626,6 +748,93 @@ function decodePathSegment(value: string): string {
   }
 }
 
+function bearerToken(header: string | readonly string[] | undefined): string | null {
+  if (typeof header !== 'string') {
+    return null;
+  }
+
+  const match = /^Bearer ([A-Za-z0-9\-._~+/]+={0,})$/i.exec(header);
+  return match?.[1] ?? null;
+}
+
+function rejectUpgrade(socket: Duplex, status: number, reason: string): void {
+  if (socket.destroyed) {
+    return;
+  }
+
+  socket.end(
+    `HTTP/1.1 ${status} ${reason.replaceAll(/[\r\n]/g, ' ')}\r\n` +
+      'Connection: close\r\n' +
+      'Content-Length: 0\r\n' +
+      'Cache-Control: no-store\r\n' +
+      '\r\n',
+  );
+}
+
+function sendWebSocketMessage(socket: WebSocket, message: string): Promise<void> {
+  if (socket.readyState !== WebSocket.OPEN) {
+    return Promise.reject(new Error('The WebSocket connection is not open.'));
+  }
+
+  return new Promise<void>((resolve, reject) => {
+    socket.send(message, (error?: Error | null) => {
+      if (error === undefined || error === null) {
+        resolve();
+      } else {
+        reject(error);
+      }
+    });
+  });
+}
+
+function closeWebSocket(socket: WebSocket, request: OpenPrinterTransportCloseRequest): void {
+  if (socket.readyState === WebSocket.OPEN) {
+    socket.close(webSocketCloseCode(request.reason), boundedWebSocketReason(request.detail ?? request.reason));
+  } else if (socket.readyState !== WebSocket.CLOSED) {
+    socket.terminate();
+  }
+}
+
+function webSocketCloseCode(reason: OpenPrinterTransportCloseRequest['reason']): number {
+  switch (reason) {
+    case 'server-disconnect':
+      return 1_000;
+    case 'protocol-error':
+      return 1_002;
+    case 'transport-error':
+      return 1_011;
+    case 'heartbeat-timeout':
+      return 4_002;
+  }
+}
+
+function boundedWebSocketReason(value: string): string {
+  let sanitized = '';
+  for (const character of value) {
+    const codePoint = character.codePointAt(0) ?? 0;
+    sanitized += codePoint <= 0x1f || codePoint === 0x7f ? ' ' : character;
+  }
+  sanitized = sanitized.trim();
+  let result = '';
+  for (const character of sanitized) {
+    if (Buffer.byteLength(result + character, 'utf8') > 120) {
+      break;
+    }
+    result += character;
+  }
+  return result;
+}
+
+function rawDataToUtf8(data: RawData): string {
+  if (Array.isArray(data)) {
+    return Buffer.concat(data).toString('utf8');
+  }
+  if (data instanceof ArrayBuffer) {
+    return Buffer.from(data).toString('utf8');
+  }
+  return data.toString('utf8');
+}
+
 function parsePort(value: string | undefined): number {
   if (value === undefined) {
     return 8_787;
@@ -656,7 +865,18 @@ async function shutdown(signal: 'SIGINT' | 'SIGTERM'): Promise<void> {
   logEvent('server.shutdown', { signal });
 
   authorization.revokeAll();
-  await openPrinter.close();
+  await Promise.all(
+    [...acceptedSessions].map((session) =>
+      session.disconnect({
+        code: 'server_shutdown',
+        reason: 'The example server is shutting down.',
+        reconnect: true,
+      }),
+    ),
+  );
+  await new Promise<void>((resolve) => {
+    webSocketServer.close(() => resolve());
+  });
   await new Promise<void>((resolve) => {
     httpServer.close(() => resolve());
     httpServer.closeAllConnections();

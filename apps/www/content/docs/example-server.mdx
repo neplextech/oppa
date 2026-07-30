@@ -5,8 +5,10 @@ description:
   example.
 ---
 
-The Node.js example demonstrates how an existing HTTP application
-hosts `@openprinter/server`. It has no database and no external queue.
+The Node.js example demonstrates how an existing HTTP application owns
+WebSocket upgrades, authentication, and a local session registry
+around `@openprinter/server`. It has no database and no external
+queue.
 
 ```bash
 pnpm --filter openprinter-node-example dev
@@ -24,10 +26,10 @@ The server provides:
 
 ## Development authentication
 
-The token registry, authorization codes, and connected inventory live
-only in memory. Restarting the example clears them. This
-implementation exists to exercise the provider-neutral OPPA flow; it
-is not a production identity provider.
+The token registry, authorization codes, session routing, and
+connected inventory live only in memory. Restarting the example clears
+them. This implementation exists to exercise the provider-neutral OPPA
+flow; it is not a production identity provider.
 
 Production integrations must validate the user session on the
 authorization endpoint, bind approval to an allowed account or
@@ -44,7 +46,8 @@ delivery according to its own policy.
 
 ## Product configuration
 
-`examples/node-server/product/product.json` points its OAuth client ID
-and authorization, token, and gateway URLs at this server. Use the
-`OPPA_PRODUCT_DIR` environment variable at build time to select a
-different validated product definition.
+Set OPPA's runtime server settings to the example's authorization,
+token, and gateway URLs on `127.0.0.1:8787`. The checked-in
+`examples/node-server/product/product.json` remains available for
+branded and automated builds, and supplies the OAuth client ID used by
+the development server.

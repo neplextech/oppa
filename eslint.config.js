@@ -39,6 +39,7 @@ export default tseslint.config(
       '**/.fumadocs/**',
       '**/.source/**',
       '**/coverage/**',
+      '**/out/**',
       '**/target/**',
       'protocol/schema/openprinter.schema.json',
     ],

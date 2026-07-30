@@ -7,6 +7,7 @@ import type {
   Diagnostics,
   JobSummary,
   ManualPrinterInput,
+  OpenPrinterServerConfiguration,
   PrinterSummary,
   VirtualPrinterInput,
   VirtualPrinterMode,
@@ -135,6 +136,17 @@ const demoStatus: AgentStatus = {
   startOnLogin: true,
   dashboardUrl: null,
   platform: navigator.platform || 'Desktop',
+  serverConfiguration: {
+    authorizationUrl: 'http://127.0.0.1:8787/authorize',
+    tokenUrl: 'http://127.0.0.1:8787/token',
+    gatewayUrl: 'ws://127.0.0.1:8787/openprinter/agent',
+  },
+  connectedService: {
+    name: 'Acme POS',
+    serverId: 'openprinter-example',
+    serverVersion: '0.1.0',
+    gatewayUrl: 'ws://127.0.0.1:8787/openprinter/agent',
+  },
 };
 
 const demoDiagnostics: Diagnostics = {
@@ -368,6 +380,37 @@ export const agentClient = {
 
   async reconnect(): Promise<AgentStatus> {
     return isTauri() ? command('reconnect') : structuredClone(demoStatus);
+  },
+
+  async setServerConfiguration(input: OpenPrinterServerConfiguration): Promise<OpenPrinterServerConfiguration> {
+    if (isTauri()) {
+      return command('set_server_configuration', { input });
+    }
+    demoStatus.serverConfiguration = structuredClone(input);
+    demoStatus.configured = false;
+    demoStatus.agentId = null;
+    demoStatus.connectedService = null;
+    demoStatus.state = 'unconfigured';
+    demoStatus.gatewayState = 'offline';
+    return structuredClone(input);
+  },
+
+  async resetServerConfiguration(): Promise<OpenPrinterServerConfiguration> {
+    if (isTauri()) {
+      return command('reset_server_configuration');
+    }
+    const configuration = {
+      authorizationUrl: 'http://127.0.0.1:8787/authorize',
+      tokenUrl: 'http://127.0.0.1:8787/token',
+      gatewayUrl: 'ws://127.0.0.1:8787/openprinter/agent',
+    };
+    demoStatus.serverConfiguration = configuration;
+    demoStatus.configured = false;
+    demoStatus.agentId = null;
+    demoStatus.connectedService = null;
+    demoStatus.state = 'unconfigured';
+    demoStatus.gatewayState = 'offline';
+    return structuredClone(configuration);
   },
 
   async openProductLink(link: 'documentation' | 'support', browserFallbackUrl: string): Promise<void> {

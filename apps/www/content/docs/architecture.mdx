@@ -28,8 +28,8 @@ The TypeScript side contains:
 
 ```text
 @openprinter/protocol → canonical TypeBox schemas, types, and codecs
-@openprinter/server   → authenticated WebSocket sessions and delivery
-node-server example  → development authorization, token, and job endpoints
+@openprinter/server   → protocol sessions over host-owned transports
+node-server example  → WebSocket host, development auth, and job endpoints
 ```
 
 ## Boundary rules
@@ -40,6 +40,8 @@ node-server example  → development authorization, token, and job endpoints
   can reuse the runtime.
 - Low-level crates do not depend on UI code or Tauri.
 - The protocol contains only generic printer-agent concepts.
+- Server applications own authentication, connection affinity, and
+  cluster or broker routing; the SDK owns one protocol session.
 - Credentials use secure platform storage and never the SQLite job
   database.
 - Rendering produces an output representation; spoolers own submission

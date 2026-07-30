@@ -127,6 +127,68 @@ describe('runtime validation', () => {
     expect(descriptor).not.toHaveProperty('capabilities');
   });
 
+  it('requires bounded, resource-free brand metadata in server hello', () => {
+    const hello = JSON.parse(readFileSync(`${fixtureRoot}/server/server-hello.json`, 'utf8')) as {
+      payload: Record<string, unknown>;
+    };
+    const withoutBrand = { ...hello.payload };
+    delete withoutBrand.brand;
+
+    expect(() =>
+      parseProtocolMessage({
+        ...hello,
+        payload: withoutBrand,
+      }),
+    ).toThrow(ProtocolValidationError);
+    expect(() =>
+      parseProtocolMessage({
+        ...hello,
+        payload: {
+          ...hello.payload,
+          brand: {
+            name: 'Acme POS',
+            iconUrl: 'https://example.invalid/icon.png',
+          },
+        },
+      }),
+    ).toThrow(ProtocolValidationError);
+
+    const unsafeNames = [
+      ' Acme POS',
+      'Acme POS ',
+      'Acme POS\u00a0',
+      'Acme\u0007POS',
+      'Acme\u0085POS',
+      'Acme\u061cPOS',
+      'Acme\u200ePOS',
+      'Acme\u200fPOS',
+      'Acme\ud800POS',
+      'Acme\udfffPOS',
+      ...Array.from({ length: 5 }, (_, offset) => `Acme${String.fromCodePoint(0x202a + offset)}POS`),
+      ...Array.from({ length: 4 }, (_, offset) => `Acme${String.fromCodePoint(0x2066 + offset)}POS`),
+    ];
+    for (const name of unsafeNames) {
+      expect(() =>
+        parseProtocolMessage({
+          ...hello,
+          payload: {
+            ...hello.payload,
+            brand: { name },
+          },
+        }),
+      ).toThrow(ProtocolValidationError);
+    }
+    expect(() =>
+      parseProtocolMessage({
+        ...hello,
+        payload: {
+          ...hello.payload,
+          brand: { name: 'Acme 🖨️' },
+        },
+      }),
+    ).not.toThrow();
+  });
+
   it('rejects unknown fields and the non-protocol printed status', () => {
     const fixture = JSON.parse(readFileSync(`${fixtureRoot}/agent/job-submitted.json`, 'utf8')) as Record<
       string,

@@ -59,14 +59,29 @@ Validation rejects an impossible combination. USB discovery, remote
 diagnostic upload, and managed hardware mode are not implemented in
 the initial build, so their product switches must remain `false`.
 
-## Production endpoint rules
+## Runtime service endpoints
 
-Release products should use `https:` authorization and token endpoints
-and a `wss:` gateway. Loopback `http:` and `ws:` endpoints are allowed
-only for explicit development products.
+The compiled product supplies default authorization, token, and
+gateway URLs. A user may replace exactly those three endpoints from
+OPPA's setup or settings screens without rebuilding the application.
+OPPA validates and stores the non-secret values in its internal
+settings store.
+
+Production authorization and token endpoints must use `https:` and the
+gateway must use `wss:`. Loopback `http:` and `ws:` endpoints are
+accepted for local development. Embedded credentials, fragments,
+non-network URLs, and unbounded input are rejected.
+
+Changing any endpoint first removes credentials associated with the
+previous service from operating-system secure storage. The connection
+is stopped and the user must authorize with the newly selected
+service. This prevents an old provider token from ever being presented
+to a new gateway.
 
 ## Immutability
 
 The build script embeds the validated JSON and assets in the binary.
-Runtime provider switching is deliberately unsupported: each branded
-binary connects only to the provider selected at compilation.
+Runtime endpoint selection does not modify product identity, the OAuth
+client ID, branding, legal links, update trust, or feature switches.
+Runtime configuration may disable or select compiled behavior but
+cannot add a capability that is absent from the binary.

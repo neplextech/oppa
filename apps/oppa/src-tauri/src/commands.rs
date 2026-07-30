@@ -9,6 +9,7 @@ use crate::{
         AgentStatus, AuthorizationStart, ConfigurePrinterChanges, Diagnostics, JobSummary,
         ManualPrinterInput, PrinterSummary, ProductLink, VirtualPrinterInput, VirtualPrinterMode,
     },
+    server_configuration::{OpenPrinterServerConfiguration, OpenPrinterServerConfigurationInput},
     service::{DesktopService, STATE_CHANGED_EVENT},
 };
 
@@ -164,6 +165,21 @@ pub async fn reconnect(
     tokio::task::yield_now().await;
     let start_on_login = app.autolaunch().is_enabled().unwrap_or(false);
     Ok(service.status(start_on_login).await)
+}
+
+#[tauri::command]
+pub async fn set_server_configuration(
+    service: State<'_, Arc<DesktopService>>,
+    input: OpenPrinterServerConfigurationInput,
+) -> Result<OpenPrinterServerConfiguration, CommandError> {
+    service.set_server_configuration(input).await
+}
+
+#[tauri::command]
+pub async fn reset_server_configuration(
+    service: State<'_, Arc<DesktopService>>,
+) -> Result<OpenPrinterServerConfiguration, CommandError> {
+    service.reset_server_configuration().await
 }
 
 #[tauri::command]
