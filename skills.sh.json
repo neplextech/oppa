@@ -1,0 +1,17 @@
+{
+  "$schema": "https://skills.sh/schema/v1/skills.json",
+  "name": "neplextech/oppa",
+  "description": "OpenPrinter SDK skills — protocol schemas, codec, session management, and integration guidance",
+  "skills": [
+    {
+      "name": "openprinter-protocol",
+      "description": "TypeBox schemas, runtime codec, TypeScript types, and constants for the OpenPrinter wire protocol v1",
+      "path": "skills/openprinter-protocol/SKILL.md"
+    },
+    {
+      "name": "openprinter-server",
+      "description": "Framework-neutral protocol-session SDK for hosting OpenPrinter-compatible agents over any transport",
+      "path": "skills/openprinter-server/SKILL.md"
+    }
+  ]
+}
