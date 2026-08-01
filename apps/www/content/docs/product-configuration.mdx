@@ -1,19 +1,14 @@
 ---
 title: Product Configuration
 description:
-  Compile branded agents from validated, immutable product
-  definitions.
+  Compile branded agents from validated immutable product definitions.
 ---
 
-OPPA supports downstream branded builds without requiring a permanent
-source fork. Select a product directory at compile time:
+Select a product directory at compile time:
 
 ```bash
 OPPA_PRODUCT_DIR=products/default pnpm oppa:build
 ```
-
-The directory contains a versioned `product.json` and an `assets`
-directory.
 
 ```json
 {
@@ -22,12 +17,6 @@ directory.
   "productName": "OPPA",
   "applicationId": "com.neplextech.oppa",
   "description": "Open Printer Proxy Agent",
-  "protocol": {
-    "clientId": "oppa-desktop",
-    "authorizationUrl": "https://example.com/openprinter/authorize",
-    "tokenUrl": "https://example.com/openprinter/token",
-    "gatewayUrl": "wss://example.com/openprinter/agent"
-  },
   "updates": { "endpoint": null },
   "branding": {
     "supportUrl": "https://example.com/support",
@@ -40,48 +29,27 @@ directory.
     "usbPrinterDiscovery": false,
     "remoteDiagnostics": false,
     "managedHardware": false
-  }
+  },
+  "legal": { "privacyUrl": null, "termsUrl": null }
 }
 ```
 
-The product-aware Tauri wrapper applies `productName` and
-`applicationId` to the desktop bundle and window. Icon files in
-`assets` replace default Tauri icons when they use the corresponding
-standard filenames; other assets remain available through the embedded
-Rust product API.
+Product configuration controls identity, branding, assets, update
+metadata, legal links, and compiled feature switches. It contains no
+OpenPrinter service credentials or endpoints.
 
-## Features and Cargo capabilities
+## Runtime server selection
 
-Product configuration can disable a supported capability, but it
-cannot enable code excluded from the binary. Capabilities that
-materially change the compiled implementation use Cargo features.
-Validation rejects an impossible combination. USB discovery, remote
-diagnostic upload, and managed hardware mode are not implemented in
-the initial build, so their product switches must remain `false`.
+The user configures one OpenPrinter server base URL. OPPA validates
+and stores that non-secret URL, requests discovery for the current
+pairing and gateway endpoints, and stores the discovered stable server
+ID after pairing.
 
-## Runtime service endpoints
+Production base URLs require HTTPS. Plain HTTP is accepted only on
+loopback for development. Embedded credentials, fragments, and
+unsupported schemes are rejected.
 
-The compiled product supplies default authorization, token, and
-gateway URLs. A user may replace exactly those three endpoints from
-OPPA's setup or settings screens without rebuilding the application.
-OPPA validates and stores the non-secret values in its internal
-settings store.
-
-Production authorization and token endpoints must use `https:` and the
-gateway must use `wss:`. Loopback `http:` and `ws:` endpoints are
-accepted for local development. Embedded credentials, fragments,
-non-network URLs, and unbounded input are rejected.
-
-Changing any endpoint first removes credentials associated with the
-previous service from operating-system secure storage. The connection
-is stopped and the user must authorize with the newly selected
-service. This prevents an old provider token from ever being presented
-to a new gateway.
-
-## Immutability
-
-The build script embeds the validated JSON and assets in the binary.
-Runtime endpoint selection does not modify product identity, the OAuth
-client ID, branding, legal links, update trust, or feature switches.
-Runtime configuration may disable or select compiled behavior but
-cannot add a capability that is absent from the binary.
+Changing the base URL or forgetting the service deletes the associated
+local private key and paired identifiers. A new code is required.
+Runtime selection cannot change product identity, branding, update
+trust, legal links, or enable code absent from the binary.

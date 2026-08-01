@@ -51,13 +51,6 @@ export async function readJson(request: IncomingMessage, maximumBytes: number): 
   }
 }
 
-/** Parse a bounded `application/x-www-form-urlencoded` request. */
-export async function readForm(request: IncomingMessage, maximumBytes: number): Promise<URLSearchParams> {
-  requireContentType(request, 'application/x-www-form-urlencoded');
-  const body = await readBody(request, maximumBytes);
-  return new URLSearchParams(body.toString('utf8'));
-}
-
 /** Send a JSON response with conservative security headers. */
 export function sendJson(
   response: ServerResponse,
@@ -74,42 +67,6 @@ export function sendJson(
     ...headers,
   });
   response.end(body);
-}
-
-/** Send an HTML response with conservative security headers by default. */
-export function sendHtml(
-  response: ServerResponse,
-  status: number,
-  html: string,
-  headers?: Readonly<Record<string, string>>,
-): void {
-  const body = Buffer.from(html, 'utf8');
-  response.writeHead(status, {
-    'cache-control': 'no-store',
-    'content-length': String(body.byteLength),
-    'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'self'",
-    'content-type': 'text/html; charset=utf-8',
-    'referrer-policy': 'no-referrer',
-    'x-content-type-options': 'nosniff',
-    'x-frame-options': 'DENY',
-    ...headers,
-  });
-  response.end(body);
-}
-
-/** Escape interpolated text before including it in the approval document. */
-export function escapeHtml(value: string): string {
-  return value.replace(
-    /[&<>"']/g,
-    (character) =>
-      ({
-        '&': '&amp;',
-        '<': '&lt;',
-        '>': '&gt;',
-        '"': '&quot;',
-        "'": '&#39;',
-      })[character] ?? character,
-  );
 }
 
 function requireContentType(request: IncomingMessage, expected: string): void {

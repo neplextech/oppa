@@ -1,12 +1,6 @@
-import { Type, type Static, type TLiteral } from '@sinclair/typebox';
+import { Type, type Static } from '@sinclair/typebox';
 
 import { MAX_METADATA_ENTRIES, PROTOCOL_VERSION } from '../constants.js';
-
-function integerLiteral<const TValue extends number>(value: TValue): TLiteral<TValue> {
-  const schema = Type.Literal(value);
-  (schema as unknown as { type: string }).type = 'integer';
-  return schema;
-}
 
 /** A stable opaque identifier used on the wire. */
 export const IdentifierSchema = Type.String({
@@ -69,7 +63,7 @@ export const JobStatusSchema = Type.Union([
 export type JobStatus = Static<typeof JobStatusSchema>;
 
 /** The singleton protocol version schema used by every v1 envelope. */
-export const ProtocolVersionSchema = integerLiteral(PROTOCOL_VERSION);
+export const ProtocolVersionSchema = Type.Literal(PROTOCOL_VERSION);
 
 /** TypeScript representation of the current protocol version. */
 export type ProtocolVersion = Static<typeof ProtocolVersionSchema>;

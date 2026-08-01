@@ -45,7 +45,8 @@ Key design principles:
 - Session management for server-side hosting lives in `@openprinter/server`.
 - The OPPA desktop app is one product built on top; it is not part of the SDK.
 - `'submitted'` means the OS or printer backend accepted a job. It does **not** mean paper was produced.
-- Authentication tokens belong in the transport handshake, never in protocol message payloads.
+- Private keys remain in the agent secure-storage layer; gateway authentication uses only the
+  initial challenge frames, never normal protocol message payloads.
 
 ---
 

@@ -1,7 +1,7 @@
 //! TLS WebSocket transport for the OpenPrinter agent protocol.
 //!
-//! Credentials are carried only in an HTTP `Authorization` header and retained
-//! in a zeroizing value. Protocol encoding/decoding remains centralized in
+//! The socket starts unauthenticated. OPPA signs only the server's initial
+//! challenge, then normal protocol encoding/decoding remains centralized in
 //! `oppa-protocol`.
 
 #![forbid(unsafe_code)]
@@ -11,10 +11,10 @@ use std::{collections::VecDeque, time::Duration};
 
 use async_trait::async_trait;
 use futures_util::{SinkExt, StreamExt};
-use oppa_platform::SecretValue;
 use oppa_protocol::{
-    AgentMessage, AgentMessageKind, MAX_WIRE_MESSAGE_BYTES, ProtocolError, ServerMessage,
-    decode_server_message, encode_agent_message,
+    AgentMessage, AgentMessageKind, GatewayAuthenticationResponse,
+    GatewayAuthenticationServerMessage, MAX_AUTH_MESSAGE_BYTES, MAX_WIRE_MESSAGE_BYTES,
+    ProtocolError, ServerMessage, Validate, decode_server_message, encode_agent_message,
 };
 use rand::Rng;
 use thiserror::Error;
@@ -26,10 +26,7 @@ use tokio::{
 use tokio_tungstenite::{
     MaybeTlsStream, WebSocketStream, connect_async_with_config,
     tungstenite::{
-        Error as WebSocketError, Message,
-        client::IntoClientRequest,
-        http::{HeaderValue, header::AUTHORIZATION},
-        protocol::WebSocketConfig,
+        Error as WebSocketError, Message, client::IntoClientRequest, protocol::WebSocketConfig,
     },
 };
 use tokio_util::sync::CancellationToken;
@@ -224,8 +221,19 @@ impl ReconnectBackoff {
 /// Agent transport operations independent of Tauri.
 #[async_trait]
 pub trait AgentTransport: Send {
-    /// Establishes and authenticates a WebSocket connection.
+    /// Establishes an unauthenticated WebSocket connection.
     async fn connect(&mut self) -> TransportResult<()>;
+
+    /// Sends the signature proof for the active gateway challenge.
+    async fn send_authentication_response(
+        &mut self,
+        response: GatewayAuthenticationResponse,
+    ) -> TransportResult<()>;
+
+    /// Receives a challenge, acceptance, or safe authentication rejection.
+    async fn receive_authentication(
+        &mut self,
+    ) -> TransportResult<GatewayAuthenticationServerMessage>;
 
     /// Sends one validated agent message.
     async fn send(&mut self, message: AgentMessage) -> TransportResult<()>;
@@ -243,11 +251,11 @@ pub trait AgentTransport: Send {
 /// Production WebSocket-over-TLS implementation.
 pub struct WebSocketTransport {
     config: TransportConfig,
-    credential: Option<SecretValue>,
     socket: Option<Socket>,
     state: ConnectionState,
     state_sender: watch::Sender<ConnectionState>,
     outbound: VecDeque<AgentMessage>,
+    authenticated: bool,
     hello_sent: bool,
 }
 
@@ -258,23 +266,13 @@ impl WebSocketTransport {
         let (state_sender, _) = watch::channel(ConnectionState::Disconnected);
         Ok(Self {
             config,
-            credential: None,
             socket: None,
             state: ConnectionState::Disconnected,
             state_sender,
             outbound: VecDeque::new(),
+            authenticated: false,
             hello_sent: false,
         })
-    }
-
-    /// Replaces the in-memory bearer credential used on the next connection.
-    pub fn set_bearer_token(&mut self, credential: SecretValue) {
-        self.credential = Some(credential);
-    }
-
-    /// Drops the in-memory bearer credential.
-    pub fn clear_bearer_token(&mut self) {
-        self.credential = None;
     }
 
     /// Subscribes to transport state changes.
@@ -362,8 +360,55 @@ impl WebSocketTransport {
         Ok(())
     }
 
+    async fn receive_text_frame(&mut self) -> TransportResult<String> {
+        loop {
+            let frame = {
+                let socket = self.socket.as_mut().ok_or(TransportError::NotConnected)?;
+                timeout(self.config.idle_timeout, socket.next()).await
+            };
+            let frame = match frame {
+                Err(_) => {
+                    self.disconnect();
+                    return Err(TransportError::IdleTimeout(self.config.idle_timeout));
+                }
+                Ok(None) => {
+                    self.disconnect();
+                    return Err(TransportError::Closed { reason: None });
+                }
+                Ok(Some(Err(error))) => {
+                    self.disconnect();
+                    return Err(map_websocket_error(error));
+                }
+                Ok(Some(Ok(frame))) => frame,
+            };
+            match frame {
+                Message::Text(text) => return Ok(text.to_string()),
+                Message::Binary(_) => {
+                    self.disconnect();
+                    return Err(TransportError::UnexpectedFrame("binary"));
+                }
+                Message::Ping(payload) => {
+                    let socket = self.socket.as_mut().ok_or(TransportError::NotConnected)?;
+                    if let Err(error) = socket.send(Message::Pong(payload)).await {
+                        self.disconnect();
+                        return Err(map_websocket_error(error));
+                    }
+                }
+                Message::Pong(_) => {}
+                Message::Close(frame) => {
+                    let reason =
+                        frame.map(|frame| frame.reason.chars().take(500).collect::<String>());
+                    self.disconnect();
+                    return Err(TransportError::Closed { reason });
+                }
+                Message::Frame(_) => {}
+            }
+        }
+    }
+
     fn disconnect(&mut self) {
         self.socket = None;
+        self.authenticated = false;
         self.hello_sent = false;
         self.set_state(ConnectionState::Disconnected);
     }
@@ -375,20 +420,12 @@ impl AgentTransport for WebSocketTransport {
         if self.socket.is_some() {
             return Err(TransportError::AlreadyConnected);
         }
-        let credential = self
-            .credential
-            .as_ref()
-            .ok_or(TransportError::MissingCredential)?;
-        let mut request = self
+        let request = self
             .config
             .endpoint
             .as_str()
             .into_client_request()
             .map_err(|error| TransportError::InvalidConfiguration(error.to_string()))?;
-        let mut header = HeaderValue::from_str(&format!("Bearer {}", credential.expose_secret()))
-            .map_err(|_| TransportError::InvalidCredential)?;
-        header.set_sensitive(true);
-        request.headers_mut().insert(AUTHORIZATION, header);
         self.set_state(ConnectionState::Connecting);
         let connection = timeout(
             self.config.connect_timeout,
@@ -406,6 +443,7 @@ impl AgentTransport for WebSocketTransport {
             }
             Ok(Ok((socket, _response))) => {
                 self.socket = Some(socket);
+                self.authenticated = false;
                 self.hello_sent = false;
                 self.set_state(ConnectionState::Connected);
                 Ok(())
@@ -413,9 +451,73 @@ impl AgentTransport for WebSocketTransport {
         }
     }
 
+    async fn send_authentication_response(
+        &mut self,
+        response: GatewayAuthenticationResponse,
+    ) -> TransportResult<()> {
+        if self.state != ConnectionState::Connected {
+            return Err(TransportError::NotConnected);
+        }
+        if self.authenticated || self.hello_sent || response.message_type != "auth.response" {
+            return Err(TransportError::UnexpectedAuthenticationMessage);
+        }
+        response
+            .validate()
+            .map_err(|_| TransportError::UnexpectedAuthenticationMessage)?;
+        let encoded = serde_json::to_string(&response)
+            .map_err(|error| TransportError::ProtocolEncoding(error.to_string()))?;
+        if encoded.len() > MAX_AUTH_MESSAGE_BYTES {
+            return Err(TransportError::UnexpectedAuthenticationMessage);
+        }
+        self.socket
+            .as_mut()
+            .ok_or(TransportError::NotConnected)?
+            .send(Message::Text(encoded.into()))
+            .await
+            .map_err(map_websocket_error)
+    }
+
+    async fn receive_authentication(
+        &mut self,
+    ) -> TransportResult<GatewayAuthenticationServerMessage> {
+        if self.state != ConnectionState::Connected || self.authenticated || self.hello_sent {
+            return Err(TransportError::UnexpectedAuthenticationMessage);
+        }
+        let text = self.receive_text_frame().await?;
+        if text.len() > MAX_AUTH_MESSAGE_BYTES {
+            return Err(TransportError::UnexpectedAuthenticationMessage);
+        }
+        let message: GatewayAuthenticationServerMessage = serde_json::from_str(&text)
+            .map_err(|_| TransportError::UnexpectedAuthenticationMessage)?;
+        message
+            .validate()
+            .map_err(|_| TransportError::UnexpectedAuthenticationMessage)?;
+        match &message {
+            GatewayAuthenticationServerMessage::Challenge(challenge)
+                if challenge.message_type == "auth.challenge" => {}
+            GatewayAuthenticationServerMessage::Accepted(accepted)
+                if accepted.message_type == "auth.accepted" =>
+            {
+                self.authenticated = true;
+            }
+            GatewayAuthenticationServerMessage::Rejected(rejected)
+                if rejected.message_type == "auth.rejected" =>
+            {
+                return Err(TransportError::AuthenticationRejected {
+                    code: rejected.code.clone(),
+                });
+            }
+            _ => return Err(TransportError::UnexpectedAuthenticationMessage),
+        }
+        Ok(message)
+    }
+
     async fn send(&mut self, message: AgentMessage) -> TransportResult<()> {
         if self.state != ConnectionState::Connected {
             return Err(TransportError::NotConnected);
+        }
+        if !self.authenticated {
+            return Err(TransportError::AuthenticationRequired);
         }
         let is_hello = matches!(&message.kind, AgentMessageKind::Hello(_));
         if !self.hello_sent && !is_hello {
@@ -442,68 +544,29 @@ impl AgentTransport for WebSocketTransport {
         if self.state != ConnectionState::Connected {
             return Err(TransportError::NotConnected);
         }
+        if !self.authenticated {
+            return Err(TransportError::AuthenticationRequired);
+        }
         if !self.hello_sent {
             return Err(TransportError::HelloRequired);
         }
-        loop {
-            let frame = {
-                let socket = self.socket.as_mut().ok_or(TransportError::NotConnected)?;
-                timeout(self.config.idle_timeout, socket.next()).await
-            };
-            let frame = match frame {
-                Err(_) => {
-                    self.disconnect();
-                    return Err(TransportError::IdleTimeout(self.config.idle_timeout));
-                }
-                Ok(None) => {
-                    self.disconnect();
-                    return Err(TransportError::Closed { reason: None });
-                }
-                Ok(Some(Err(error))) => {
-                    self.disconnect();
-                    return Err(map_websocket_error(error));
-                }
-                Ok(Some(Ok(frame))) => frame,
-            };
-            match frame {
-                Message::Text(text) => match decode_server_message(text.as_bytes()) {
-                    Ok(message) => return Ok(message),
-                    Err(error) => {
-                        self.disconnect();
-                        return Err(TransportError::Protocol(error));
-                    }
-                },
-                Message::Binary(_) => {
-                    self.disconnect();
-                    return Err(TransportError::UnexpectedFrame("binary"));
-                }
-                Message::Ping(payload) => {
-                    let socket = self.socket.as_mut().ok_or(TransportError::NotConnected)?;
-                    if let Err(error) = socket.send(Message::Pong(payload)).await {
-                        self.disconnect();
-                        return Err(map_websocket_error(error));
-                    }
-                }
-                Message::Pong(_) => {}
-                Message::Close(frame) => {
-                    let reason =
-                        frame.map(|frame| frame.reason.chars().take(500).collect::<String>());
-                    self.disconnect();
-                    return Err(TransportError::Closed { reason });
-                }
-                Message::Frame(_) => {}
-            }
-        }
+        let text = self.receive_text_frame().await?;
+        decode_server_message(text.as_bytes()).map_err(|error| {
+            self.disconnect();
+            TransportError::Protocol(error)
+        })
     }
 
     async fn close(&mut self) -> TransportResult<()> {
         let Some(mut socket) = self.socket.take() else {
+            self.authenticated = false;
             self.hello_sent = false;
             self.set_state(ConnectionState::Disconnected);
             return Ok(());
         };
         self.set_state(ConnectionState::Closing);
         let result = timeout(self.config.connect_timeout, socket.close(None)).await;
+        self.authenticated = false;
         self.hello_sent = false;
         self.set_state(ConnectionState::Disconnected);
         match result {
@@ -524,12 +587,6 @@ pub enum TransportError {
     /// Settings violated TLS or bounded-resource requirements.
     #[error("invalid transport configuration: {0}")]
     InvalidConfiguration(String),
-    /// Connection was attempted without an in-memory bearer token.
-    #[error("transport bearer credential is missing")]
-    MissingCredential,
-    /// Credential could not be encoded as an HTTP header.
-    #[error("transport bearer credential contains invalid header bytes")]
-    InvalidCredential,
     /// A socket was already active.
     #[error("transport is already connected")]
     AlreadyConnected,
@@ -548,12 +605,18 @@ pub enum TransportError {
     /// WebSocket I/O or handshake failed.
     #[error("WebSocket transport failed: {0}")]
     WebSocket(String),
-    /// The gateway rejected the bearer credential.
-    #[error("gateway rejected transport authentication with HTTP {status}")]
+    /// The gateway rejected the challenge response.
+    #[error("gateway rejected authentication: {code}")]
     AuthenticationRejected {
-        /// HTTP status, normally 401 or 403.
-        status: u16,
+        /// Stable server authentication failure code.
+        code: String,
     },
+    /// Normal protocol traffic was attempted before challenge acceptance.
+    #[error("gateway challenge authentication must complete first")]
+    AuthenticationRequired,
+    /// An authentication frame was malformed or arrived in the wrong state.
+    #[error("unexpected gateway authentication message")]
+    UnexpectedAuthenticationMessage,
     /// Peer closed the connection.
     #[error("WebSocket peer closed the connection")]
     Closed {
@@ -612,12 +675,6 @@ fn websocket_config() -> WebSocketConfig {
 }
 
 fn map_websocket_error(error: WebSocketError) -> TransportError {
-    if let WebSocketError::Http(response) = &error {
-        let status = response.status().as_u16();
-        if matches!(status, 401 | 403) {
-            return TransportError::AuthenticationRejected { status };
-        }
-    }
     TransportError::WebSocket(error.to_string())
 }
 
@@ -716,8 +773,8 @@ mod tests {
         let endpoint =
             Url::parse(&format!("ws://127.0.0.1:{}/agent", address.port())).expect("endpoint");
         let mut transport = WebSocketTransport::new(config(endpoint)).expect("transport");
-        transport.set_bearer_token(SecretValue::new("test-token"));
         transport.connect().await.expect("connect");
+        transport.authenticated = true;
         transport.send(hello()).await.expect("send");
         let message = transport.receive().await.expect("receive");
         assert!(matches!(
@@ -777,10 +834,10 @@ mod tests {
         let endpoint =
             Url::parse(&format!("ws://127.0.0.1:{}/agent", address.port())).expect("endpoint");
         let mut transport = WebSocketTransport::new(config(endpoint)).expect("transport");
-        transport.set_bearer_token(SecretValue::new("test-token"));
         let event = inventory_changed();
         transport.buffer(event.clone()).expect("buffer event");
         transport.connect().await.expect("connect");
+        transport.authenticated = true;
         quiet_rx.await.expect("server quiet check");
         assert!(matches!(
             transport.send(event).await,
@@ -830,8 +887,8 @@ mod tests {
         let endpoint =
             Url::parse(&format!("ws://127.0.0.1:{}/agent", address.port())).expect("endpoint");
         let mut transport = WebSocketTransport::new(config(endpoint)).expect("transport");
-        transport.set_bearer_token(SecretValue::new("test-token"));
         transport.connect().await.expect("connect");
+        transport.authenticated = true;
         transport.send(hello()).await.expect("send hello");
         assert!(matches!(
             transport.receive().await,
@@ -843,14 +900,12 @@ mod tests {
 
     #[test]
     fn authentication_rejection_is_not_retried() {
-        let response = tokio_tungstenite::tungstenite::http::Response::builder()
-            .status(401)
-            .body(Some(Vec::new()))
-            .expect("HTTP response");
-        let error = map_websocket_error(WebSocketError::Http(Box::new(response)));
+        let error = TransportError::AuthenticationRejected {
+            code: "invalid_signature".to_owned(),
+        };
         assert!(matches!(
             &error,
-            TransportError::AuthenticationRejected { status: 401 }
+            TransportError::AuthenticationRejected { code } if code == "invalid_signature"
         ));
         assert!(!error.is_retryable());
     }

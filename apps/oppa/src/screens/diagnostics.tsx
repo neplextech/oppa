@@ -131,7 +131,7 @@ export function DiagnosticsScreen({
           <div className="border-border mt-auto border-t px-4 py-3">
             <div className="text-muted-foreground/60 flex items-start gap-1.5 text-[10px]">
               <ShieldCheck className="mt-0.5 size-3 shrink-0" aria-hidden />
-              <p>Tokens, credentials, and document contents are excluded.</p>
+              <p>Private keys, pairing codes, signatures, and document contents are excluded.</p>
             </div>
           </div>
         </div>

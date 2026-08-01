@@ -36,8 +36,8 @@ const MAX_ACTIVE_ERROR_BYTES: usize = 1_000;
 pub enum AgentState {
     /// No usable agent credential has been configured.
     Unconfigured,
-    /// A bounded browser authorization flow is in progress.
-    Authorizing,
+    /// Discovery and one-time pairing are in progress.
+    Pairing,
     /// The agent is configured but has no gateway connection.
     Disconnected,
     /// Transport negotiation or authentication is in progress.
@@ -283,9 +283,9 @@ fn can_transition(from: AgentState, to: AgentState) -> bool {
     }
     matches!(
         (from, to),
-        (AgentState::Unconfigured, AgentState::Authorizing)
+        (AgentState::Unconfigured, AgentState::Pairing)
             | (
-                AgentState::Authorizing,
+                AgentState::Pairing,
                 AgentState::Unconfigured | AgentState::Disconnected
             )
             | (AgentState::Disconnected, AgentState::Connecting)

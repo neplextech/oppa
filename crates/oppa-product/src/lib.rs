@@ -14,7 +14,7 @@ use std::{path::Path, sync::OnceLock};
 
 pub use schema::{
     PRODUCT_SCHEMA_VERSION, ProductBranding, ProductConfig, ProductFeatures, ProductLegal,
-    ProductProtocol, ProductUpdates,
+    ProductUpdates,
 };
 use thiserror::Error;
 
@@ -124,12 +124,6 @@ mod tests {
           "productName": "Test Agent",
           "applicationId": "com.example.test",
           "description": "Test product",
-          "protocol": {
-            "clientId": "test-agent",
-            "authorizationUrl": "http://127.0.0.1:3000/authorize",
-            "tokenUrl": "http://localhost:3000/token",
-            "gatewayUrl": "ws://127.0.0.1:3000/openprinter"
-          },
           "updates": { "endpoint": null },
           "branding": {
             "supportUrl": "https://example.com/support",
@@ -140,13 +134,13 @@ mod tests {
     }
 
     #[test]
-    fn accepts_tls_and_loopback_development_endpoints() {
+    fn accepts_valid_product_links() {
         let product: ProductConfig = serde_json::from_str(valid_json()).expect("valid schema");
         assert!(product.validation_issues().is_empty());
     }
 
     #[test]
-    fn rejects_insecure_remote_and_unknown_fields() {
+    fn rejects_insecure_remote_links_and_unknown_fields() {
         let insecure = valid_json().replace(
             "https://example.com/support",
             "http://remote.example/support",
@@ -173,7 +167,6 @@ mod tests {
             valid_json()
                 .replace("\"Test Agent\"", "\" \"")
                 .replace("\"com.example.test\"", "\"invalid\"")
-                .replace("\"test-agent\"", "\" \"")
                 .as_bytes(),
         )
         .expect("write fixture");
@@ -181,7 +174,6 @@ mod tests {
         let message = error.to_string();
         assert!(message.contains("productName"));
         assert!(message.contains("applicationId"));
-        assert!(message.contains("protocol.clientId"));
     }
 
     #[test]

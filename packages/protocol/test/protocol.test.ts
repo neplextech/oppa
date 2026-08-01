@@ -11,11 +11,20 @@ import {
   SERVER_MESSAGE_TYPES,
   UnsupportedProtocolVersionError,
   decodeAgentMessage,
+  decodeBase64Url,
+  decodeGatewayAuthenticationResponse,
+  decodeGatewayAuthenticationServerMessage,
   decodeProtocolMessage,
   decodeServerMessage,
   encodeAgentMessage,
+  encodeBase64Url,
   encodeServerMessage,
   parsePrintDocument,
+  parseDiscoveryDocument,
+  parseOpenPrinterError,
+  parsePairingRequest,
+  parsePairingResponse,
+  parsePublicEd25519Jwk,
   parsePrintJob,
   parsePrinterDescriptor,
   parseProtocolMessage,
@@ -91,6 +100,65 @@ describe('shared protocol fixtures', () => {
 });
 
 describe('runtime validation', () => {
+  it('validates discovery, pairing, and every gateway authentication message family', () => {
+    const discovery = JSON.parse(readFileSync(`${fixtureRoot}/auth/discovery.json`, 'utf8')) as unknown;
+    const pairing = JSON.parse(readFileSync(`${fixtureRoot}/auth/pairing-request.json`, 'utf8')) as unknown;
+    const paired = JSON.parse(readFileSync(`${fixtureRoot}/auth/pairing-response.json`, 'utf8')) as unknown;
+    const challenge = readFileSync(`${fixtureRoot}/auth/auth-challenge.json`, 'utf8');
+    const response = readFileSync(`${fixtureRoot}/auth/auth-response.json`, 'utf8');
+    const accepted = readFileSync(`${fixtureRoot}/auth/auth-accepted.json`, 'utf8');
+    const rejected = readFileSync(`${fixtureRoot}/auth/auth-rejected.json`, 'utf8');
+
+    expect(parseDiscoveryDocument(discovery)).toEqual(discovery);
+    expect(parsePairingRequest(pairing)).toEqual(pairing);
+    expect(parsePairingResponse(paired)).toEqual(paired);
+    expect(decodeGatewayAuthenticationServerMessage(challenge)).toMatchObject({ type: 'auth.challenge' });
+    expect(decodeGatewayAuthenticationResponse(response)).toMatchObject({ type: 'auth.response' });
+    expect(decodeGatewayAuthenticationServerMessage(accepted)).toMatchObject({ type: 'auth.accepted' });
+    expect(decodeGatewayAuthenticationServerMessage(rejected)).toMatchObject({ type: 'auth.rejected' });
+  });
+
+  it('enforces canonical base64url and 32-byte Ed25519 public keys', () => {
+    const pairing = JSON.parse(readFileSync(`${fixtureRoot}/auth/pairing-request.json`, 'utf8')) as {
+      credential: { publicKey: { x: string } };
+    };
+    expect(decodeBase64Url(pairing.credential.publicKey.x)).toHaveLength(32);
+    expect(parsePublicEd25519Jwk(pairing.credential.publicKey)).toEqual(pairing.credential.publicKey);
+    expect(() =>
+      parsePublicEd25519Jwk({ ...pairing.credential.publicKey, x: `${pairing.credential.publicKey.x}=` }),
+    ).toThrow(ProtocolValidationError);
+    expect(() => decodeBase64Url('AB')).toThrow(ProtocolValidationError);
+    const allBytes = Uint8Array.from({ length: 256 }, (_value, index) => index);
+    expect(decodeBase64Url(encodeBase64Url(allBytes))).toEqual(allBytes);
+  });
+
+  it('rejects invalid discovery versions and endpoints and preserves error codes', () => {
+    const discovery = JSON.parse(readFileSync(`${fixtureRoot}/auth/discovery.json`, 'utf8')) as {
+      protocolVersion: string;
+      endpoints: { pairing: string; gateway: string };
+    };
+    expect(() => parseDiscoveryDocument({ ...discovery, protocolVersion: '99' })).toThrow(
+      UnsupportedProtocolVersionError,
+    );
+    expect(() =>
+      parseDiscoveryDocument({
+        ...discovery,
+        endpoints: { ...discovery.endpoints, pairing: 'pair-without-leading-slash' },
+      }),
+    ).toThrow(ProtocolValidationError);
+    expect(() =>
+      parseDiscoveryDocument({
+        ...discovery,
+        endpoints: { ...discovery.endpoints, gateway: 'ftp://print.example/gateway' },
+      }),
+    ).toThrow(ProtocolValidationError);
+
+    const encoded = JSON.stringify({ error: { code: 'pairing_code_expired', message: 'The code expired.' } });
+    expect(parseOpenPrinterError(JSON.parse(encoded))).toEqual({
+      error: { code: 'pairing_code_expired', message: 'The code expired.' },
+    });
+  });
+
   it('validates standalone HTTP print-job bodies', () => {
     const envelope = JSON.parse(readFileSync(`${fixtureRoot}/server/print-job.json`, 'utf8')) as {
       payload: unknown;
@@ -247,8 +315,8 @@ describe('runtime validation', () => {
       expect(error).toBeInstanceOf(ProtocolError);
       expect(error).toMatchObject({
         code: 'unsupported_protocol_version',
-        receivedVersion: 99,
-        supportedVersions: [1],
+        receivedVersion: '99',
+        supportedVersions: ['1'],
       });
       expect(JSON.stringify(error)).not.toContain('server.heartbeat');
     }

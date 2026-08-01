@@ -1,134 +1,103 @@
-use std::net::IpAddr;
-
-use oppa_auth::AuthorizationEndpoints;
-use oppa_product::ProductConfig;
+use oppa_auth::normalize_server_url;
 use serde::{Deserialize, Serialize};
-use url::{Host, Url};
+use serde_json::Value;
+use url::Url;
 
 use crate::error::CommandError;
 
-pub const SERVER_CONFIGURATION_SETTING: &str = "openprinter-server-configuration-v1";
-const MAX_ENDPOINT_BYTES: usize = 2_048;
+pub const SERVER_CONFIGURATION_SETTING: &str = "openprinter-server-configuration-v2";
+pub const LEGACY_SERVER_CONFIGURATION_SETTING: &str = "openprinter-server-configuration-v1";
+pub const CONNECTION_SETTING: &str = "openprinter-connection-v1";
+pub const DEFAULT_SERVER_URL: &str = "http://127.0.0.1:8787/";
 
-/// Validated, non-secret `OpenPrinter` service endpoints persisted by the desktop host.
+/// Validated, non-secret `OpenPrinter` base URL persisted by the desktop host.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-#[allow(clippy::struct_field_names)]
 pub struct OpenPrinterServerConfiguration {
-    pub authorization_url: Url,
-    pub token_url: Url,
-    pub gateway_url: Url,
+    pub server_url: Url,
+}
+
+impl Default for OpenPrinterServerConfiguration {
+    fn default() -> Self {
+        Self {
+            server_url: Url::parse(DEFAULT_SERVER_URL).expect("built-in server URL is valid"),
+        }
+    }
 }
 
 impl OpenPrinterServerConfiguration {
-    pub fn from_product(product: &ProductConfig) -> Self {
-        Self {
-            authorization_url: product.protocol.authorization_url.clone(),
-            token_url: product.protocol.token_url.clone(),
-            gateway_url: product.protocol.gateway_url.clone(),
-        }
-    }
-
     pub fn from_input(input: &OpenPrinterServerConfigurationInput) -> Result<Self, CommandError> {
-        let configuration = Self {
-            authorization_url: parse_url("Authorization URL", &input.authorization_url)?,
-            token_url: parse_url("Token URL", &input.token_url)?,
-            gateway_url: parse_url("Gateway URL", &input.gateway_url)?,
-        };
-        configuration.validate()?;
-        Ok(configuration)
+        let server_url = normalize_server_url(&input.server_url)
+            .map_err(|error| invalid_configuration(error.to_string()))?;
+        Ok(Self { server_url })
     }
 
     pub fn validate(&self) -> Result<(), CommandError> {
-        validate_http_url("Authorization URL", &self.authorization_url)?;
-        validate_http_url("Token URL", &self.token_url)?;
-        validate_gateway_url(&self.gateway_url)
-    }
-
-    pub fn authorization_endpoints(&self) -> AuthorizationEndpoints {
-        AuthorizationEndpoints {
-            authorization_url: self.authorization_url.clone(),
-            token_url: self.token_url.clone(),
-        }
+        normalize_server_url(self.server_url.as_str())
+            .map(|_| ())
+            .map_err(|error| invalid_configuration(error.to_string()))
     }
 }
 
-/// User-editable string input for `OpenPrinter` service endpoints.
+/// User-editable server base URL.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-#[allow(clippy::struct_field_names)]
 pub struct OpenPrinterServerConfigurationInput {
-    pub authorization_url: String,
-    pub token_url: String,
-    pub gateway_url: String,
+    pub server_url: String,
 }
 
-fn parse_url(field: &str, value: &str) -> Result<Url, CommandError> {
-    if value.trim() != value
-        || value.is_empty()
-        || value.len() > MAX_ENDPOINT_BYTES
-        || value.chars().any(char::is_control)
-    {
-        return Err(invalid_configuration(format!(
-            "{field} must be 1 to {MAX_ENDPOINT_BYTES} bytes without surrounding whitespace or control characters.",
-        )));
-    }
-
-    Url::parse(value)
-        .map_err(|_| invalid_configuration(format!("{field} is not a valid absolute URL.")))
+/// Non-secret identity and secure-key reference saved after pairing.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct OpenPrinterConnection {
+    pub server_url: Url,
+    pub server_id: String,
+    pub agent_id: String,
+    pub key_id: String,
+    pub credential_ref: String,
 }
 
-fn validate_http_url(field: &str, url: &Url) -> Result<(), CommandError> {
-    validate_common(field, url)?;
-    if url.scheme() != "https" && !(url.scheme() == "http" && is_loopback(url)) {
-        return Err(invalid_configuration(format!(
-            "{field} must use HTTPS. HTTP is allowed only for a loopback development server.",
-        )));
-    }
-    Ok(())
+/// Result of examining a legacy three-endpoint configuration.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LegacyConfigurationMigration {
+    pub suggested: Option<OpenPrinterServerConfiguration>,
+    pub requires_pairing: bool,
 }
 
-fn validate_gateway_url(url: &Url) -> Result<(), CommandError> {
-    validate_common("Gateway URL", url)?;
-    if url.scheme() != "wss" && !(url.scheme() == "ws" && is_loopback(url)) {
-        return Err(invalid_configuration(
-            "Gateway URL must use WSS. WS is allowed only for a loopback development server.",
-        ));
-    }
-    Ok(())
+/// Derives a suggested base URL only when all legacy endpoints share an origin.
+#[must_use]
+pub fn migrate_legacy_configuration(value: &Value) -> Option<LegacyConfigurationMigration> {
+    let object = value.as_object()?;
+    let authorization = Url::parse(object.get("authorizationUrl")?.as_str()?).ok()?;
+    let token = Url::parse(object.get("tokenUrl")?.as_str()?).ok()?;
+    let gateway = Url::parse(object.get("gatewayUrl")?.as_str()?).ok()?;
+    let authorization_origin = normalized_origin(&authorization)?;
+    let token_origin = normalized_origin(&token)?;
+    let gateway_origin = normalized_origin(&gateway)?;
+    let suggested = if authorization_origin == token_origin && token_origin == gateway_origin {
+        let server_url = normalize_server_url(&authorization_origin).ok()?;
+        Some(OpenPrinterServerConfiguration { server_url })
+    } else {
+        None
+    };
+    Some(LegacyConfigurationMigration {
+        suggested,
+        requires_pairing: true,
+    })
 }
 
-fn validate_common(field: &str, url: &Url) -> Result<(), CommandError> {
-    if url.as_str().len() > MAX_ENDPOINT_BYTES {
-        return Err(invalid_configuration(format!(
-            "{field} must not exceed {MAX_ENDPOINT_BYTES} bytes.",
-        )));
-    }
-    if url.cannot_be_a_base() || url.host().is_none() {
-        return Err(invalid_configuration(format!(
-            "{field} must be an absolute network URL with a host.",
-        )));
-    }
-    if !url.username().is_empty() || url.password().is_some() {
-        return Err(invalid_configuration(format!(
-            "{field} must not contain embedded credentials.",
-        )));
-    }
-    if url.fragment().is_some() {
-        return Err(invalid_configuration(format!(
-            "{field} must not contain a URL fragment.",
-        )));
-    }
-    Ok(())
-}
-
-fn is_loopback(url: &Url) -> bool {
-    match url.host() {
-        Some(Host::Domain(domain)) => domain.eq_ignore_ascii_case("localhost"),
-        Some(Host::Ipv4(address)) => IpAddr::V4(address).is_loopback(),
-        Some(Host::Ipv6(address)) => IpAddr::V6(address).is_loopback(),
-        None => false,
-    }
+fn normalized_origin(url: &Url) -> Option<String> {
+    let scheme = match url.scheme() {
+        "http" | "ws" => "http",
+        "https" | "wss" => "https",
+        _ => return None,
+    };
+    let host = url.host_str()?;
+    let port = url.port();
+    Some(match port {
+        Some(port) => format!("{scheme}://{host}:{port}/"),
+        None => format!("{scheme}://{host}/"),
+    })
 }
 
 fn invalid_configuration(message: impl AsRef<str>) -> CommandError {
@@ -137,74 +106,72 @@ fn invalid_configuration(message: impl AsRef<str>) -> CommandError {
 
 #[cfg(test)]
 mod tests {
-    use url::Url;
+    use serde_json::json;
 
-    use super::{OpenPrinterServerConfiguration, OpenPrinterServerConfigurationInput};
-
-    fn input(
-        authorization_url: &str,
-        token_url: &str,
-        gateway_url: &str,
-    ) -> OpenPrinterServerConfigurationInput {
-        OpenPrinterServerConfigurationInput {
-            authorization_url: authorization_url.to_owned(),
-            token_url: token_url.to_owned(),
-            gateway_url: gateway_url.to_owned(),
-        }
-    }
+    use super::*;
 
     #[test]
-    fn accepts_tls_and_loopback_development_endpoints() {
+    fn accepts_tls_and_loopback_and_normalizes_trailing_slashes() {
+        let remote =
+            OpenPrinterServerConfiguration::from_input(&OpenPrinterServerConfigurationInput {
+                server_url: "https://print.example.com///".to_owned(),
+            })
+            .expect("remote TLS");
+        assert_eq!(remote.server_url.as_str(), "https://print.example.com/");
         assert!(
-            OpenPrinterServerConfiguration::from_input(&input(
-                "https://print.example.com/authorize",
-                "https://print.example.com/token",
-                "wss://print.example.com/openprinter/agent",
-            ))
+            OpenPrinterServerConfiguration::from_input(&OpenPrinterServerConfigurationInput {
+                server_url: "http://127.0.0.1:8787".to_owned(),
+            })
             .is_ok()
         );
         assert!(
-            OpenPrinterServerConfiguration::from_input(&input(
-                "http://127.0.0.1:8787/authorize",
-                "http://localhost:8787/token",
-                "ws://[::1]:8787/openprinter/agent",
-            ))
-            .is_ok()
-        );
-    }
-
-    #[test]
-    fn rejects_insecure_remote_or_credential_bearing_endpoints() {
-        assert!(
-            OpenPrinterServerConfiguration::from_input(&input(
-                "http://print.example.com/authorize",
-                "https://print.example.com/token",
-                "wss://print.example.com/openprinter/agent",
-            ))
-            .is_err()
-        );
-        assert!(
-            OpenPrinterServerConfiguration::from_input(&input(
-                "https://print.example.com/authorize",
-                "https://user:secret@print.example.com/token",
-                "wss://print.example.com/openprinter/agent",
-            ))
+            OpenPrinterServerConfiguration::from_input(&OpenPrinterServerConfigurationInput {
+                server_url: "http://print.example.com".to_owned(),
+            })
             .is_err()
         );
     }
 
     #[test]
-    fn persisted_configuration_reapplies_endpoint_length_limits() {
-        let oversized_path = "a".repeat(2_048);
-        let configuration = OpenPrinterServerConfiguration {
-            authorization_url: Url::parse(&format!("https://print.example.com/{oversized_path}"))
-                .expect("test authorization URL should parse"),
-            token_url: Url::parse("https://print.example.com/token")
-                .expect("test token URL should parse"),
-            gateway_url: Url::parse("wss://print.example.com/openprinter/agent")
-                .expect("test gateway URL should parse"),
+    fn migration_suggests_only_a_shared_legacy_origin() {
+        let shared = json!({
+            "authorizationUrl": "http://127.0.0.1:8787/authorize",
+            "tokenUrl": "http://127.0.0.1:8787/token",
+            "gatewayUrl": "ws://127.0.0.1:8787/openprinter/agent"
+        });
+        let migration = migrate_legacy_configuration(&shared).expect("legacy");
+        assert_eq!(
+            migration.suggested.expect("suggested").server_url.as_str(),
+            DEFAULT_SERVER_URL
+        );
+        assert!(migration.requires_pairing);
+
+        let split = json!({
+            "authorizationUrl": "https://accounts.example.com/authorize",
+            "tokenUrl": "https://accounts.example.com/token",
+            "gatewayUrl": "wss://gateway.example.com/openprinter"
+        });
+        assert!(
+            migrate_legacy_configuration(&split)
+                .expect("legacy")
+                .suggested
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn paired_connection_serialization_contains_only_non_secret_metadata() {
+        let connection = OpenPrinterConnection {
+            server_url: Url::parse("https://print.example.com/").expect("URL"),
+            server_id: "server-01".to_owned(),
+            agent_id: "agent-01".to_owned(),
+            key_id: "key-01".to_owned(),
+            credential_ref: "oppa-ed25519-reference".to_owned(),
         };
-
-        assert!(configuration.validate().is_err());
+        let serialized = serde_json::to_value(connection).expect("serialize connection");
+        assert_eq!(serialized["credentialRef"], "oppa-ed25519-reference");
+        assert!(serialized.get("privateKey").is_none());
+        assert!(serialized.get("publicKey").is_none());
+        assert!(serialized.get("signature").is_none());
     }
 }

@@ -3,7 +3,7 @@ import { listen } from '@tauri-apps/api/event';
 
 import type {
   AgentStatus,
-  AuthorizationStart,
+  DiscoveredServiceSummary,
   Diagnostics,
   JobSummary,
   ManualPrinterInput,
@@ -119,7 +119,6 @@ const demoJobs: JobSummary[] = [
 
 const demoStatus: AgentStatus = {
   agentId: 'agent_01JOPPA7Y9JD4BVA0N',
-  configured: true,
   product: {
     id: 'oppa',
     name: 'OPPA',
@@ -127,8 +126,6 @@ const demoStatus: AgentStatus = {
     documentationUrl: 'https://github.com/neplextech/oppa',
     supportUrl: 'https://github.com/neplextech/oppa/issues',
   },
-  state: 'connected',
-  gatewayState: 'online',
   lastConnectionAt: new Date(now.getTime() - 1000 * 32).toISOString(),
   version: '0.1.0',
   pendingJobs: 0,
@@ -137,15 +134,14 @@ const demoStatus: AgentStatus = {
   dashboardUrl: null,
   platform: navigator.platform || 'Desktop',
   serverConfiguration: {
-    authorizationUrl: 'http://127.0.0.1:8787/authorize',
-    tokenUrl: 'http://127.0.0.1:8787/token',
-    gatewayUrl: 'ws://127.0.0.1:8787/openprinter/agent',
+    serverUrl: 'http://127.0.0.1:8787/',
   },
+  connectionState: 'connected',
   connectedService: {
     name: 'Acme POS',
     serverId: 'openprinter-example',
     serverVersion: '0.1.0',
-    gatewayUrl: 'ws://127.0.0.1:8787/openprinter/agent',
+    gatewayUrl: 'ws://127.0.0.1:8787/.well-known/openprinter/gateway',
   },
 };
 
@@ -153,7 +149,7 @@ const demoDiagnostics: Diagnostics = {
   agentVersion: demoStatus.version,
   productId: demoStatus.product.id,
   platform: demoStatus.platform,
-  connectionState: demoStatus.state,
+  connectionState: demoStatus.connectionState,
   databaseHealthy: true,
   migrationVersion: 1,
   discoveryProviders: [
@@ -248,14 +244,36 @@ export const agentClient = {
     return isTauri() ? command('get_agent_status') : structuredClone(demoStatus);
   },
 
-  async beginAuthorization(): Promise<AuthorizationStart> {
+  async discoverServer(): Promise<DiscoveredServiceSummary> {
     if (isTauri()) {
-      return command('begin_authorization');
+      return command('discover_server');
     }
     return {
-      authorizationUrl: 'http://127.0.0.1:8787/authorize?client_id=oppa-desktop',
-      expiresAt: new Date(Date.now() + 5 * 60_000).toISOString(),
+      name: 'Acme POS',
+      serverId: 'openprinter-example',
+      serverVersion: '1.0.0',
+      pairingUrl: 'http://127.0.0.1:8787/openprinter/pair',
+      gatewayUrl: 'ws://127.0.0.1:8787/.well-known/openprinter/gateway',
     };
+  },
+
+  async pairServer(code: string, agentName: string): Promise<DiscoveredServiceSummary> {
+    if (isTauri()) {
+      return command('pair_server', { code, agentName });
+    }
+    demoStatus.agentId = 'agt_demo';
+    demoStatus.connectionState = 'paired';
+    return this.discoverServer();
+  },
+
+  async forgetServer(): Promise<void> {
+    if (isTauri()) {
+      await command('forget_server');
+      return;
+    }
+    demoStatus.agentId = null;
+    demoStatus.connectionState = 'unpaired';
+    demoStatus.connectedService = null;
   },
 
   async listPrinters(): Promise<PrinterSummary[]> {
@@ -400,11 +418,9 @@ export const agentClient = {
       return command('set_server_configuration', { input });
     }
     demoStatus.serverConfiguration = structuredClone(input);
-    demoStatus.configured = false;
     demoStatus.agentId = null;
     demoStatus.connectedService = null;
-    demoStatus.state = 'unconfigured';
-    demoStatus.gatewayState = 'offline';
+    demoStatus.connectionState = 'unpaired';
     return structuredClone(input);
   },
 
@@ -413,16 +429,12 @@ export const agentClient = {
       return command('reset_server_configuration');
     }
     const configuration = {
-      authorizationUrl: 'http://127.0.0.1:8787/authorize',
-      tokenUrl: 'http://127.0.0.1:8787/token',
-      gatewayUrl: 'ws://127.0.0.1:8787/openprinter/agent',
+      serverUrl: 'http://127.0.0.1:8787/',
     };
     demoStatus.serverConfiguration = configuration;
-    demoStatus.configured = false;
     demoStatus.agentId = null;
     demoStatus.connectedService = null;
-    demoStatus.state = 'unconfigured';
-    demoStatus.gatewayState = 'offline';
+    demoStatus.connectionState = 'unpaired';
     return structuredClone(configuration);
   },
 

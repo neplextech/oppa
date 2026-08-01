@@ -1,12 +1,19 @@
-import { randomUUID } from 'node:crypto';
+import { createPublicKey, randomBytes, randomUUID, verify } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 
 import {
   decodeAgentMessage,
+  decodeBase64Url,
+  decodeGatewayAuthenticationResponse,
+  encodeBase64Url,
+  encodeGatewayAuthenticationServerMessage,
   encodeServerMessage,
+  OPENPRINTER_SIGNATURE_ALGORITHM,
   PROTOCOL_VERSION,
   ProtocolError,
   type AgentMessage,
+  type GatewayAuthenticationChallenge,
+  type GatewayAuthenticationFailureCode,
   type PrintJob,
   type PrinterDescriptor,
 } from '@openprinter/protocol';
@@ -19,6 +26,8 @@ import {
 } from './internal.js';
 import type {
   AcceptOpenPrinterSessionInput,
+  AgentCredentialStore,
+  AuthenticatedAgent,
   AgentDisconnectReason,
   AgentMessageOf,
   CallbackErrorEvent,
@@ -67,15 +76,20 @@ class TransportCallbackTimeoutError extends Error {
 
 /** @internal */
 export class OpenPrinterSessionImplementation<Metadata> implements OpenPrinterSession<Metadata> {
-  public readonly identity: AcceptOpenPrinterSessionInput<Metadata>['identity'];
   public readonly sessionId: string;
 
   readonly #options: OpenPrinterServerOptions<Metadata>;
   readonly #resolved: ResolvedOpenPrinterServerOptions;
   readonly #transport: OpenPrinterTransport;
+  readonly #credentialStore: AgentCredentialStore<Metadata>;
   readonly #printers = new Map<string, PrinterDescriptor>();
   readonly #pendingHeartbeats = new Map<string, number>();
-  #state: OpenPrinterSessionState = 'handshaking';
+  #state: OpenPrinterSessionState = 'authenticating';
+  #identity: AuthenticatedAgent<Metadata> | null = null;
+  #challenge: GatewayAuthenticationChallenge | null = null;
+  #challengePayload: Uint8Array | null = null;
+  #challengeConsumed = false;
+  #authenticationTimer: ReturnType<typeof setTimeout> | null = null;
   #hello: AgentMessageOf<'agent.hello'>['payload'] | null = null;
   #connectedAtMs: number | null = null;
   #lastSeenAtMs = Date.now();
@@ -92,24 +106,20 @@ export class OpenPrinterSessionImplementation<Metadata> implements OpenPrinterSe
   public constructor(
     options: OpenPrinterServerOptions<Metadata>,
     resolved: ResolvedOpenPrinterServerOptions,
-    input: AcceptOpenPrinterSessionInput<Metadata>,
+    input: AcceptOpenPrinterSessionInput,
     sessionId: string,
+    credentialStore: AgentCredentialStore<Metadata>,
   ) {
     this.#options = options;
     this.#resolved = resolved;
-    this.identity = input.identity;
     this.sessionId = sessionId;
     this.#transport = input.transport;
+    this.#credentialStore = credentialStore;
+    void this.#enqueue(() => this.#beginAuthentication());
+  }
 
-    this.#handshakeTimer = setTimeout(() => {
-      void this.#enqueue(() =>
-        this.#protocolViolation(
-          'handshake-timeout',
-          new Error('The agent did not send agent.hello before the timeout.'),
-        ),
-      );
-    }, resolved.handshakeTimeoutMs);
-    unrefTimer(this.#handshakeTimer);
+  public get identity(): AuthenticatedAgent<Metadata> | null {
+    return this.#identity;
   }
 
   public get state(): OpenPrinterSessionState {
@@ -142,7 +152,7 @@ export class OpenPrinterSessionImplementation<Metadata> implements OpenPrinterSe
       );
     }
 
-    if (this.#state === 'handshaking') {
+    if (this.#state === 'authenticating' || this.#state === 'handshaking') {
       return this.#deliveryFailure('session-not-ready');
     }
     if (this.#state !== 'connected') {
@@ -157,7 +167,7 @@ export class OpenPrinterSessionImplementation<Metadata> implements OpenPrinterSe
 
     return {
       ok: true,
-      agentId: this.identity.agentId,
+      agentId: this.#requireIdentity().agentId,
       sessionId: this.sessionId,
       messageId: message.messageId,
       sentAt: message.sentAt,
@@ -244,6 +254,145 @@ export class OpenPrinterSessionImplementation<Metadata> implements OpenPrinterSe
     return this.#processing;
   }
 
+  async #beginAuthentication(): Promise<void> {
+    const challengeId = `challenge_${randomUUID().replaceAll('-', '')}`;
+    const expiresAt = new Date(Date.now() + this.#resolved.challengeTtlMs).toISOString();
+    const nonce = encodeBase64Url(randomBytes(32));
+    const payload = new TextEncoder().encode(
+      ['openprinter-auth-v1', this.#resolved.serverId, this.sessionId, challengeId, nonce, expiresAt].join('\n'),
+    );
+    const challenge: GatewayAuthenticationChallenge = {
+      type: 'auth.challenge',
+      challengeId,
+      payload: encodeBase64Url(payload),
+      expiresAt,
+    };
+    this.#challenge = challenge;
+    this.#challengePayload = payload;
+    const handoff = await this.#writeEncoded(encodeGatewayAuthenticationServerMessage(challenge), ['authenticating']);
+    if (!handoff.ok) {
+      await this.#transportFailed(handoff.error);
+      return;
+    }
+    this.#authenticationTimer = setTimeout(() => {
+      void this.#enqueue(() =>
+        this.#rejectAuthentication('authentication_timeout', 'Gateway authentication timed out.'),
+      );
+    }, this.#resolved.authenticationTimeoutMs);
+    unrefTimer(this.#authenticationTimer);
+  }
+
+  async #authenticate(input: string | Uint8Array): Promise<void> {
+    const challenge = this.#challenge;
+    const payload = this.#challengePayload;
+    if (challenge === null || payload === null) {
+      await this.#rejectAuthentication('challenge_invalid', 'Gateway authentication failed.');
+      return;
+    }
+
+    let response;
+    try {
+      response = decodeGatewayAuthenticationResponse(input);
+    } catch {
+      const text = typeof input === 'string' ? input : new TextDecoder().decode(input);
+      const unsupportedAlgorithm = (() => {
+        try {
+          const value = JSON.parse(text) as { algorithm?: unknown };
+          return typeof value.algorithm === 'string' && value.algorithm !== OPENPRINTER_SIGNATURE_ALGORITHM;
+        } catch {
+          return false;
+        }
+      })();
+      this.#challengeConsumed = true;
+      await this.#rejectAuthentication(
+        unsupportedAlgorithm ? 'unsupported_algorithm' : 'challenge_invalid',
+        'Gateway authentication failed.',
+      );
+      return;
+    }
+
+    if (this.#challengeConsumed) {
+      await this.#rejectAuthentication('challenge_consumed', 'Gateway authentication failed.');
+      return;
+    }
+    this.#challengeConsumed = true;
+    if (response.challengeId !== challenge.challengeId) {
+      await this.#rejectAuthentication('challenge_invalid', 'Gateway authentication failed.');
+      return;
+    }
+    if (Date.parse(challenge.expiresAt) <= Date.now()) {
+      await this.#rejectAuthentication('challenge_expired', 'Gateway authentication failed.');
+      return;
+    }
+
+    const credential = await this.#credentialStore.find(response.agentId, response.keyId);
+    if (credential === null) {
+      await this.#rejectAuthentication('credential_not_found', 'Gateway authentication failed.');
+      return;
+    }
+    if (credential.revokedAt !== null) {
+      await this.#rejectAuthentication('credential_revoked', 'Gateway authentication failed.');
+      return;
+    }
+
+    let signatureValid = false;
+    try {
+      const publicKey = createPublicKey({ key: credential.publicKey, format: 'jwk' });
+      signatureValid = verify(null, payload, publicKey, decodeBase64Url(response.signature));
+    } catch {
+      signatureValid = false;
+    }
+    if (!signatureValid) {
+      await this.#rejectAuthentication('invalid_signature', 'Gateway authentication failed.');
+      return;
+    }
+
+    this.#clearAuthenticationTimer();
+    this.#identity = {
+      agentId: credential.agentId,
+      ...(credential.metadata === undefined ? {} : { metadata: credential.metadata }),
+    };
+    const accepted = encodeGatewayAuthenticationServerMessage({
+      type: 'auth.accepted',
+      sessionId: this.sessionId,
+      agentId: credential.agentId,
+      heartbeatIntervalMs: this.#resolved.heartbeatIntervalMs,
+    });
+    const handoff = await this.#writeEncoded(accepted, ['authenticating']);
+    if (!handoff.ok) {
+      await this.#transportFailed(handoff.error);
+      return;
+    }
+    this.#state = 'handshaking';
+    this.#armHandshakeTimer();
+  }
+
+  async #rejectAuthentication(code: GatewayAuthenticationFailureCode, message: string): Promise<void> {
+    if (this.#state !== 'authenticating') {
+      return;
+    }
+    this.#state = 'closing';
+    this.#disconnectReason = 'authentication-failed';
+    this.#clearAuthenticationTimer();
+    await this.#writeEncoded(encodeGatewayAuthenticationServerMessage({ type: 'auth.rejected', code, message }), [
+      'closing',
+    ]);
+    await this.#requestTransportClose(transportCloseRequest('authentication-failed', code));
+    await this.#finalize('authentication-failed');
+  }
+
+  #armHandshakeTimer(): void {
+    this.#handshakeTimer = setTimeout(() => {
+      void this.#enqueue(() =>
+        this.#protocolViolation(
+          'handshake-timeout',
+          new Error('The agent did not send agent.hello before the timeout.'),
+        ),
+      );
+    }, this.#resolved.handshakeTimeoutMs);
+    unrefTimer(this.#handshakeTimer);
+  }
+
   async #receiveMessage(input: string | Uint8Array): Promise<void> {
     if (this.#state === 'closing' || this.#state === 'closed') {
       return;
@@ -255,6 +404,11 @@ export class OpenPrinterSessionImplementation<Metadata> implements OpenPrinterSe
         'message-too-large',
         new Error(`The inbound message exceeded ${this.#resolved.maxMessageBytes} bytes.`),
       );
+      return;
+    }
+
+    if (this.#state === 'authenticating') {
+      await this.#authenticate(input);
       return;
     }
 
@@ -288,7 +442,7 @@ export class OpenPrinterSessionImplementation<Metadata> implements OpenPrinterSe
   }
 
   async #completeHandshake(hello: AgentMessageOf<'agent.hello'>): Promise<void> {
-    if (hello.payload.agentId !== this.identity.agentId) {
+    if (hello.payload.agentId !== this.#requireIdentity().agentId) {
       await this.#protocolViolation(
         'identity-mismatch',
         new Error('The host-authenticated identity does not match the agent hello.'),
@@ -343,14 +497,6 @@ export class OpenPrinterSessionImplementation<Metadata> implements OpenPrinterSe
 
   async #routeMessage(message: Exclude<AgentMessage, AgentMessageOf<'agent.hello'>>): Promise<void> {
     switch (message.type) {
-      case 'agent.authentication_metadata':
-        await this.#invoke('onAuthenticationMetadata', this.#options.onAuthenticationMetadata, {
-          session: this,
-          agent: this.#snapshot(),
-          message,
-        });
-        return;
-
       case 'agent.heartbeat':
         if (!this.#pendingHeartbeats.has(message.correlationId)) {
           await this.#protocolViolation(
@@ -438,7 +584,7 @@ export class OpenPrinterSessionImplementation<Metadata> implements OpenPrinterSe
         return;
 
       case 'agent.diagnostics':
-        if (message.payload.agentId !== this.identity.agentId) {
+        if (message.payload.agentId !== this.#requireIdentity().agentId) {
           await this.#protocolViolation(
             'identity-mismatch',
             new Error('The diagnostics identity does not match the host-authenticated agent.'),
@@ -548,13 +694,17 @@ export class OpenPrinterSessionImplementation<Metadata> implements OpenPrinterSe
     if (this.#state === 'closed' || this.#state === 'closing') {
       return;
     }
+    if (this.#state === 'authenticating') {
+      await this.#rejectAuthentication('challenge_invalid', 'Gateway authentication failed.');
+      return;
+    }
 
     const agent = this.#state === 'connected' ? this.#snapshot() : undefined;
     this.#state = 'closing';
     this.#disconnectReason = 'protocol-error';
     const event = {
       session: this,
-      agentId: this.identity.agentId,
+      agentId: this.#identity?.agentId ?? 'unauthenticated',
       ...(agent === undefined ? {} : { agent }),
       code,
       error,
@@ -734,10 +884,11 @@ export class OpenPrinterSessionImplementation<Metadata> implements OpenPrinterSe
       throw new Error('Cannot expose a session before the protocol handshake.');
     }
 
+    const identity = this.#requireIdentity();
     return {
-      agentId: this.identity.agentId,
+      agentId: identity.agentId,
       sessionId: this.sessionId,
-      ...(this.identity.metadata === undefined ? {} : { metadata: this.identity.metadata }),
+      ...(identity.metadata === undefined ? {} : { metadata: identity.metadata }),
       hello: structuredClone(this.#hello),
       connectedAt: new Date(this.#connectedAtMs).toISOString(),
       lastSeenAt: new Date(this.#lastSeenAtMs).toISOString(),
@@ -748,7 +899,7 @@ export class OpenPrinterSessionImplementation<Metadata> implements OpenPrinterSe
   #deliveryFailure(reason: DeliveryFailure['reason']): DeliveryFailure {
     return {
       ok: false,
-      agentId: this.identity.agentId,
+      agentId: this.#identity?.agentId ?? 'unauthenticated',
       reason,
       retryable: true,
     };
@@ -761,7 +912,22 @@ export class OpenPrinterSessionImplementation<Metadata> implements OpenPrinterSe
     }
   }
 
+  #clearAuthenticationTimer(): void {
+    if (this.#authenticationTimer !== null) {
+      clearTimeout(this.#authenticationTimer);
+      this.#authenticationTimer = null;
+    }
+  }
+
+  #requireIdentity(): AuthenticatedAgent<Metadata> {
+    if (this.#identity === null) {
+      throw new Error('The gateway session is not authenticated.');
+    }
+    return this.#identity;
+  }
+
   #clearTimers(): void {
+    this.#clearAuthenticationTimer();
     this.#clearHandshakeTimer();
     if (this.#heartbeatTimer !== null) {
       clearInterval(this.#heartbeatTimer);

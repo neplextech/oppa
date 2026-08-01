@@ -1,14 +1,3 @@
-export type AgentState =
-  | 'unconfigured'
-  | 'authorizing'
-  | 'disconnected'
-  | 'connecting'
-  | 'connected'
-  | 'degraded'
-  | 'shutting_down';
-
-export type GatewayState = 'offline' | 'connecting' | 'online';
-
 export type JobState = 'queued' | 'received' | 'submitted' | 'failed' | 'cancelled';
 
 export interface ProductSummary {
@@ -20,8 +9,27 @@ export interface ProductSummary {
 }
 
 export interface OpenPrinterServerConfiguration {
-  authorizationUrl: string;
-  tokenUrl: string;
+  serverUrl: string;
+}
+
+export type OpenPrinterConnectionState =
+  | 'idle'
+  | 'discovering'
+  | 'discovery_failed'
+  | 'unpaired'
+  | 'pairing'
+  | 'paired'
+  | 'connecting'
+  | 'authenticating'
+  | 'connected'
+  | 'authentication_failed'
+  | 'credential_revoked';
+
+export interface DiscoveredServiceSummary {
+  name: string;
+  serverId: string;
+  serverVersion: string;
+  pairingUrl: string;
   gatewayUrl: string;
 }
 
@@ -34,10 +42,7 @@ export interface ConnectedServiceSummary {
 
 export interface AgentStatus {
   agentId: string | null;
-  configured: boolean;
   product: ProductSummary;
-  state: AgentState;
-  gatewayState: GatewayState;
   lastConnectionAt: string | null;
   version: string;
   pendingJobs: number;
@@ -47,6 +52,7 @@ export interface AgentStatus {
   platform: string;
   serverConfiguration: OpenPrinterServerConfiguration;
   connectedService: ConnectedServiceSummary | null;
+  connectionState: OpenPrinterConnectionState;
 }
 
 export type PrinterConnectionType = 'system_queue' | 'network' | 'virtual' | 'usb';
@@ -104,7 +110,7 @@ export interface Diagnostics {
   agentVersion: string;
   productId: string;
   platform: string;
-  connectionState: AgentState;
+  connectionState: OpenPrinterConnectionState;
   databaseHealthy: boolean;
   migrationVersion: number;
   discoveryProviders: Array<{
@@ -119,11 +125,6 @@ export interface Diagnostics {
     target: string;
     message: string;
   }>;
-}
-
-export interface AuthorizationStart {
-  authorizationUrl: string;
-  expiresAt: string;
 }
 
 export interface ManualPrinterInput {

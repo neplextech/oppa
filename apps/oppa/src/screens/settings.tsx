@@ -38,6 +38,7 @@ export function SettingsScreen({
   onReconnect,
   onSaveServerConfiguration,
   onResetServerConfiguration,
+  onForgetServer,
   onOpenProductLink,
 }: {
   status: AgentStatus;
@@ -50,6 +51,7 @@ export function SettingsScreen({
   onReconnect: () => Promise<void>;
   onSaveServerConfiguration: (input: OpenPrinterServerConfiguration) => Promise<void>;
   onResetServerConfiguration: () => Promise<void>;
+  onForgetServer: () => Promise<void>;
   onOpenProductLink: (link: 'documentation' | 'support', browserFallbackUrl: string) => Promise<void>;
 }) {
   const { checkForUpdates, isChecking, lastResult } = useUpdater();
@@ -86,7 +88,7 @@ export function SettingsScreen({
         </Section>
 
         {/* OpenPrinter service */}
-        <Section title="OpenPrinter service" description="Authorization and gateway endpoints">
+        <Section title="OpenPrinter service" description="Discovered identity and paired credential">
           {status.connectedService ? (
             <div className="bg-card/30 flex items-start gap-4 px-5 py-4">
               <div className="border-border bg-primary/10 text-primary flex size-9 shrink-0 items-center justify-center rounded-lg border">
@@ -118,9 +120,19 @@ export function SettingsScreen({
             onReset={onResetServerConfiguration}
           />
           <p className="border-border/50 text-muted-foreground/70 border-t px-5 py-3 text-xs leading-4">
-            Changing services removes the current authorization before reconnecting, so credentials are never reused
-            with a different gateway.
+            Changing the URL deletes the current local private key before pairing with a different server.
           </p>
+          <div className="border-border/50 border-t px-5 py-3">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={busy === 'forget-server'}
+              onClick={() => void onForgetServer()}
+            >
+              <LockKeyhole className="size-3.5" aria-hidden />
+              {busy === 'forget-server' ? 'Forgetting…' : 'Forget server'}
+            </Button>
+          </div>
         </Section>
 
         {/* Startup */}

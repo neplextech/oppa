@@ -19,8 +19,6 @@ pub struct ProductConfig {
     pub application_id: String,
     /// Short user-facing product description.
     pub description: String,
-    /// Provider authorization and gateway endpoints.
-    pub protocol: ProductProtocol,
     /// Product update settings.
     pub updates: ProductUpdates,
     /// Support and documentation branding.
@@ -31,20 +29,6 @@ pub struct ProductConfig {
     /// Optional product-specific legal links and text.
     #[serde(default)]
     pub legal: ProductLegal,
-}
-
-/// Provider endpoints used by the generic authorization and transport layers.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct ProductProtocol {
-    /// OAuth public client identifier registered with the provider.
-    pub client_id: String,
-    /// OAuth-style authorization endpoint opened in the browser.
-    pub authorization_url: Url,
-    /// Authorization-code and refresh-token exchange endpoint.
-    pub token_url: Url,
-    /// OpenPrinter WebSocket gateway endpoint.
-    pub gateway_url: Url,
 }
 
 /// Product update configuration.
@@ -113,19 +97,6 @@ impl ProductConfig {
         validate_required("productName", &self.product_name, 100, &mut issues);
         validate_required("description", &self.description, 500, &mut issues);
         validate_application_id(&self.application_id, &mut issues);
-        validate_required(
-            "protocol.clientId",
-            &self.protocol.client_id,
-            256,
-            &mut issues,
-        );
-        validate_http_url(
-            "protocol.authorizationUrl",
-            &self.protocol.authorization_url,
-            &mut issues,
-        );
-        validate_http_url("protocol.tokenUrl", &self.protocol.token_url, &mut issues);
-        validate_gateway_url(&self.protocol.gateway_url, &mut issues);
         validate_http_url(
             "branding.supportUrl",
             &self.branding.support_url,
@@ -201,21 +172,5 @@ fn validate_http_url(field: &str, value: &Url, issues: &mut Vec<String>) {
     }
     if value.fragment().is_some() {
         issues.push(format!("{field} must not contain a URL fragment"));
-    }
-}
-
-fn validate_gateway_url(value: &Url, issues: &mut Vec<String>) {
-    let valid = value.scheme() == "wss" || (value.scheme() == "ws" && is_loopback(value));
-    if !valid {
-        issues.push(
-            "protocol.gatewayUrl must use WSS (WS is allowed only for a loopback development endpoint)"
-                .to_owned(),
-        );
-    }
-    if value.username() != "" || value.password().is_some() {
-        issues.push("protocol.gatewayUrl must not contain embedded credentials".to_owned());
-    }
-    if value.fragment().is_some() {
-        issues.push("protocol.gatewayUrl must not contain a URL fragment".to_owned());
     }
 }

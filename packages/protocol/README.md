@@ -5,14 +5,15 @@ OpenPrinter wire protocol.
 
 ## Responsibilities
 
-- define the versioned agent/server wire contract
+- define the versioned discovery, pairing, authentication, and agent/server wire contracts
 - validate every inbound and outbound message at runtime
 - model structured print documents and concrete printer descriptors
 - enforce bounded messages, documents, metadata, and image data
 - generate the committed language-neutral JSON Schema
 
-Rendering, transport authentication, durable queues, printer discovery, and physical submission
-belong to other packages and crates.
+The package defines authentication data and validates public keys and frames; private-key storage,
+signature execution, durable credentials, rendering, queues, discovery of local printers, and
+physical submission belong to other packages and crates.
 
 ## Install
 
@@ -42,6 +43,11 @@ const heartbeat: ServerMessage = {
 
 socket.send(encodeServerMessage(heartbeat));
 ```
+
+`PROTOCOL_VERSION` is the string `"1"`. Discovery is validated with
+`parseDiscoveryDocument`, pairing requests with `parsePairingRequest`, and gateway authentication
+frames with the corresponding `decodeGatewayAuthentication*` codecs. Ed25519 keys use public OKP
+JWKs and canonical unpadded base64url values.
 
 `agent.job_received` means the job is durably stored. `agent.job_submitted` means a backend accepted
 it. Neither state universally proves that paper was physically printed.
@@ -76,7 +82,6 @@ development-only Node.js tools.
 
 ## Current status
 
-Protocol version 1 includes every initial agent/server message, all structured document primitives,
-printer descriptors, print jobs, runtime codecs, and cross-language fixtures. It is the dependency
-boundary consumed by the server SDK and Rust agent crates. Other protocol versions are rejected
-explicitly until their schemas and compatibility fixtures are implemented.
+Protocol version 1 includes server discovery, pairing, challenge authentication, every initial
+agent/server message, structured document primitives, printer descriptors, print jobs, runtime
+codecs, and cross-language fixtures. Other versions are rejected explicitly.

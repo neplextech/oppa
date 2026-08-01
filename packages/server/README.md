@@ -1,15 +1,8 @@
 # `@openprinter/server`
 
-`@openprinter/server` is the framework-neutral protocol-session SDK for
-OpenPrinter-compatible agents. A host application authenticates a connection,
-supplies a small `send`/`close` transport, and forwards inbound frames. The SDK
-then owns the OpenPrinter handshake, validation, heartbeat, printer inventory,
-commands, and typed lifecycle events for that one session.
+Framework-neutral discovery, pairing, gateway authentication, and protocol-session SDK for OpenPrinter agents.
 
-The package does not create an HTTP or WebSocket server, parse credentials, keep
-a global agent registry, coordinate Node cluster workers, or prescribe a
-message broker. It also does not provide durable jobs, retries, application
-authorization, or printer-routing policy.
+The SDK owns discovery documents, one-time pairing grants, Ed25519 public credentials, challenge verification, the OpenPrinter hello exchange, heartbeat, printer inventory, commands, and typed lifecycle callbacks. The host still owns its HTTP/WebSocket framework, durable credential persistence, rate-limit policy, live-session routing, cluster coordination, and durable jobs.
 
 ## Install
 
@@ -17,192 +10,107 @@ authorization, or printer-routing policy.
 pnpm add @openprinter/server @openprinter/protocol
 ```
 
-Install the transport used by your host separately, such as `ws`, a
-framework-native WebSocket adapter, or a broker client.
-
-## Create the protocol server
+## Create a server
 
 ```ts
 import { createOpenPrinterServer } from '@openprinter/server';
 
-const openPrinter = createOpenPrinterServer({
-  brand: {
-    name: 'Acme POS',
-  },
-  serverId: 'acme-openprinter',
+const openprinter = createOpenPrinterServer({
+  brand: { name: 'Acme Print Service' },
+  serverId: 'acme-print-v1',
   serverVersion: '1.0.0',
-
-  onAgentConnected: ({ agent, session }) => {
-    // Store `session` in a registry/backplane owned by your application.
-    registerLiveSession(agent.agentId, session);
-  },
-
-  onAgentDisconnected: ({ agent, session, reason }) => {
-    removeLiveSessionIfCurrent(agent.agentId, session);
-    console.info('Agent disconnected', agent.agentId, reason);
-  },
-
-  onJobReceived: ({ agent, message }) => {
-    // The agent has durably persisted the job.
-    markJobReceived(agent.agentId, message.payload.jobId);
-  },
-
-  onJobSubmitted: ({ agent, message }) => {
-    // Submitted means backend acceptance, not verified physical printing.
-    markJobSubmitted(agent.agentId, message.payload.jobId);
-  },
-
-  onJobFailed: ({ agent, message }) => {
-    markJobFailed(agent.agentId, message.payload);
-  },
+  onAgentConnected: ({ agent, session }) => registerLiveSession(agent.agentId, session),
+  onAgentDisconnected: ({ agent, session }) => removeLiveSessionIfCurrent(agent.agentId, session),
+  onJobReceived: ({ agent, message }) => markReceived(agent.agentId, message.payload.jobId),
+  onJobSubmitted: ({ agent, message }) => markSubmitted(agent.agentId, message.payload.jobId),
 });
 ```
 
-`brand.name` is required and is sent in `server.hello` so OPPA can show which
-service it connected to. Brand metadata intentionally has no icon or external
-resource URL.
+The default paths are available on `openprinter.paths`:
 
-## Accept a host-owned transport
+- `/.well-known/openprinter` for discovery
+- `/openprinter/pair` for pairing
+- `/.well-known/openprinter/gateway` for the agent WebSocket
 
-Authentication happens before `accept()`. The authenticated identity is
-authoritative and must match the subsequent `agent.hello`.
+Override them with `paths` when embedding the SDK into an existing application. All three paths must be distinct absolute URL paths.
+
+## HTTP integration
+
+Expose discovery and pairing with the framework of your choice:
 
 ```ts
-const identity = await authenticateConnection(request);
+app.get(openprinter.paths.discovery, async (_request, response) => {
+  response.json(await openprinter.discover());
+});
 
-if (identity === null) {
-  rejectConnection();
-  return;
-}
+app.post(openprinter.paths.pairing, async (request, response) => {
+  response.json(await openprinter.pair(request.body, {
+    remoteAddress: request.ip,
+  }));
+});
+```
 
-const session = openPrinter.accept({
-  identity: {
-    agentId: identity.agentId,
-    metadata: {
-      organizationId: identity.organizationId,
-    },
-  },
+Pairing codes are cryptographically random, human-readable, case-insensitive, short-lived, single-use, and atomically consumed:
+
+```ts
+const pairing = await openprinter.createPairingCode({
+  expiresInMs: 5 * 60_000,
+  metadata: { organizationId: 'org_123' },
+});
+
+showPairingCodeToOperator(pairing.code);
+```
+
+The SDK never logs the code. `checkPairingRateLimit` provides the policy hook for limiting attempts. The included `InMemoryPairingCodeStore` and `InMemoryAgentCredentialStore` are suitable for tests and local examples only; production hosts must supply durable implementations of `PairingCodeStore` and `AgentCredentialStore`.
+
+## Gateway integration
+
+For a `ws`-compatible socket, use the convenience adapter:
+
+```ts
+httpServer.on('upgrade', (request, socket, head) => {
+  if (request.url !== openprinter.paths.gateway) return socket.destroy();
+  wss.handleUpgrade(request, socket, head, (webSocket) => {
+    openprinter.handleGatewayConnection(webSocket);
+  });
+});
+```
+
+For any other transport, attach its lifecycle to the small session boundary:
+
+```ts
+const session = openprinter.accept({
   transport: {
     send: (message) => connection.send(message),
-    close: ({ reason, detail }) => {
-      connection.close(mapTransportClose(reason), detail);
-    },
+    close: ({ reason, detail }) => connection.close(mapCloseReason(reason), detail),
   },
 });
 
-connection.onMessage((message) => {
-  void session.receive(message);
-});
-
-connection.onClose((detail) => {
-  void session.transportClosed({
-    reason: 'peer-closed',
-    detail,
-  });
-});
-
-connection.onError((error) => {
-  void session.transportClosed({
-    reason: 'transport-error',
-    detail: safeErrorName(error),
-  });
-});
+connection.onMessage((message) => void session.receive(message));
+connection.onClose(() => void session.transportClosed());
 ```
 
-The transport contract is deliberately small:
+`accept()` starts unauthenticated. The SDK sends a socket-bound, expiring challenge, looks up the claimed `(agentId, keyId)`, verifies the Ed25519 signature, sends `auth.accepted`, and only then accepts `agent.hello`. The challenge is unpredictable and single-use. Normal protocol frames are protected by the authenticated TLS/WebSocket session and are not signed individually.
 
-- `send(message)` accepts one encoded UTF-8 JSON protocol message. Resolving
-  means immediate handoff to the transport, not agent persistence or printing.
-- `close(request)` lets the host map a stable OpenPrinter reason to its own
-  socket, consumer, route, or connection lifecycle.
-- `receive(message)` accepts `string` or `Uint8Array` input and serializes
-  concurrent calls in invocation order.
-- `transportClosed(event)` tells the protocol session that host-owned
-  connectivity has already ended; it does not call `close` again.
+## Deliver jobs
 
-## Deliver jobs through a selected session
-
-The host selects a session using its own local registry or distributed
-backplane:
+The host selects a connected session from its own registry or backplane and calls `sendJob`:
 
 ```ts
-const session = await resolveAgentSession('agent_123');
-
-if (session === null) {
-  // Keep the job in application-owned durable storage.
-  return {
-    ok: false,
-    agentId: 'agent_123',
-    reason: 'agent-offline',
-    retryable: true,
-  };
-}
-
 const result = await session.sendJob({
   jobId: 'job_123',
   idempotencyKey: 'invoice_123_v1',
   printerId: 'printer_123',
   createdAt: new Date().toISOString(),
-  document: {
-    width: 80,
-    sections: [
-      {
-        type: 'text',
-        value: 'Test receipt',
-        align: 'center',
-        bold: true,
-      },
-      { type: 'cut' },
-    ],
-  },
+  document: { width: 80, sections: [{ type: 'text', value: 'Receipt' }] },
 });
-
-if (!result.ok) {
-  // `session-not-ready`, `connection-closed`, or `transport-error`.
-  retainForApplicationRetry(result);
-}
 ```
 
-Other session-local commands are:
+`sendJob` handing a frame to a live transport is not durable server storage. Keep the job in application-owned storage until the agent acknowledgement and apply application retry policy outside this SDK.
 
-- `send(message)`
-- `requestPrinters()`
-- `cancelJob(cancellation)`
-- `invalidateConfiguration(invalidation)`
-- `disconnect(options)`
+## Credential revocation and failures
 
-`getAgent()` returns the negotiated agent snapshot and `getPrinters()` returns
-that session's latest validated inventory.
-
-## Cluster and broker ownership
-
-Two accepted sessions with the same agent ID remain independent. The SDK does
-not replace one, choose a process, or pretend a process-local map is
-cluster-wide.
-
-In a clustered application, the host can announce which worker owns a live
-transport and route application commands to that worker through RabbitMQ,
-Redis, NATS, IPC, or another backplane. The host is responsible for ownership,
-affinity, ordering beyond one session, deduplication of broker redelivery, and
-stale-route expiry. Each ingress worker calls the same `accept`, `receive`, and
-session command APIs.
-
-## Limits and lifecycle
-
-Defaults are intentionally bounded:
-
-- 2 MiB maximum encoded protocol message
-- 10 second protocol handshake timeout
-- 15 second heartbeat interval
-- 45 second heartbeat timeout
-- 10 second transport callback timeout
-- 5 second lifecycle callback timeout
-
-Invalid messages and handshake violations invoke `onProtocolError`, send a
-semantic disconnect when possible, and ask the host to close only that
-transport. Lifecycle callback failures and timeouts are isolated through
-`onCallbackError`. A rejected or timed-out transport handoff returns a stable
-structured delivery failure and makes the session unavailable.
+Call `revokeCredential(agentId, keyId)` to revoke a paired public credential. Future authentication attempts receive a bounded machine-readable rejection and the gateway closes. Discovery, pairing, authentication, handshake, transport, callback, heartbeat, and message sizes all have explicit validation or timeouts.
 
 ## Development
 
@@ -212,6 +120,4 @@ pnpm --filter @openprinter/server test
 pnpm --filter @openprinter/server build
 ```
 
-See `examples/node-server` for a complete host-owned `ws` adapter,
-development-only authorization flow, explicit local session registry, and HTTP
-API.
+See `examples/node-server` for a complete HTTP and WebSocket integration.

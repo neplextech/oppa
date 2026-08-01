@@ -1,7 +1,7 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
-import { OpenPrinterProtocolSchema } from '../dist/index.js';
+import { OpenPrinterAuthenticationSchema, OpenPrinterProtocolSchema } from '../dist/index.js';
 
 const outputUrl = new URL('../../../protocol/schema/openprinter.schema.json', import.meta.url);
 
@@ -19,7 +19,15 @@ function canonicalize(value) {
   return value;
 }
 
-const output = `${JSON.stringify(canonicalize(OpenPrinterProtocolSchema), null, 2)}\n`;
+const output = `${JSON.stringify(
+  canonicalize({
+    $schema: 'https://json-schema.org/draft/2020-12/schema',
+    title: 'OpenPrinter v1 contracts',
+    anyOf: [OpenPrinterProtocolSchema, OpenPrinterAuthenticationSchema],
+  }),
+  null,
+  2,
+)}\n`;
 
 if (process.argv.includes('--check')) {
   let committed;

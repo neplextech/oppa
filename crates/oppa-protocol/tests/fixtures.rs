@@ -5,15 +5,16 @@ use std::{
 };
 
 use oppa_protocol::{
-    AgentMessageKind, MAX_WIRE_MESSAGE_BYTES, ProtocolError, ProtocolMessage, Validate,
-    decode_agent_message, decode_protocol_message, decode_server_message, encode_agent_message,
-    encode_server_message,
+    AgentMessageKind, DiscoveryDocument, GatewayAuthenticationAccepted,
+    GatewayAuthenticationChallenge, GatewayAuthenticationRejected, GatewayAuthenticationResponse,
+    MAX_WIRE_MESSAGE_BYTES, PairingRequest, PairingResponse, ProtocolError, ProtocolMessage,
+    Validate, decode_agent_message, decode_protocol_message, decode_server_message,
+    encode_agent_message, encode_server_message,
 };
 use serde_json::Value;
 
 const AGENT_TYPES: &[&str] = &[
     "agent.hello",
-    "agent.authentication_metadata",
     "agent.heartbeat",
     "agent.printer_inventory",
     "agent.printer_inventory_changed",
@@ -50,6 +51,44 @@ fn fixture_files(group: &str) -> Vec<PathBuf> {
         .collect();
     paths.sort();
     paths
+}
+
+#[test]
+fn authentication_fixtures_validate_in_rust() {
+    let discovery: DiscoveryDocument = read_fixture("auth", "discovery.json");
+    discovery
+        .validate()
+        .expect("discovery fixture must validate");
+
+    let pairing: PairingRequest = read_fixture("auth", "pairing-request.json");
+    pairing.validate().expect("pairing fixture must validate");
+
+    let paired: PairingResponse = read_fixture("auth", "pairing-response.json");
+    paired
+        .validate()
+        .expect("pairing response fixture must validate");
+
+    let challenge: GatewayAuthenticationChallenge = read_fixture("auth", "auth-challenge.json");
+    challenge
+        .validate()
+        .expect("challenge fixture must validate");
+
+    let response: GatewayAuthenticationResponse = read_fixture("auth", "auth-response.json");
+    response.validate().expect("response fixture must validate");
+
+    let accepted: GatewayAuthenticationAccepted = read_fixture("auth", "auth-accepted.json");
+    accepted.validate().expect("accepted fixture must validate");
+
+    let rejected: GatewayAuthenticationRejected = read_fixture("auth", "auth-rejected.json");
+    rejected.validate().expect("rejected fixture must validate");
+}
+
+fn read_fixture<T: serde::de::DeserializeOwned>(group: &str, name: &str) -> T {
+    let path = fixture_directory(group).join(name);
+    let raw = fs::read(&path)
+        .unwrap_or_else(|error| panic!("{} must be readable: {error}", path.display()));
+    serde_json::from_slice(&raw)
+        .unwrap_or_else(|error| panic!("{} must deserialize: {error}", path.display()))
 }
 
 #[test]
@@ -107,7 +146,7 @@ fn every_invalid_fixture_is_rejected() {
                     result,
                     Err(ProtocolError::UnsupportedProtocolVersion {
                         received,
-                        supported: &[1],
+                        supported: &["1"],
                     }) if received == "99"
                 ),
                 "{} must produce a version error",

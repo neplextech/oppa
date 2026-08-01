@@ -43,13 +43,7 @@ pub fn sanitize(value: &str) -> String {
         .filter(|character| !character.is_control() || *character == ' ')
         .take(1_000)
         .collect::<String>();
-    for marker in [
-        "access_token",
-        "refresh_token",
-        "authorization_code",
-        "code_verifier",
-        "Bearer ",
-    ] {
+    for marker in ["privateKey", "pairingCode", "challengePayload", "signature"] {
         redact_after_marker(&mut sanitized, marker);
     }
     if sanitized.trim().is_empty() {
@@ -78,15 +72,15 @@ mod tests {
     use super::sanitize;
 
     #[test]
-    fn redacts_common_credential_markers_and_bounds_output() {
+    fn redacts_current_credential_markers_and_bounds_output() {
         let message = format!(
-            "Bearer secret-token access_token=another-secret {}",
+            "privateKey=secret-key signature=secret-signature {}",
             "x".repeat(2_000)
         );
         let sanitized = sanitize(&message);
 
-        assert!(!sanitized.contains("secret-token"));
-        assert!(!sanitized.contains("another-secret"));
+        assert!(!sanitized.contains("secret-key"));
+        assert!(!sanitized.contains("secret-signature"));
         assert!(sanitized.len() <= 1_050);
     }
 }

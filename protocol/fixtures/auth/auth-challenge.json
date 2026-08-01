@@ -1,0 +1,6 @@
+{
+  "type": "auth.challenge",
+  "challengeId": "challenge-01",
+  "payload": "b3BlbnByaW50ZXItYXV0aC12MQpzZXJ2ZXItMDEKc2Vzc2lvbi0wMQ",
+  "expiresAt": "2026-08-01T09:00:30.000Z"
+}

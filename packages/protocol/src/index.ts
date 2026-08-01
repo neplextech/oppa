@@ -4,6 +4,8 @@ export * from './constants.js';
 export * from './errors.js';
 /** Cross-runtime JSON parsing, validation, and encoding functions. */
 export * from './codec.js';
+/** Discovery, pairing, and gateway challenge authentication contracts. */
+export * from './schemas/auth.js';
 /** Common identifiers, timestamps, metadata, versions, and job states. */
 export * from './schemas/common.js';
 /** Structured print document schemas and inferred TypeScript types. */

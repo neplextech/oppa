@@ -1,151 +1,98 @@
 ---
 title: Node.js Integration
 description:
-  Connect a host-owned WebSocket transport to an OpenPrinter session.
+  Integrate discovery, pairing, gateway authentication, and job
+  delivery.
 ---
 
-Install the protocol and server packages plus the WebSocket transport
-chosen by the host:
+Install the framework-neutral packages and your chosen transport:
 
 ```bash
 pnpm add @openprinter/protocol @openprinter/server ws
 ```
 
-Create the protocol server and an explicitly local registry:
+## Create the OpenPrinter server
 
 ```ts
-import { createServer } from 'node:http';
-import { createOpenPrinterServer } from '@openprinter/server';
-import { WebSocketServer } from 'ws';
-
-const httpServer = createServer(app);
-const webSockets = new WebSocketServer({
-  noServer: true,
-  clientTracking: false,
-});
-const localSessions = new Map();
-
-const openPrinter = createOpenPrinterServer({
-  brand: {
-    name: 'Acme POS',
-  },
-  onAgentConnected({ agent, session }) {
-    localSessions.set(agent.agentId, session);
-  },
-  onAgentDisconnected({ agent, session }) {
-    if (localSessions.get(agent.agentId) === session) {
-      localSessions.delete(agent.agentId);
-    }
-  },
-  onJobReceived({ message }) {
-    printJobs.markReceived(message.payload.jobId);
-  },
-  onJobSubmitted({ message }) {
-    printJobs.markSubmitted(message.payload.jobId);
-  },
-  onJobFailed({ message }) {
-    printJobs.markFailed(
-      message.payload.jobId,
-      message.payload.error,
-    );
-  },
+const openprinter = createOpenPrinterServer({
+  brand: { name: 'Acme Print Service' },
+  serverId: 'acme-print-v1',
+  serverVersion: '1.0.0',
+  pairingCodeStore,
+  credentialStore,
+  checkPairingRateLimit: ({ remoteAddress }) =>
+    limiter.check(remoteAddress),
+  onAgentConnected: ({ agent, session }) =>
+    sessions.register(agent.agentId, session),
+  onAgentDisconnected: ({ agent, session }) =>
+    sessions.removeIfCurrent(agent.agentId, session),
+  onPrintersChanged: ({ agent, printers }) =>
+    inventories.replace(agent.agentId, printers),
+  onJobReceived: ({ agent, message }) =>
+    jobs.markReceived(agent.agentId, message.payload.jobId),
 });
 ```
 
-The host owns upgrade routing and authentication. Once those complete,
-adapt the accepted socket to the two transport callbacks:
+## Add discovery and pairing
 
 ```ts
-function acceptAgentSocket(socket, identity) {
-  const session = openPrinter.accept({
-    identity,
-    transport: {
-      send(message) {
-        return new Promise((resolve, reject) => {
-          socket.send(message, (error) => {
-            if (error) reject(error);
-            else resolve();
-          });
-        });
-      },
-      close({ reason, detail }) {
-        socket.close(webSocketCloseCode(reason), detail);
-      },
-    },
-  });
-
-  socket.on('message', (data, isBinary) => {
-    if (isBinary) {
-      socket.close(1003, 'Text messages required');
-      void session.transportClosed({
-        reason: 'transport-error',
-      });
-      return;
-    }
-
-    void session.receive(data.toString('utf8'));
-  });
-
-  socket.on('close', (_code, reason) => {
-    void session.transportClosed({
-      reason: 'peer-closed',
-      detail: reason.toString('utf8'),
-    });
-  });
-
-  socket.on('error', (error) => {
-    void session.transportClosed({
-      reason: 'transport-error',
-      detail: error.name,
-    });
-  });
-}
-```
-
-Your `upgrade` handler should:
-
-1. match the OpenPrinter gateway path;
-2. parse the authorization data expected by your application;
-3. authenticate it with an explicit timeout;
-4. reject invalid connections before upgrading;
-5. call `webSockets.handleUpgrade`; and
-6. pass the authenticated identity and socket to `acceptAgentSocket`.
-
-Frameworks such as NestJS, Hono, Fastify, and Express may establish
-the connection differently, but the `accept`/`receive` boundary
-remains the same. No adapter needs to give the SDK control of its HTTP
-server.
-
-## Deliver a job
-
-Only deliver a job already stored durably by your application:
-
-```ts
-const session = localSessions.get(agentId);
-
-if (session === undefined) {
-  await printJobs.keepQueued(job.id, 'agent-offline');
-  return;
-}
-
-const result = await session.sendJob({
-  jobId: job.id,
-  idempotencyKey: job.idempotencyKey,
-  printerId: job.printerId,
-  createdAt: job.createdAt.toISOString(),
-  document: job.document,
+app.get(openprinter.paths.discovery, async (_request, response) => {
+  response.json(await openprinter.discover());
 });
 
-if (!result.ok) {
-  await printJobs.keepQueued(job.id, result.reason);
-}
+app.post(openprinter.paths.pairing, async (request, response) => {
+  response.json(
+    await openprinter.pair(request.body, {
+      remoteAddress: request.ip,
+    }),
+  );
+});
 ```
 
-This map is deliberately local. A Node cluster deployment must route
-commands to the worker that owns the selected transport, for example
-through application-managed IPC, RabbitMQ, Redis, or another
-backplane. `@openprinter/server` does not synchronize workers.
+An authorized application workflow calls `createPairingCode` and
+displays the result to the intended operator. Never include it in a
+URL. Production stores must make consumption atomic with credential
+registration and preserve an unconsumed grant if registration fails.
 
-Treat `job-received` as proof of durable local receipt and
-`job-submitted` as proof that OPPA handed output to its selected
-backend, not proof that paper was physically produced.
+## Upgrade the gateway
+
+```ts
+const wss = new WebSocketServer({ noServer: true });
+
+httpServer.on('upgrade', (request, socket, head) => {
+  if (
+    new URL(request.url, publicOrigin).pathname !==
+    openprinter.paths.gateway
+  ) {
+    socket.destroy();
+    return;
+  }
+  wss.handleUpgrade(request, socket, head, (webSocket) => {
+    openprinter.handleGatewayConnection(webSocket);
+  });
+});
+```
+
+The SDK sends the initial challenge immediately, verifies the stored
+Ed25519 public credential, and rejects all normal messages until
+authentication succeeds. The host does not parse a credential from the
+upgrade request.
+
+## Send a durable job
+
+Persist the job first, resolve the agent session through your own
+registry or backplane, then call `sendJob`. Keep the job queued if the
+agent is offline or delivery fails. Treat `received`, `submitted`, and
+`failed` as separate lifecycle events.
+
+## Production checklist
+
+- serve discovery/pairing over HTTPS and the gateway over WSS
+- use durable pairing and public credential stores
+- authorize code generation and rate-limit redemption attempts
+- revoke public credentials when access ends
+- retain server jobs durably and implement idempotent retry
+- provide cluster-aware live-session affinity and stale-route expiry
+- bound request bodies, frames, callbacks, and network timeouts
+- avoid logging pairing codes, keys, signatures, challenges, or
+  documents

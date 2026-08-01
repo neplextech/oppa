@@ -1,0 +1,8 @@
+{
+  "type": "auth.response",
+  "challengeId": "challenge-01",
+  "agentId": "agent-01",
+  "keyId": "key-01",
+  "algorithm": "Ed25519",
+  "signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+}

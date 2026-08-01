@@ -190,10 +190,10 @@ impl fmt::Display for Timestamp {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum AgentState {
-    /// The binary has not been paired with a provider.
+    /// The binary has not been paired with an OpenPrinter server.
     Unconfigured,
-    /// An interactive authorization flow is active.
-    Authorizing,
+    /// Server discovery and one-time pairing are active.
+    Pairing,
     /// No gateway connection is active.
     Disconnected,
     /// A gateway connection is being established.

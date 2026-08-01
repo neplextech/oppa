@@ -1,4 +1,3 @@
-use oppa_agent::AgentState;
 use oppa_printer::{
     PrinterAvailability, PrinterCapabilities as DomainPrinterCapabilities, PrinterConnection,
     PrinterFingerprint, PrinterRef, ProviderMetadata,
@@ -42,10 +41,7 @@ impl From<&ProductConfig> for ProductSummary {
 #[serde(rename_all = "camelCase")]
 pub struct AgentStatus {
     pub agent_id: Option<String>,
-    pub configured: bool,
     pub product: ProductSummary,
-    pub state: AgentState,
-    pub gateway_state: GatewayState,
     pub last_connection_at: Option<String>,
     pub version: String,
     pub pending_jobs: usize,
@@ -55,6 +51,7 @@ pub struct AgentStatus {
     pub platform: String,
     pub server_configuration: OpenPrinterServerConfiguration,
     pub connected_service: Option<ConnectedServiceSummary>,
+    pub connection_state: OpenPrinterConnectionState,
 }
 
 /// Validated identity advertised by the connected `OpenPrinter` service.
@@ -67,13 +64,32 @@ pub struct ConnectedServiceSummary {
     pub gateway_url: String,
 }
 
-/// Coarse gateway status expected by the frontend.
-#[derive(Debug, Clone, Copy, Serialize)]
-#[serde(rename_all = "lowercase")]
-pub enum GatewayState {
-    Offline,
+/// Mutually exclusive `OpenPrinter` discovery, pairing, and gateway phase.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OpenPrinterConnectionState {
+    Idle,
+    Discovering,
+    DiscoveryFailed,
+    Unpaired,
+    Pairing,
+    Paired,
     Connecting,
-    Online,
+    Authenticating,
+    Connected,
+    AuthenticationFailed,
+    CredentialRevoked,
+}
+
+/// Safe discovery projection shown before the user submits a pairing code.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiscoveredServiceSummary {
+    pub name: String,
+    pub server_id: String,
+    pub server_version: String,
+    pub pairing_url: String,
+    pub gateway_url: String,
 }
 
 /// Printer capability projection expected by the frontend.
@@ -245,14 +261,6 @@ pub enum DesktopJobState {
     Cancelled,
 }
 
-/// Browser authorization result returned immediately after opening the browser.
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AuthorizationStart {
-    pub authorization_url: String,
-    pub expires_at: String,
-}
-
 /// Whitelisted compile-time product link.
 #[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -270,7 +278,7 @@ pub struct Diagnostics {
     pub agent_version: String,
     pub product_id: String,
     pub platform: String,
-    pub connection_state: AgentState,
+    pub connection_state: OpenPrinterConnectionState,
     pub database_healthy: bool,
     pub migration_version: u32,
     pub discovery_providers: Vec<DiscoveryProviderStatus>,
@@ -327,4 +335,41 @@ pub struct FeatureAvailability {
     pub network_printer_discovery: bool,
     pub usb_printer_discovery: bool,
     pub remote_diagnostics: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::OpenPrinterConnectionState;
+
+    #[test]
+    fn connection_states_serialize_as_one_explicit_phase() {
+        let states = [
+            (OpenPrinterConnectionState::Idle, "idle"),
+            (OpenPrinterConnectionState::Discovering, "discovering"),
+            (
+                OpenPrinterConnectionState::DiscoveryFailed,
+                "discovery_failed",
+            ),
+            (OpenPrinterConnectionState::Unpaired, "unpaired"),
+            (OpenPrinterConnectionState::Pairing, "pairing"),
+            (OpenPrinterConnectionState::Paired, "paired"),
+            (OpenPrinterConnectionState::Connecting, "connecting"),
+            (OpenPrinterConnectionState::Authenticating, "authenticating"),
+            (OpenPrinterConnectionState::Connected, "connected"),
+            (
+                OpenPrinterConnectionState::AuthenticationFailed,
+                "authentication_failed",
+            ),
+            (
+                OpenPrinterConnectionState::CredentialRevoked,
+                "credential_revoked",
+            ),
+        ];
+        for (state, expected) in states {
+            assert_eq!(
+                serde_json::to_value(state).expect("serialize state"),
+                expected
+            );
+        }
+    }
 }

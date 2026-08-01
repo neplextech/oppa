@@ -1,17 +1,17 @@
 use std::{
     sync::{
         Arc,
-        atomic::{AtomicBool, AtomicU64, Ordering},
+        atomic::{AtomicU64, Ordering},
     },
     time::{Duration, Instant},
 };
 
-use chrono::{Duration as ChronoDuration, Utc};
+use chrono::Utc;
 use oppa_agent::{Agent, AgentBuilder, AgentHandle, AgentSnapshot, AgentState, ProcessOutcome};
-use oppa_auth::{AuthorizationClient, CredentialManager, DEFAULT_CALLBACK_TIMEOUT};
+use oppa_auth::{AgentKeyManager, PairingClient};
 use oppa_core::Timestamp;
 use oppa_platform::{
-    AppPaths, BrowserOpener, KeyringCredentialStore, SystemBrowser, platform_info,
+    AppPaths, BrowserOpener, CredentialStore, KeyringCredentialStore, SystemBrowser, platform_info,
     resolve_app_paths,
 };
 use oppa_product::{ProductConfig, embedded_product};
@@ -33,15 +33,16 @@ use crate::{
     error::{CommandError, sanitize},
     job_ledger::JobLedger,
     models::{
-        AgentStatus, AuthorizationStart, ConnectedServiceSummary, DesktopJobState,
-        DiagnosticExport, Diagnostics, FeatureAvailability, GatewayState, JobSummary,
-        ManualPrinterInput, PrinterSummary, ProductLink, ProductSummary, VirtualPrinterInput,
-        VirtualPrinterMode,
+        AgentStatus, ConnectedServiceSummary, DesktopJobState, DiagnosticExport, Diagnostics,
+        DiscoveredServiceSummary, FeatureAvailability, JobSummary, ManualPrinterInput,
+        OpenPrinterConnectionState, PrinterSummary, ProductLink, ProductSummary,
+        VirtualPrinterInput, VirtualPrinterMode,
     },
     printer_catalog::PrinterCatalog,
     server_configuration::{
+        CONNECTION_SETTING, LEGACY_SERVER_CONFIGURATION_SETTING, OpenPrinterConnection,
         OpenPrinterServerConfiguration, OpenPrinterServerConfigurationInput,
-        SERVER_CONFIGURATION_SETTING,
+        SERVER_CONFIGURATION_SETTING, migrate_legacy_configuration,
     },
     virtual_spooler::PerPrinterVirtualSpooler,
 };
@@ -59,7 +60,7 @@ pub struct DesktopService {
     pub(crate) app: AppHandle,
     pub(crate) product: ProductConfig,
     pub(crate) storage: SqliteStorage,
-    pub(crate) credentials: CredentialManager,
+    pub(crate) key_manager: AgentKeyManager,
     pub(crate) agent: Arc<Agent>,
     pub(crate) catalog: Arc<PrinterCatalog>,
     pub(crate) jobs: Arc<JobLedger>,
@@ -68,14 +69,15 @@ pub struct DesktopService {
     pub(crate) last_connection_at: RwLock<Option<String>>,
     pub(crate) agent_id: RwLock<Option<String>>,
     pub(crate) server_configuration: RwLock<OpenPrinterServerConfiguration>,
+    pub(crate) connection: RwLock<Option<OpenPrinterConnection>>,
+    pub(crate) connection_state: RwLock<OpenPrinterConnectionState>,
     pub(crate) connected_service: RwLock<Option<ConnectedServiceSummary>>,
     pub(crate) shutdown: CancellationToken,
     pub(crate) startup_recovered_submissions: usize,
     paths: AppPaths,
-    pub(crate) authorization: RwLock<AuthorizationClient>,
+    pub(crate) pairing_client: PairingClient,
     pub(crate) provider_operation: Mutex<()>,
     pub(crate) provider_generation: AtomicU64,
-    authorization_active: AtomicBool,
     connection_control: mpsc::Sender<ConnectionControl>,
     virtual_spooler: Arc<PerPrinterVirtualSpooler>,
 }
@@ -106,33 +108,38 @@ impl DesktopService {
             "application",
             format!("{} desktop runtime is starting.", product.product_name),
         );
-        let default_server_configuration = OpenPrinterServerConfiguration::from_product(&product);
-        let (server_configuration, reset_invalid_configuration) = match storage
+        let mut migrated_legacy = false;
+        let stored_configuration = storage
             .setting(SERVER_CONFIGURATION_SETTING)
+            .await
+            .map_err(|error| CommandError::internal(error.to_string()))?;
+        let has_stored_configuration = stored_configuration.is_some();
+        let server_configuration = if let Some(value) = stored_configuration {
+            serde_json::from_value::<OpenPrinterServerConfiguration>(value)
+                .ok()
+                .filter(|configuration| configuration.validate().is_ok())
+                .unwrap_or_default()
+        } else if let Some(legacy) = storage
+            .setting(LEGACY_SERVER_CONFIGURATION_SETTING)
             .await
             .map_err(|error| CommandError::internal(error.to_string()))?
         {
-            Some(value) => match serde_json::from_value::<OpenPrinterServerConfiguration>(value) {
-                Ok(configuration) if configuration.validate().is_ok() => (configuration, false),
-                Ok(_) | Err(_) => {
-                    log.warn(
-                        "configuration",
-                        "Stored OpenPrinter server endpoints were invalid; defaults were restored and prior credentials were cleared.",
-                    );
-                    (default_server_configuration, true)
-                }
-            },
-            None => (default_server_configuration, false),
+            migrated_legacy = true;
+            migrate_legacy_configuration(&legacy)
+                .and_then(|migration| migration.suggested)
+                .unwrap_or_default()
+        } else {
+            OpenPrinterServerConfiguration::default()
         };
 
-        let credential_store = Arc::new(
+        let credential_store: Arc<dyn CredentialStore> = Arc::new(
             KeyringCredentialStore::new(product.application_id.clone())
                 .map_err(|error| CommandError::internal(error.to_string()))?,
         );
-        let credentials = CredentialManager::new(credential_store);
-        if reset_invalid_configuration {
-            credentials
-                .clear()
+        let key_manager = AgentKeyManager::new(Arc::clone(&credential_store));
+        if migrated_legacy {
+            credential_store
+                .delete("oauth-token-set-v1")
                 .await
                 .map_err(|error| CommandError::new("credential_clear_failed", error.to_string()))?;
             let value = serde_json::to_value(&server_configuration)
@@ -141,16 +148,42 @@ impl DesktopService {
                 .set_setting(SERVER_CONFIGURATION_SETTING, &value)
                 .await
                 .map_err(|error| CommandError::internal(error.to_string()))?;
+            storage
+                .set_setting(
+                    LEGACY_SERVER_CONFIGURATION_SETTING,
+                    &serde_json::Value::Null,
+                )
+                .await
+                .map_err(|error| CommandError::internal(error.to_string()))?;
+            log.info(
+                "configuration",
+                "Legacy token configuration was removed; explicit pairing is required.",
+            );
         }
-        let (agent_id, credential_error) = match credentials.load().await {
-            Ok(Some(tokens)) => (Some(tokens.agent_id.to_string()), None),
-            Ok(None) => (None, None),
-            Err(error) => {
-                let message = sanitize(&error.to_string());
-                log.error("authentication", &message);
-                (None, Some(message))
+        let stored_connection = storage
+            .setting(CONNECTION_SETTING)
+            .await
+            .map_err(|error| CommandError::internal(error.to_string()))?
+            .and_then(|value| serde_json::from_value::<OpenPrinterConnection>(value).ok());
+        let (connection, credential_error) = if let Some(connection) = stored_connection {
+            if connection.server_url == server_configuration.server_url {
+                match key_manager.exists(&connection.credential_ref).await {
+                    Ok(true) => (Some(connection), None),
+                    Ok(false) => (
+                        None,
+                        Some("The paired private key is missing; pair again.".to_owned()),
+                    ),
+                    Err(error) => (None, Some(sanitize(&error.to_string()))),
+                }
+            } else {
+                (None, None)
             }
+        } else {
+            (None, None)
         };
+        let agent_id = connection
+            .as_ref()
+            .map(|connection| connection.agent_id.clone());
         let initial_state = if agent_id.is_some() {
             AgentState::Disconnected
         } else {
@@ -213,35 +246,37 @@ impl DesktopService {
                 .build()
                 .map_err(|error| CommandError::internal(error.to_string()))?,
         );
-        let authorization = AuthorizationClient::new(
-            server_configuration.authorization_endpoints(),
-            product.protocol.client_id.clone(),
-            vec!["openprinter.agent".to_owned()],
-            Duration::from_secs(20),
-        )
-        .map_err(|error| CommandError::internal(error.to_string()))?;
+        let pairing_client = PairingClient::new(Duration::from_secs(20))
+            .map_err(|error| CommandError::internal(error.to_string()))?;
         let (connection_control, control_receiver) = mpsc::channel(8);
         let service = Arc::new(Self {
             app,
             product,
             storage,
-            credentials,
+            key_manager,
             agent,
             catalog,
             jobs,
             log,
             started_at: Instant::now(),
             last_connection_at: RwLock::new(None),
-            agent_id: RwLock::new(agent_id),
+            agent_id: RwLock::new(agent_id.clone()),
             server_configuration: RwLock::new(server_configuration),
+            connection: RwLock::new(connection),
+            connection_state: RwLock::new(if agent_id.is_some() {
+                OpenPrinterConnectionState::Paired
+            } else if migrated_legacy || has_stored_configuration {
+                OpenPrinterConnectionState::Unpaired
+            } else {
+                OpenPrinterConnectionState::Idle
+            }),
             connected_service: RwLock::new(None),
             shutdown: CancellationToken::new(),
             startup_recovered_submissions: recovery.recovered_submissions,
             paths,
-            authorization: RwLock::new(authorization),
+            pairing_client,
             provider_operation: Mutex::new(()),
             provider_generation: AtomicU64::new(0),
-            authorization_active: AtomicBool::new(false),
             connection_control,
             virtual_spooler,
         });
@@ -265,18 +300,8 @@ impl DesktopService {
         let snapshot = self.agent.handle().snapshot().await;
         let agent_id = self.agent_id.read().await.clone();
         AgentStatus {
-            configured: agent_id.is_some(),
             agent_id,
             product: ProductSummary::from(&self.product),
-            state: snapshot.state,
-            gateway_state: match snapshot.state {
-                AgentState::Connecting => GatewayState::Connecting,
-                AgentState::Connected | AgentState::Degraded => GatewayState::Online,
-                AgentState::Unconfigured
-                | AgentState::Authorizing
-                | AgentState::Disconnected
-                | AgentState::ShuttingDown => GatewayState::Offline,
-            },
             last_connection_at: self.last_connection_at.read().await.clone(),
             version: env!("CARGO_PKG_VERSION").to_owned(),
             pending_jobs: snapshot.pending_jobs,
@@ -286,114 +311,173 @@ impl DesktopService {
             platform: platform_label(),
             server_configuration: self.server_configuration.read().await.clone(),
             connected_service: self.connected_service.read().await.clone(),
+            connection_state: *self.connection_state.read().await,
+        }
+    }
+
+    pub async fn discover_server(&self) -> Result<DiscoveredServiceSummary, CommandError> {
+        *self.connection_state.write().await = OpenPrinterConnectionState::Discovering;
+        self.emit(STATE_CHANGED_EVENT);
+        let server_url = self.server_configuration.read().await.server_url.clone();
+        match self.pairing_client.discover(&server_url).await {
+            Ok(discovered) => {
+                let phase = if self.connection.read().await.is_some() {
+                    OpenPrinterConnectionState::Paired
+                } else {
+                    OpenPrinterConnectionState::Unpaired
+                };
+                self.set_connection_phase(phase).await;
+                Ok(DiscoveredServiceSummary {
+                    name: discovered.document.server.name,
+                    server_id: discovered.document.server.id,
+                    server_version: discovered.document.server.version,
+                    pairing_url: discovered.pairing_url.to_string(),
+                    gateway_url: discovered.gateway_url.to_string(),
+                })
+            }
+            Err(error) => {
+                *self.connection_state.write().await = OpenPrinterConnectionState::DiscoveryFailed;
+                self.set_connection_error(error.to_string()).await;
+                Err(CommandError::new("discovery_failed", error.to_string()))
+            }
         }
     }
 
     #[allow(clippy::too_many_lines)]
-    pub async fn begin_authorization(self: &Arc<Self>) -> Result<AuthorizationStart, CommandError> {
-        // Claim the provider state while configuration mutations are excluded.
-        // The atomic remains set for the complete browser flow, so endpoint
-        // changes cannot interleave with credential persistence.
-        let provider_operation = self.provider_operation.lock().await;
-        if self
-            .authorization_active
-            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-            .is_err()
-        {
+    pub async fn pair_server(
+        &self,
+        code: String,
+        agent_name: String,
+    ) -> Result<DiscoveredServiceSummary, CommandError> {
+        if agent_name.trim() != agent_name || agent_name.is_empty() || agent_name.len() > 128 {
             return Err(CommandError::new(
-                "authorization_in_progress",
-                "An authorization flow is already in progress.",
+                "invalid_agent_name",
+                "Agent name must contain 1 to 128 characters without surrounding whitespace.",
             ));
         }
-        let snapshot = self.agent.handle().snapshot().await;
-        if snapshot.state != AgentState::Unconfigured {
-            self.authorization_active.store(false, Ordering::Release);
+        let _provider_operation = self.provider_operation.lock().await;
+        if self.connection.read().await.is_some() {
             return Err(CommandError::new(
-                "already_configured",
-                "This agent is already configured.",
+                "already_paired",
+                "Forget the current server before pairing again.",
             ));
         }
         self.agent
             .handle()
-            .transition(AgentState::Authorizing)
+            .transition(AgentState::Pairing)
             .await
-            .map_err(|error| {
-                self.authorization_active.store(false, Ordering::Release);
-                CommandError::internal(error.to_string())
-            })?;
+            .map_err(|error| CommandError::internal(error.to_string()))?;
+        *self.connection_state.write().await = OpenPrinterConnectionState::Pairing;
+        self.emit(STATE_CHANGED_EVENT);
 
-        let authorization = self.authorization.read().await.clone();
-        drop(provider_operation);
-        let pending = match authorization.begin().await {
-            Ok(pending) => pending,
+        let server_url = self.server_configuration.read().await.server_url.clone();
+        let discovered = match self.pairing_client.discover(&server_url).await {
+            Ok(discovered) => discovered,
             Err(error) => {
-                self.authorization_active.store(false, Ordering::Release);
                 let _ = self
                     .agent
                     .handle()
                     .transition(AgentState::Unconfigured)
                     .await;
-                return Err(CommandError::new("authorization_failed", error.to_string()));
+                *self.connection_state.write().await = OpenPrinterConnectionState::DiscoveryFailed;
+                return Err(CommandError::new("discovery_failed", error.to_string()));
             }
         };
-        if let Err(error) = pending.open_system_browser() {
-            self.authorization_active.store(false, Ordering::Release);
+        let generated = match self
+            .key_manager
+            .generate(&discovered.document.server.id)
+            .await
+        {
+            Ok(generated) => generated,
+            Err(error) => {
+                let _ = self
+                    .agent
+                    .handle()
+                    .transition(AgentState::Unconfigured)
+                    .await;
+                *self.connection_state.write().await = OpenPrinterConnectionState::Unpaired;
+                return Err(CommandError::new(
+                    "credential_generation_failed",
+                    error.to_string(),
+                ));
+            }
+        };
+        let request = oppa_protocol::PairingRequest {
+            protocol_version: oppa_protocol::PROTOCOL_VERSION.to_owned(),
+            code,
+            agent: oppa_protocol::PairingAgent {
+                name: agent_name,
+                version: env!("CARGO_PKG_VERSION").to_owned(),
+                platform: std::env::consts::OS.to_owned(),
+                installation_id: format!("installation_{}", Uuid::new_v4()),
+            },
+            credential: oppa_protocol::PairingCredential {
+                algorithm: oppa_protocol::SIGNATURE_ALGORITHM.to_owned(),
+                public_key: generated.public_key,
+            },
+        };
+        let paired = match self.pairing_client.pair(&discovered, &request).await {
+            Ok(paired) => paired,
+            Err(error) => {
+                let _ = self.key_manager.delete(&generated.credential_ref).await;
+                let _ = self
+                    .agent
+                    .handle()
+                    .transition(AgentState::Unconfigured)
+                    .await;
+                *self.connection_state.write().await = OpenPrinterConnectionState::Unpaired;
+                return Err(CommandError::new("pairing_failed", error.to_string()));
+            }
+        };
+        let connection = OpenPrinterConnection {
+            server_url: server_url.clone(),
+            server_id: paired.server_id,
+            agent_id: paired.agent_id,
+            key_id: paired.key_id,
+            credential_ref: generated.credential_ref,
+        };
+        let value = serde_json::to_value(&connection)
+            .map_err(|error| CommandError::internal(error.to_string()))?;
+        if let Err(error) = self.storage.set_setting(CONNECTION_SETTING, &value).await {
+            let cleanup = self.key_manager.delete(&connection.credential_ref).await;
             let _ = self
                 .agent
                 .handle()
                 .transition(AgentState::Unconfigured)
                 .await;
-            return Err(CommandError::new("browser_failed", error.to_string()));
+            *self.connection_state.write().await = OpenPrinterConnectionState::Unpaired;
+            let detail = if cleanup.is_ok() {
+                "The newly generated local key was deleted safely."
+            } else {
+                "Local key cleanup also failed and requires credential-store attention."
+            };
+            return Err(CommandError::new(
+                "connection_store_failed",
+                format!("Paired credential metadata could not be saved: {error}. {detail}"),
+            ));
         }
-        let authorization_url = pending.authorization_url.to_string();
-        let expires_at = (Utc::now()
-            + ChronoDuration::from_std(DEFAULT_CALLBACK_TIMEOUT)
-                .unwrap_or_else(|_| ChronoDuration::minutes(5)))
-        .to_rfc3339();
+        *self.agent_id.write().await = Some(connection.agent_id.clone());
+        *self.connection.write().await = Some(connection);
+        *self.connection_state.write().await = OpenPrinterConnectionState::Paired;
+        self.agent.handle().set_active_errors(Vec::new()).await;
+        self.agent
+            .handle()
+            .transition(AgentState::Disconnected)
+            .await
+            .map_err(|error| CommandError::internal(error.to_string()))?;
+        let _ = self
+            .connection_control
+            .send(ConnectionControl::Reconnect)
+            .await;
         self.log
-            .info("authentication", "Browser authorization started.");
-        let service = Arc::clone(self);
-        tauri::async_runtime::spawn(async move {
-            match pending.complete(&authorization).await {
-                Ok(tokens) => {
-                    let agent_id = tokens.agent_id.to_string();
-                    match service.credentials.save(&tokens).await {
-                        Ok(()) => {
-                            *service.agent_id.write().await = Some(agent_id);
-                            service.agent.handle().set_active_errors(Vec::new()).await;
-                            let _ = service
-                                .agent
-                                .handle()
-                                .transition(AgentState::Disconnected)
-                                .await;
-                            service
-                                .log
-                                .info("authentication", "Authorization completed.");
-                            let _ = service
-                                .connection_control
-                                .send(ConnectionControl::Reconnect)
-                                .await;
-                        }
-                        Err(error) => {
-                            service
-                                .authorization_failed(format!(
-                                    "Could not save credentials: {error}"
-                                ))
-                                .await;
-                        }
-                    }
-                }
-                Err(error) => {
-                    service.authorization_failed(error.to_string()).await;
-                }
-            }
-            service.authorization_active.store(false, Ordering::Release);
-            service.emit(STATE_CHANGED_EVENT);
-        });
+            .info("authentication", "OpenPrinter pairing completed.");
         self.emit(STATE_CHANGED_EVENT);
-        Ok(AuthorizationStart {
-            authorization_url,
-            expires_at,
+        Ok(DiscoveredServiceSummary {
+            name: discovered.document.server.name,
+            server_id: discovered.document.server.id,
+            server_version: discovered.document.server.version,
+            pairing_url: discovered.pairing_url.to_string(),
+            gateway_url: discovered.gateway_url.to_string(),
         })
     }
 
@@ -578,7 +662,6 @@ impl DesktopService {
     }
 
     pub async fn diagnostics(&self) -> Diagnostics {
-        let snapshot = self.agent.handle().snapshot().await;
         let migration = self.storage.migration_version().await;
         if let Err(error) = &migration {
             self.log.error("storage", error.to_string());
@@ -587,7 +670,7 @@ impl DesktopService {
             agent_version: env!("CARGO_PKG_VERSION").to_owned(),
             product_id: self.product.product_id.to_string(),
             platform: platform_label(),
-            connection_state: snapshot.state,
+            connection_state: *self.connection_state.read().await,
             database_healthy: migration.is_ok(),
             migration_version: migration.unwrap_or(0),
             discovery_providers: self.catalog.discovery_status().await,
@@ -635,7 +718,7 @@ impl DesktopService {
         if self.agent_id.read().await.is_none() {
             return Err(CommandError::new(
                 "not_configured",
-                "Authorize this agent before connecting.",
+                "Pair this agent before connecting.",
             ));
         }
         self.connection_control
@@ -657,42 +740,34 @@ impl DesktopService {
     pub async fn reset_server_configuration(
         &self,
     ) -> Result<OpenPrinterServerConfiguration, CommandError> {
-        let configuration = OpenPrinterServerConfiguration::from_product(&self.product);
+        let configuration = OpenPrinterServerConfiguration::default();
         self.apply_server_configuration(configuration).await
+    }
+
+    pub async fn forget_server(&self) -> Result<(), CommandError> {
+        let _provider_operation = self.provider_operation.lock().await;
+        self.forget_connection().await?;
+        self.provider_generation.fetch_add(1, Ordering::AcqRel);
+        let _ = self
+            .connection_control
+            .send(ConnectionControl::ConfigurationChanged)
+            .await;
+        self.log
+            .info("authentication", "Local paired credential was deleted.");
+        self.emit(STATE_CHANGED_EVENT);
+        Ok(())
     }
 
     async fn apply_server_configuration(
         &self,
         configuration: OpenPrinterServerConfiguration,
     ) -> Result<OpenPrinterServerConfiguration, CommandError> {
-        // Serializes save/reset and closes the check-versus-start race with
-        // browser authorization.
-        let provider_operation = self.provider_operation.lock().await;
-        if self.authorization_active.load(Ordering::Acquire) {
-            return Err(CommandError::new(
-                "authorization_in_progress",
-                "Finish or cancel the active authorization before changing server endpoints.",
-            ));
-        }
+        let _provider_operation = self.provider_operation.lock().await;
         if *self.server_configuration.read().await == configuration {
             return Ok(configuration);
         }
 
-        let authorization = AuthorizationClient::new(
-            configuration.authorization_endpoints(),
-            self.product.protocol.client_id.clone(),
-            vec!["openprinter.agent".to_owned()],
-            Duration::from_secs(20),
-        )
-        .map_err(|error| CommandError::new("invalid_server_configuration", error.to_string()))?;
-
-        // Credentials are scoped to the prior provider. Clear them before
-        // persisting a new endpoint so a crash cannot pair an old token with a
-        // newly selected gateway on the next launch.
-        self.credentials
-            .clear()
-            .await
-            .map_err(|error| CommandError::new("credential_clear_failed", error.to_string()))?;
+        self.forget_connection().await?;
         let value = serde_json::to_value(&configuration)
             .map_err(|error| CommandError::internal(error.to_string()))?;
         if let Err(error) = self
@@ -704,15 +779,14 @@ impl DesktopService {
             self.log.error(
                 "configuration",
                 format!(
-                    "Could not persist OpenPrinter server endpoints after clearing credentials: {diagnostic}"
+                    "Could not persist the OpenPrinter server URL after deleting the prior credential: {diagnostic}"
                 ),
             );
             self.provider_generation.fetch_add(1, Ordering::AcqRel);
             self.force_unconfigured(
-                "Server endpoints were not saved. Credentials were cleared; authorize again before reconnecting.",
+                "The server URL was not saved. Pair again after choosing the intended server.",
             )
             .await;
-            drop(provider_operation);
             let _ = self
                 .connection_control
                 .send(ConnectionControl::ConfigurationChanged)
@@ -720,25 +794,41 @@ impl DesktopService {
             self.emit(STATE_CHANGED_EVENT);
             return Err(CommandError::new(
                 "configuration_store_failed",
-                "Server endpoints could not be saved. Credentials were cleared to keep the connection safe.",
+                "The server URL could not be saved. The prior credential was deleted to keep the connection safe.",
             ));
         }
 
         *self.server_configuration.write().await = configuration.clone();
-        *self.authorization.write().await = authorization;
         self.provider_generation.fetch_add(1, Ordering::AcqRel);
         self.force_unconfigured_with_errors(Vec::new()).await;
-        drop(provider_operation);
         self.connection_control
             .send(ConnectionControl::ConfigurationChanged)
             .await
             .map_err(|_| CommandError::internal("Connection supervisor is unavailable."))?;
         self.log.info(
             "configuration",
-            "OpenPrinter server endpoints changed; prior credentials were cleared.",
+            "OpenPrinter server URL changed; prior credentials were deleted.",
         );
         self.emit(STATE_CHANGED_EVENT);
         Ok(configuration)
+    }
+
+    async fn forget_connection(&self) -> Result<(), CommandError> {
+        if let Some(connection) = self.connection.write().await.take() {
+            self.key_manager
+                .delete(&connection.credential_ref)
+                .await
+                .map_err(|error| {
+                    CommandError::new("credential_delete_failed", error.to_string())
+                })?;
+        }
+        self.storage
+            .set_setting(CONNECTION_SETTING, &serde_json::Value::Null)
+            .await
+            .map_err(|error| CommandError::new("connection_store_failed", error.to_string()))?;
+        *self.connection_state.write().await = OpenPrinterConnectionState::Unpaired;
+        self.force_unconfigured_with_errors(Vec::new()).await;
+        Ok(())
     }
 
     async fn force_unconfigured(&self, message: impl AsRef<str>) {
@@ -821,15 +911,8 @@ impl DesktopService {
         self.emit(STATE_CHANGED_EVENT);
     }
 
-    pub(crate) async fn invalidate_credentials(&self, message: impl AsRef<str>) {
+    pub(crate) async fn authentication_failed(&self, message: impl AsRef<str>, revoked: bool) {
         let message = sanitize(message.as_ref());
-        if let Err(error) = self.credentials.clear().await {
-            self.log.error(
-                "authentication",
-                format!("Could not clear rejected credentials: {error}"),
-            );
-        }
-        *self.agent_id.write().await = None;
         let current = self.agent.handle().snapshot().await.state;
         if matches!(
             current,
@@ -841,11 +924,11 @@ impl DesktopService {
                 .transition(AgentState::Disconnected)
                 .await;
         }
-        let _ = self
-            .agent
-            .handle()
-            .transition(AgentState::Unconfigured)
-            .await;
+        *self.connection_state.write().await = if revoked {
+            OpenPrinterConnectionState::CredentialRevoked
+        } else {
+            OpenPrinterConnectionState::AuthenticationFailed
+        };
         self.agent
             .handle()
             .set_active_errors(vec![message.clone()])
@@ -858,6 +941,11 @@ impl DesktopService {
         if let Err(error) = self.agent.handle().transition(state).await {
             self.log.warn("agent", error.to_string());
         }
+        self.emit(STATE_CHANGED_EVENT);
+    }
+
+    pub(crate) async fn set_connection_phase(&self, state: OpenPrinterConnectionState) {
+        *self.connection_state.write().await = state;
         self.emit(STATE_CHANGED_EVENT);
     }
 
@@ -925,17 +1013,6 @@ impl DesktopService {
                 }
             }
         });
-    }
-
-    async fn authorization_failed(&self, message: impl AsRef<str>) {
-        let message = sanitize(message.as_ref());
-        self.log.error("authentication", &message);
-        self.agent.handle().set_active_errors(vec![message]).await;
-        let _ = self
-            .agent
-            .handle()
-            .transition(AgentState::Unconfigured)
-            .await;
     }
 
     pub(crate) async fn apply_process_outcome(

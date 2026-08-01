@@ -9,7 +9,7 @@ operating-system services.
   Manager, or freedesktop Secret Service
 - A zeroizing, redacted secret value type
 - Product-scoped application data/cache/log paths
-- System browser opening restricted to credential-free HTTP(S) URLs
+- Product documentation/support/legal link opening restricted to credential-free HTTP(S) URLs
 - Sanitized platform and hostname metadata
 
 The crate also defines narrow start-on-login, notification, power, and
@@ -27,7 +27,7 @@ pretend an operation succeeded.
   `SingleInstanceManager`, and explicit unsupported fallbacks
 
 This crate has no Tauri dependency. `oppa-auth` consumes its secure credential
-and browser boundaries, while the desktop host may adapt native integrations.
+boundary, while the desktop host uses browser and other native integrations.
 
 ## Development
 

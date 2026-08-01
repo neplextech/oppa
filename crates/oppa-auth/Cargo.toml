@@ -3,24 +3,22 @@ name = "oppa-auth"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Provider-neutral PKCE authorization and credential lifecycle for OPPA"
+description = "OpenPrinter discovery, pairing, and Ed25519 credential lifecycle for OPPA"
 readme = "README.md"
 
 [dependencies]
-base64 = "0.22.1"
-chrono = "0.4.45"
-oppa-core = { path = "../oppa-core" }
+base64.workspace = true
+ed25519-dalek = { version = "2", features = ["zeroize"] }
 oppa-platform = { path = "../oppa-platform" }
-oppa-product = { path = "../oppa-product" }
-rand = "0.9.2"
-reqwest = { version = "0.13.4", features = ["form", "json"] }
-serde = { version = "1.0.229", features = ["derive"] }
-serde_json = "1.0.145"
-sha2 = "0.10.9"
-subtle = "2.6.1"
-thiserror = "2.0.19"
-tokio = { version = "1.53.1", features = ["io-util", "net", "sync", "time"] }
-url = "2.5.8"
+oppa-protocol = { path = "../oppa-protocol" }
+rand.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+url.workspace = true
+uuid.workspace = true
+zeroize.workspace = true
 
 [dev-dependencies]
-tokio = { version = "1.53.1", features = ["macros", "rt-multi-thread"] }
+tokio.workspace = true

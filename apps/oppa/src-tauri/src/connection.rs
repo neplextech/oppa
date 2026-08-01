@@ -5,16 +5,15 @@ use std::{
 };
 
 use async_trait::async_trait;
-use chrono::Duration as ChronoDuration;
 use oppa_agent::{
     AgentRuntimeError, AgentState, OutboundReportError, OutboundReporter, ReceiveJobOutcome,
     ServerJobOutcome,
 };
-use oppa_auth::AuthorizationClient;
 use oppa_core::Timestamp;
 use oppa_protocol::{
-    AgentHeartbeat, AgentHello, AgentMessage, AgentMessageKind, AuthenticationMetadata,
-    AuthenticationMethod, PrinterInventory, ProtocolVersion, ServerMessage, ServerMessageKind,
+    AgentHeartbeat, AgentHello, AgentMessage, AgentMessageKind, GatewayAuthenticationResponse,
+    GatewayAuthenticationServerMessage, PrinterInventory, ProtocolVersion, ServerMessage,
+    ServerMessageKind,
 };
 use oppa_transport::{
     AgentTransport, BackoffPolicy, ReconnectBackoff, TransportConfig, TransportError,
@@ -25,7 +24,7 @@ use uuid::Uuid;
 
 use crate::{
     error::sanitize,
-    models::{ConnectedServiceSummary, DesktopJobState, JobSummary},
+    models::{ConnectedServiceSummary, DesktopJobState, JobSummary, OpenPrinterConnectionState},
     service::{DesktopService, JOBS_CHANGED_EVENT, PRINTERS_CHANGED_EVENT},
 };
 
@@ -130,54 +129,55 @@ pub async fn run_connection_supervisor(
             }
         }
 
-        // Credentials, OAuth endpoints, and the gateway endpoint are one
-        // provider snapshot. Configuration changes cannot interleave while
-        // credentials are loaded or refreshed.
-        let (credential_load, gateway_endpoint, provider_generation) = {
+        let (connection, server_url, provider_generation) = {
             let _provider_operation = service.provider_operation.lock().await;
             let server_configuration = service.server_configuration.read().await.clone();
-            let authorization = service.authorization.read().await.clone();
-            let credential_load = load_connection_tokens(&service, &authorization).await;
             (
-                credential_load,
-                server_configuration.gateway_url,
+                service.connection.read().await.clone(),
+                server_configuration.server_url,
                 service.provider_generation.load(Ordering::Acquire),
             )
         };
-        let tokens = match credential_load {
-            CredentialLoad::Ready(tokens) => tokens,
-            CredentialLoad::Unconfigured => {
-                automatic_reconnect = false;
-                continue;
-            }
-            CredentialLoad::Retry => {
-                let Some((_attempt, delay)) = backoff.next_delay().ok().flatten() else {
+        let Some(connection) = connection else {
+            automatic_reconnect = false;
+            continue;
+        };
+        let discovered = match service.pairing_client.discover(&server_url).await {
+            Ok(discovered) => discovered,
+            Err(error) => {
+                service
+                    .set_connection_phase(OpenPrinterConnectionState::DiscoveryFailed)
+                    .await;
+                service.set_connection_error(error.to_string()).await;
+                retry_after = next_retry_delay(&mut backoff);
+                if retry_after.is_none() {
                     automatic_reconnect = false;
-                    continue;
-                };
-                match wait_delay_or_control(&service, delay, &mut controls).await {
-                    DelayOutcome::Continue => {}
-                    DelayOutcome::Reconnect => backoff.reset(),
-                    DelayOutcome::Pause => {
-                        automatic_reconnect = false;
-                        continue;
-                    }
-                    DelayOutcome::Shutdown => {
-                        finish_outbound(&mut outbound, "application is shutting down");
-                        return;
-                    }
                 }
                 continue;
             }
         };
+        if discovered.document.server.id != connection.server_id {
+            service
+                .authentication_failed(
+                    "The configured URL now identifies a different server. Forget it and pair again.",
+                    false,
+                )
+                .await;
+            automatic_reconnect = false;
+            continue;
+        }
+        let gateway_endpoint = discovered.gateway_url.clone();
         {
             let _provider_operation = service.provider_operation.lock().await;
             if service.provider_generation.load(Ordering::Acquire) != provider_generation {
                 automatic_reconnect = false;
                 continue;
             }
-            *service.agent_id.write().await = Some(tokens.agent_id.to_string());
+            *service.agent_id.write().await = Some(connection.agent_id.clone());
             *service.connected_service.write().await = None;
+            service
+                .set_connection_phase(OpenPrinterConnectionState::Connecting)
+                .await;
             service.transition(AgentState::Connecting).await;
         }
 
@@ -201,7 +201,6 @@ pub async fn run_connection_supervisor(
                 continue;
             }
         };
-        transport.set_bearer_token(tokens.access_token.clone());
         if let Err(error) = transport.connect().await {
             {
                 let _provider_operation = service.provider_operation.lock().await;
@@ -211,13 +210,6 @@ pub async fn run_connection_supervisor(
                 }
                 service.transition(AgentState::Disconnected).await;
                 service.set_connection_error(error.to_string()).await;
-                if matches!(&error, TransportError::AuthenticationRejected { .. }) {
-                    service
-                        .invalidate_credentials("Gateway rejected the saved authorization.")
-                        .await;
-                    automatic_reconnect = false;
-                    continue;
-                }
             }
             if !error.is_retryable() {
                 automatic_reconnect = false;
@@ -250,7 +242,87 @@ pub async fn run_connection_supervisor(
             }
         }
 
-        let hello = hello_message(&service, tokens.agent_id.as_str());
+        service
+            .set_connection_phase(OpenPrinterConnectionState::Authenticating)
+            .await;
+        let challenge = match transport.receive_authentication().await {
+            Ok(GatewayAuthenticationServerMessage::Challenge(challenge)) => challenge,
+            Ok(_) => {
+                service
+                    .authentication_failed(
+                        "Gateway did not send an authentication challenge.",
+                        false,
+                    )
+                    .await;
+                automatic_reconnect = false;
+                continue;
+            }
+            Err(error) => {
+                service
+                    .authentication_failed(error.to_string(), false)
+                    .await;
+                automatic_reconnect = false;
+                continue;
+            }
+        };
+        let signature = match service
+            .key_manager
+            .sign_challenge(&connection.credential_ref, &challenge)
+            .await
+        {
+            Ok(signature) => signature,
+            Err(error) => {
+                service
+                    .authentication_failed(error.to_string(), false)
+                    .await;
+                automatic_reconnect = false;
+                continue;
+            }
+        };
+        if let Err(error) = transport
+            .send_authentication_response(GatewayAuthenticationResponse {
+                message_type: "auth.response".to_owned(),
+                challenge_id: challenge.challenge_id,
+                agent_id: connection.agent_id.clone(),
+                key_id: connection.key_id.clone(),
+                algorithm: oppa_protocol::SIGNATURE_ALGORITHM.to_owned(),
+                signature,
+            })
+            .await
+        {
+            service.set_connection_error(error.to_string()).await;
+            retry_after = next_retry_delay(&mut backoff);
+            continue;
+        }
+        match transport.receive_authentication().await {
+            Ok(GatewayAuthenticationServerMessage::Accepted(accepted))
+                if accepted.agent_id == connection.agent_id => {}
+            Ok(_) => {
+                service
+                    .authentication_failed("Gateway authentication response was invalid.", false)
+                    .await;
+                automatic_reconnect = false;
+                continue;
+            }
+            Err(TransportError::AuthenticationRejected { code }) => {
+                let revoked = code == "credential_revoked";
+                service
+                    .authentication_failed(
+                        format!("Gateway authentication failed: {code}"),
+                        revoked,
+                    )
+                    .await;
+                automatic_reconnect = false;
+                continue;
+            }
+            Err(error) => {
+                service.set_connection_error(error.to_string()).await;
+                retry_after = next_retry_delay(&mut backoff);
+                continue;
+            }
+        }
+
+        let hello = hello_message(&service, &connection.agent_id);
         let hello_message_id = hello.message_id.clone();
         if let Err(error) = transport.send(hello).await {
             let _provider_operation = service.provider_operation.lock().await;
@@ -436,6 +508,17 @@ pub async fn run_connection_supervisor(
         let _provider_operation = service.provider_operation.lock().await;
         if service.provider_generation.load(Ordering::Acquire) == provider_generation {
             *service.connected_service.write().await = None;
+            let phase = *service.connection_state.read().await;
+            if matches!(
+                phase,
+                OpenPrinterConnectionState::Connecting
+                    | OpenPrinterConnectionState::Authenticating
+                    | OpenPrinterConnectionState::Connected
+            ) {
+                service
+                    .set_connection_phase(OpenPrinterConnectionState::Paired)
+                    .await;
+            }
             service.transition(AgentState::Disconnected).await;
         }
     }
@@ -488,6 +571,9 @@ async fn handle_server_message(
                 gateway_url: gateway_url.to_owned(),
             });
             service.agent.handle().set_active_errors(Vec::new()).await;
+            service
+                .set_connection_phase(OpenPrinterConnectionState::Connected)
+                .await;
             service.transition(AgentState::Connected).await;
             service.log.info(
                 "transport",
@@ -497,18 +583,6 @@ async fn handle_server_message(
                 ),
             );
 
-            let auth_metadata = envelope(
-                AgentMessageKind::AuthenticationMetadata(AuthenticationMetadata {
-                    method: AuthenticationMethod::Oauth2,
-                    subject: service.agent_id.read().await.clone(),
-                    metadata: None,
-                }),
-                None,
-            );
-            if let Err(error) = transport.send(auth_metadata).await {
-                service.set_connection_error(error.to_string()).await;
-                return MessageDisposition::Reconnect { delay: None };
-            }
             if let Err(error) = send_inventory(service, transport, None).await {
                 service.set_connection_error(error.to_string()).await;
                 return MessageDisposition::Reconnect { delay: None };
@@ -747,76 +821,6 @@ fn desktop_job_state(state: oppa_core::JobState) -> DesktopJobState {
     }
 }
 
-enum CredentialLoad {
-    Ready(oppa_auth::TokenSet),
-    Unconfigured,
-    Retry,
-}
-
-async fn load_connection_tokens(
-    service: &DesktopService,
-    authorization: &AuthorizationClient,
-) -> CredentialLoad {
-    let mut tokens = match service.credentials.load().await {
-        Ok(Some(tokens)) => tokens,
-        Ok(None) => {
-            service
-                .invalidate_credentials("No secure gateway credentials are configured.")
-                .await;
-            return CredentialLoad::Unconfigured;
-        }
-        Err(error) => {
-            service.set_connection_error(error.to_string()).await;
-            return CredentialLoad::Retry;
-        }
-    };
-    if tokens.expires_within(ChronoDuration::zero()) && tokens.refresh_token.is_none() {
-        service
-            .invalidate_credentials(
-                "Saved authorization expired and no refresh credential is available.",
-            )
-            .await;
-        return CredentialLoad::Unconfigured;
-    }
-    if tokens.expires_within(ChronoDuration::minutes(5)) && tokens.refresh_token.is_some() {
-        match authorization.refresh(&tokens).await {
-            Ok(refreshed) => {
-                if let Err(error) = service.credentials.save(&refreshed).await {
-                    service.set_connection_error(error.to_string()).await;
-                    return CredentialLoad::Retry;
-                }
-                tokens = refreshed;
-                service
-                    .log
-                    .info("authentication", "Gateway credential refreshed.");
-            }
-            Err(error) => {
-                if refresh_error_revokes(&error) {
-                    service
-                        .invalidate_credentials(format!(
-                            "Saved authorization can no longer be refreshed: {error}"
-                        ))
-                        .await;
-                    return CredentialLoad::Unconfigured;
-                }
-                service.set_connection_error(error.to_string()).await;
-                return CredentialLoad::Retry;
-            }
-        }
-    }
-    CredentialLoad::Ready(tokens)
-}
-
-fn refresh_error_revokes(error: &oppa_auth::AuthError) -> bool {
-    matches!(
-        error,
-        oppa_auth::AuthError::Provider(_)
-            | oppa_auth::AuthError::InvalidTokenResponse(_)
-            | oppa_auth::AuthError::MissingRefreshToken
-            | oppa_auth::AuthError::CredentialEncoding(_)
-    )
-}
-
 fn hello_message(service: &DesktopService, agent_id: &str) -> AgentMessage {
     envelope(
         AgentMessageKind::Hello(AgentHello {
@@ -932,7 +936,6 @@ fn finish_outbound(outbound: &mut mpsc::Receiver<OutboundRequest>, message: &str
 
 #[cfg(test)]
 mod tests {
-    use oppa_auth::AuthError;
     use oppa_protocol::{AgentMessageKind, Validate};
 
     use super::envelope;
@@ -950,15 +953,5 @@ mod tests {
 
         assert_ne!(first.message_id, second.message_id);
         assert!(first.validate().is_ok());
-    }
-
-    #[test]
-    fn provider_rejection_revokes_but_network_failure_retries() {
-        assert!(super::refresh_error_revokes(&AuthError::Provider(
-            "invalid_grant".to_owned()
-        )));
-        assert!(!super::refresh_error_revokes(&AuthError::Http(
-            "temporarily unavailable".to_owned()
-        )));
     }
 }

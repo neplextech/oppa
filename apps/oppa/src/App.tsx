@@ -54,7 +54,7 @@ export default function App() {
   const [theme, setThemeState] = useState<Theme>(initialTheme);
   const [developerMode, setDeveloperModeState] = useState(() => localStorage.getItem('oppa-developer-mode') === 'true');
   const [commandOpen, setCommandOpen] = useState(false);
-  const { status, printers, jobs, diagnostics, loading, busy, error, actions } = useAgent();
+  const { status, printers, jobs, diagnostics, discoveredService, loading, busy, error, actions } = useAgent();
 
   function setTheme(t: Theme) {
     localStorage.setItem('oppa-theme', t);
@@ -180,14 +180,23 @@ export default function App() {
     );
   }
 
-  if (!status.configured || status.state === 'unconfigured' || status.state === 'authorizing') {
+  if (
+    status.connectionState === 'idle' ||
+    status.connectionState === 'discovering' ||
+    status.connectionState === 'discovery_failed' ||
+    status.connectionState === 'unpaired' ||
+    status.connectionState === 'pairing' ||
+    status.connectionState === 'authentication_failed' ||
+    status.connectionState === 'credential_revoked'
+  ) {
     return (
       <SetupScreen
         status={status}
+        discoveredService={discoveredService}
         busy={busy}
-        onAuthorize={async () => {
-          await actions.authorize();
-        }}
+        onDiscover={actions.discoverServer}
+        onPair={actions.pairServer}
+        onForget={actions.forgetServer}
         onSaveServerConfiguration={actions.setServerConfiguration}
         onResetServerConfiguration={actions.resetServerConfiguration}
       />
@@ -265,6 +274,7 @@ export default function App() {
           onReconnect={actions.reconnect}
           onSaveServerConfiguration={actions.setServerConfiguration}
           onResetServerConfiguration={actions.resetServerConfiguration}
+          onForgetServer={actions.forgetServer}
           onOpenProductLink={actions.openProductLink}
         />
       );

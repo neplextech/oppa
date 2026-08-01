@@ -4,12 +4,6 @@
   "productName": "OPPA Local Development",
   "applicationId": "com.neplextech.oppa.local",
   "description": "Open Printer Proxy Agent configured for the local Node.js example",
-  "protocol": {
-    "clientId": "oppa-desktop",
-    "authorizationUrl": "http://127.0.0.1:8787/authorize",
-    "tokenUrl": "http://127.0.0.1:8787/token",
-    "gatewayUrl": "ws://127.0.0.1:8787/openprinter/agent"
-  },
   "updates": {
     "endpoint": null
   },

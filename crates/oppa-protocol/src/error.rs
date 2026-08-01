@@ -57,7 +57,7 @@ pub enum ProtocolError {
         /// Primitive version value rendered without the rest of the payload.
         received: String,
         /// Versions understood by this crate.
-        supported: &'static [u16],
+        supported: &'static [&'static str],
     },
     /// Serialization failed after semantic validation.
     Encoding(String),

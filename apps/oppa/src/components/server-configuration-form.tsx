@@ -37,13 +37,7 @@ export function ServerConfigurationForm({
     setInput(value);
   }, [value]);
 
-  const dirty = useMemo(
-    () =>
-      input.authorizationUrl !== value.authorizationUrl ||
-      input.tokenUrl !== value.tokenUrl ||
-      input.gatewayUrl !== value.gatewayUrl,
-    [input, value],
-  );
+  const dirty = useMemo(() => input.serverUrl !== value.serverUrl, [input, value]);
   const busy = saving || resetting;
 
   async function submit() {
@@ -74,9 +68,9 @@ export function ServerConfigurationForm({
     >
       <FieldGroup className={compact ? 'gap-3' : undefined}>
         <Field>
-          <FieldLabel htmlFor="server-authorization-url">Authorization URL</FieldLabel>
+          <FieldLabel htmlFor="server-url">Server URL</FieldLabel>
           <Input
-            id="server-authorization-url"
+            id="server-url"
             type="url"
             inputMode="url"
             autoCapitalize="none"
@@ -84,44 +78,10 @@ export function ServerConfigurationForm({
             spellCheck={false}
             required
             disabled={busy}
-            value={input.authorizationUrl}
-            onChange={(event) => setInput((current) => ({ ...current, authorizationUrl: event.target.value }))}
+            value={input.serverUrl}
+            onChange={(event) => setInput({ serverUrl: event.target.value })}
           />
-          {!compact ? <FieldDescription>Browser authorization endpoint.</FieldDescription> : null}
-        </Field>
-
-        <Field>
-          <FieldLabel htmlFor="server-token-url">Token URL</FieldLabel>
-          <Input
-            id="server-token-url"
-            type="url"
-            inputMode="url"
-            autoCapitalize="none"
-            autoCorrect="off"
-            spellCheck={false}
-            required
-            disabled={busy}
-            value={input.tokenUrl}
-            onChange={(event) => setInput((current) => ({ ...current, tokenUrl: event.target.value }))}
-          />
-          {!compact ? <FieldDescription>OAuth token exchange and refresh endpoint.</FieldDescription> : null}
-        </Field>
-
-        <Field>
-          <FieldLabel htmlFor="server-gateway-url">Gateway URL</FieldLabel>
-          <Input
-            id="server-gateway-url"
-            type="url"
-            inputMode="url"
-            autoCapitalize="none"
-            autoCorrect="off"
-            spellCheck={false}
-            required
-            disabled={busy}
-            value={input.gatewayUrl}
-            onChange={(event) => setInput((current) => ({ ...current, gatewayUrl: event.target.value }))}
-          />
-          {!compact ? <FieldDescription>OpenPrinter WebSocket gateway endpoint.</FieldDescription> : null}
+          {!compact ? <FieldDescription>Discovery supplies the pairing and gateway endpoints.</FieldDescription> : null}
         </Field>
       </FieldGroup>
 

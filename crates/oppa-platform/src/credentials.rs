@@ -13,7 +13,7 @@ use crate::{PlatformError, PlatformResult};
 pub struct SecretValue(Zeroizing<String>);
 
 impl SecretValue {
-    /// Wraps a token or serialized credential.
+    /// Wraps serialized secret credential material.
     #[must_use]
     pub fn new(value: impl Into<String>) -> Self {
         Self(Zeroizing::new(value.into()))
@@ -32,7 +32,7 @@ impl fmt::Debug for SecretValue {
     }
 }
 
-/// Secure credential storage used by the authorization layer.
+/// Secure credential storage used by local key and secret-owning layers.
 #[async_trait]
 pub trait CredentialStore: Send + Sync {
     /// Stores or replaces a secret for a logical account.

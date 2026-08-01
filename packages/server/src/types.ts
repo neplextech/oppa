@@ -1,6 +1,11 @@
 import type {
   AgentMessage,
+  GatewayAuthenticationFailureCode,
+  OpenPrinterDiscoveryDocument,
+  OpenPrinterErrorEnvelope,
+  OpenPrinterPairingResponse,
   OpenPrinterBrandMetadata,
+  PublicEd25519Jwk,
   PrintJob,
   PrinterDescriptor,
   ServerMessage,
@@ -24,9 +29,9 @@ export type OpenPrinterApplicationMessage = Exclude<
   ServerMessageOf<'server.hello'> | ServerMessageOf<'server.heartbeat'> | ServerMessageOf<'server.disconnect'>
 >;
 
-/** Identity authenticated by the host before accepting a protocol session. */
+/** Identity established from a successfully verified paired public credential. */
 export interface AuthenticatedAgent<Metadata> {
-  /** Stable identity authorized by the host application. */
+  /** Stable identity registered with the verified public credential. */
   readonly agentId: string;
   /** Host-owned, non-secret context retained with this session. */
   readonly metadata?: Metadata;
@@ -34,7 +39,7 @@ export interface AuthenticatedAgent<Metadata> {
 
 /** Immutable public snapshot of an authenticated, negotiated agent session. */
 export interface ConnectedAgent<Metadata> {
-  /** Stable identity authorized by the host application. */
+  /** Stable identity registered with the verified public credential. */
   readonly agentId: string;
   /** Unique identifier for this logical transport session. */
   readonly sessionId: string;
@@ -51,11 +56,12 @@ export interface ConnectedAgent<Metadata> {
 }
 
 /** Lifecycle state of one accepted protocol session. */
-export type OpenPrinterSessionState = 'handshaking' | 'connected' | 'closing' | 'closed';
+export type OpenPrinterSessionState = 'authenticating' | 'handshaking' | 'connected' | 'closing' | 'closed';
 
 /** Why a negotiated agent session ended. */
 export type AgentDisconnectReason =
   | 'peer-closed'
+  | 'authentication-failed'
   | 'heartbeat-timeout'
   | 'protocol-error'
   | 'server-disconnect'
@@ -96,14 +102,83 @@ export interface OpenPrinterTransportClosedEvent {
   readonly detail?: string;
 }
 
-/** Input used to open one protocol session after host authentication. */
-export interface AcceptOpenPrinterSessionInput<Metadata> {
-  /** Host-authenticated identity authoritative for the agent hello. */
-  readonly identity: AuthenticatedAgent<Metadata>;
+/** Input used to open one transport that the SDK will authenticate. */
+export interface AcceptOpenPrinterSessionInput {
   /** Optional host-assigned logical session identifier. */
   readonly sessionId?: string;
   /** Host-owned connection, socket, broker, or other message transport. */
   readonly transport: OpenPrinterTransport;
+}
+
+/** Opaque metadata bound to a one-time pairing grant by the host application. */
+export interface PairingCodeRecord<Metadata> {
+  readonly code: string;
+  readonly createdAt: Date;
+  readonly expiresAt: Date;
+  readonly metadata?: Metadata;
+}
+
+/** Input persisted by a pairing-code store. */
+export type CreatePairingCodeStoreInput<Metadata> = PairingCodeRecord<Metadata>;
+
+/** Result of atomically trying to consume a pairing code. */
+export type PairingCodeConsumeResult = 'consumed' | 'expired' | 'invalid' | 'already-consumed';
+
+/** Storage boundary for short-lived, single-use pairing grants. */
+export interface PairingCodeStore<Metadata> {
+  create(input: CreatePairingCodeStoreInput<Metadata>): Promise<PairingCodeRecord<Metadata>>;
+  consume(
+    code: string,
+    now: Date,
+    register: (record: PairingCodeRecord<Metadata>) => Promise<void>,
+  ): Promise<PairingCodeConsumeResult>;
+}
+
+/** Public credential registered for one paired agent. */
+export interface AgentCredentialRecord<Metadata> {
+  readonly agentId: string;
+  readonly keyId: string;
+  readonly algorithm: 'Ed25519';
+  readonly publicKey: PublicEd25519Jwk;
+  readonly createdAt: Date;
+  readonly revokedAt: Date | null;
+  readonly metadata?: Metadata;
+}
+
+/** Credential persistence boundary owned by the host application. */
+export interface AgentCredentialStore<Metadata> {
+  create(input: AgentCredentialRecord<Metadata>): Promise<AgentCredentialRecord<Metadata>>;
+  find(agentId: string, keyId: string): Promise<AgentCredentialRecord<Metadata> | null>;
+  revoke(agentId: string, keyId: string, revokedAt: Date): Promise<void>;
+}
+
+/** Input used by the host to create a temporary pairing code. */
+export interface CreatePairingCodeInput<Metadata> {
+  readonly expiresInMs?: number;
+  readonly metadata?: Metadata;
+}
+
+/** Temporary code returned only to the host application that created it. */
+export type CreatedPairingCode<Metadata> = PairingCodeRecord<Metadata>;
+
+/** Optional request context passed to pairing rate-limit policy. */
+export interface PairingAttemptContext {
+  readonly remoteAddress?: string;
+}
+
+/** Pairing rate-limit hook result. */
+export interface PairingRateLimitResult {
+  readonly allowed: boolean;
+  readonly retryAfterMs?: number;
+}
+
+/** Structural WebSocket used only by the optional convenience adapter. */
+export interface OpenPrinterGatewaySocket {
+  send(data: string, callback?: (error?: Error) => void): unknown;
+  close(code?: number, reason?: string): unknown;
+  on(event: 'message', listener: (data: unknown) => void): unknown;
+  on(event: 'close', listener: (code?: number, reason?: unknown) => void): unknown;
+  on(event: 'error', listener: (error: Error) => void): unknown;
 }
 
 /** Common context for a validated message from an authenticated agent. */
@@ -166,6 +241,7 @@ export interface HeartbeatTimeoutEvent<Metadata> {
 
 /** Stable categories for rejected agent protocol behavior. */
 export type ServerProtocolErrorCode =
+  | GatewayAuthenticationFailureCode
   | 'handshake-timeout'
   | 'identity-mismatch'
   | 'invalid-message'
@@ -191,7 +267,6 @@ export interface ServerProtocolErrorEvent<Metadata> {
 export type OpenPrinterCallbackName =
   | 'onAgentConnected'
   | 'onAgentDisconnected'
-  | 'onAuthenticationMetadata'
   | 'onCallbackError'
   | 'onDiagnostics'
   | 'onHeartbeatTimeout'
@@ -217,6 +292,18 @@ export interface OpenPrinterServerOptions<Metadata> {
   readonly serverId?: string;
   /** Human-readable server SDK or host version advertised to agents. */
   readonly serverVersion?: string;
+  /** Framework-independent endpoint path configuration. */
+  readonly paths?: Partial<OpenPrinterServerPaths>;
+  /** Storage for temporary pairing grants; defaults to an in-memory implementation. */
+  readonly pairingCodeStore?: PairingCodeStore<Metadata>;
+  /** Storage for agent public keys; defaults to an in-memory implementation. */
+  readonly credentialStore?: AgentCredentialStore<Metadata>;
+  /** Time allowed for the initial challenge response. */
+  readonly authenticationTimeoutMs?: number;
+  /** Socket-bound challenge lifetime. */
+  readonly challengeTtlMs?: number;
+  /** Optional application rate-limit policy for pairing attempts. */
+  readonly checkPairingRateLimit?: (context: PairingAttemptContext) => Awaitable<PairingRateLimitResult | boolean>;
   /** Maximum accepted encoded message size in bytes. */
   readonly maxMessageBytes?: number;
   /** Time allowed for the first validated `agent.hello`. */
@@ -233,10 +320,6 @@ export interface OpenPrinterServerOptions<Metadata> {
   readonly onAgentConnected?: (event: AgentConnectedEvent<Metadata>) => Awaitable<void>;
   /** Called exactly once for a session whose handshake had completed. */
   readonly onAgentDisconnected?: (event: AgentDisconnectedEvent<Metadata>) => Awaitable<void>;
-  /** Called for optional, validated, non-secret agent authentication context. */
-  readonly onAuthenticationMetadata?: (
-    event: AgentMessageEvent<Metadata, AgentMessageOf<'agent.authentication_metadata'>>,
-  ) => Awaitable<void>;
   /** Called after a complete or incremental inventory is applied. */
   readonly onPrintersChanged?: (event: PrintersChangedEvent<Metadata>) => Awaitable<void>;
   /** Called after the agent durably persists a delivered job. */
@@ -311,8 +394,8 @@ export type JobCancellation = ServerMessageOf<'server.cancel_job'>['payload'];
 
 /** One host-authenticated OpenPrinter protocol session. */
 export interface OpenPrinterSession<Metadata> {
-  /** Stable host-authenticated identity. */
-  readonly identity: AuthenticatedAgent<Metadata>;
+  /** Authenticated identity, or `null` until challenge verification succeeds. */
+  readonly identity: AuthenticatedAgent<Metadata> | null;
   /** Stable logical session identifier. */
   readonly sessionId: string;
   /** Current protocol lifecycle state. */
@@ -350,6 +433,25 @@ export interface OpenPrinterSession<Metadata> {
  * connection registry, cluster coordination, or broker.
  */
 export interface OpenPrinterServer<Metadata> {
+  /** Validated endpoint paths integrations should mount. */
+  readonly paths: OpenPrinterServerPaths;
+  /** Build the current discovery response. */
+  discover(): Promise<OpenPrinterDiscoveryDocument>;
+  /** Create a cryptographically random, short-lived, one-time pairing code. */
+  createPairingCode(input?: CreatePairingCodeInput<Metadata>): Promise<CreatedPairingCode<Metadata>>;
+  /** Validate and redeem one JSON pairing request. */
+  pair(input: unknown, context?: PairingAttemptContext): Promise<OpenPrinterPairingResponse | OpenPrinterErrorEnvelope>;
+  /** Revoke a registered public credential. */
+  revokeCredential(agentId: string, keyId: string): Promise<void>;
   /** Open one independent protocol session over a host-owned transport. */
-  accept(input: AcceptOpenPrinterSessionInput<Metadata>): OpenPrinterSession<Metadata>;
+  accept(input: AcceptOpenPrinterSessionInput): OpenPrinterSession<Metadata>;
+  /** Convenience bridge for a `ws`-compatible socket without owning its listener. */
+  handleGatewayConnection(socket: OpenPrinterGatewaySocket): OpenPrinterSession<Metadata>;
+}
+
+/** HTTP and WebSocket paths exposed by the server SDK. */
+export interface OpenPrinterServerPaths {
+  readonly discovery: string;
+  readonly pairing: string;
+  readonly gateway: string;
 }

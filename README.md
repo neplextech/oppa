@@ -42,7 +42,7 @@ apps/
   www/                  Fumadocs landing and documentation site
 crates/
   oppa-agent/           shell-independent runtime and state machine
-  oppa-auth/            PKCE pairing and credential lifecycle
+  oppa-auth/            discovery, pairing, and Ed25519 credentials
   oppa-core/            typed IDs, timestamps, and shared domain primitives
   oppa-discovery/       provider isolation, normalization, and inventory changes
   oppa-platform/        credentials, paths, startup, notifications, identity
@@ -60,7 +60,7 @@ protocol/
   fixtures/             shared cross-language payloads
   schema/               generated language-neutral JSON Schema
 examples/
-  node-server/          local development authorization and integration
+  node-server/          local discovery, pairing, and gateway integration
 products/
   default/              default open-source product definition
 ```
@@ -90,7 +90,7 @@ In another terminal, launch the desktop agent with the default local product:
 OPPA_PRODUCT_DIR=products/default pnpm oppa:dev
 ```
 
-Authorize the agent, create a virtual printer, and send a test job from the example endpoint. See
+Enter the example server URL and its logged pairing code, create a virtual printer, and send a test job. See
 the [Getting Started guide](apps/www/content/docs/getting-started.mdx) for the complete walkthrough.
 
 Run the documentation site:
@@ -121,6 +121,7 @@ import { createOpenPrinterServer } from '@openprinter/server';
 
 const openPrinter = createOpenPrinterServer({
   brand: { name: 'Acme POS' },
+  serverId: 'acme-openprinter',
   onAgentConnected({ agent, session }) {
     liveSessions.register(agent.agentId, session);
   },
@@ -136,7 +137,6 @@ const openPrinter = createOpenPrinterServer({
 });
 
 const session = openPrinter.accept({
-  identity: await authenticateConnection(request),
   transport: {
     send: (message) => connection.send(message),
     close: ({ reason, detail }) => connection.close(mapCloseReason(reason), detail),
@@ -147,9 +147,10 @@ connection.onMessage((message) => void session.receive(message));
 connection.onClose(() => void session.transportClosed());
 ```
 
-The host owns authentication, WebSocket or broker lifecycle, live-session routing, and cluster
-coordination. The application stores a job before selecting a session and calling `sendJob`; if no
-worker owns a live session, the application retains the queued job.
+The SDK authenticates the initial transport challenge against the host-provided public credential
+store. The host owns HTTP/WebSocket lifecycle, durable credential persistence, rate limiting,
+live-session routing, and cluster coordination. The application stores a job before selecting a
+session and calling `sendJob`; if no worker owns a live session, it retains the queued job.
 
 ## Product builds
 
@@ -159,15 +160,13 @@ Product configuration is versioned, validated, and embedded at compile time:
 OPPA_PRODUCT_DIR=products/default pnpm oppa:build
 ```
 
-A product definition controls branding, application identity, the provider-registered OAuth client
-ID, default authorization/token/gateway endpoints, support links, and supported feature switches.
-Users may replace only those three OpenPrinter service endpoints at runtime through OPPA settings.
-The validated values are stored as non-secret internal configuration; changing them clears the
-prior secure credentials and requires authorization with the new service.
+A product definition controls branding, application identity, support links, update configuration,
+and supported feature switches. The user selects one OpenPrinter server base URL at runtime.
+Discovery supplies its pairing and gateway endpoints. Changing the base URL deletes the previous
+local private key and requires pairing with the selected service.
 
-Runtime configuration cannot change product identity, branding, the OAuth client ID, or compiled
-capabilities. It cannot enable a capability that was not compiled into the binary, and OPPA never
-trusts an editable runtime `product.json`.
+Runtime configuration cannot change product identity, branding, or compiled capabilities. It
+cannot enable code absent from the binary, and OPPA never trusts an editable runtime `product.json`.
 
 ## Security
 
@@ -176,11 +175,11 @@ OPPA is a privileged local bridge and deliberately exposes a narrow command surf
 - documented protocol messages only
 - no arbitrary shell, script, filesystem, SQL, or generic proxy commands
 - bounded messages, documents, images, queues, and diagnostic history
-- loopback-only PKCE authorization callback with validated state
-- credentials stored through operating-system secure storage, never SQLite
-- production `https:` and `wss:` product endpoints
+- short-lived, single-use pairing grants and socket-bound Ed25519 challenges
+- private keys stored through operating-system secure storage, never SQLite
+- production `https:` discovery/pairing and `wss:` gateways
 - explicit printer and network timeouts
-- sanitized diagnostics without tokens or full print payloads
+- sanitized diagnostics without private keys, pairing codes, or full print payloads
 
 See the [security documentation](apps/www/content/docs/security.mdx) before deploying an agent
 gateway.

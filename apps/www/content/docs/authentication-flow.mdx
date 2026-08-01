@@ -1,53 +1,84 @@
 ---
 title: Authentication Flow
 description:
-  Provider-neutral PKCE pairing, token exchange, refresh, and
-  credential storage.
+  Server discovery, one-time pairing, and Ed25519 gateway challenges.
 ---
 
-OPPA uses an authorization-code flow with PKCE. The integrating
-platform owns login, account selection, approval, code issuance, token
-issuance, permissions, and revocation.
+OPPA uses one configured OpenPrinter server base URL. It discovers the
+current service identity and endpoints, pairs once with a short-lived
+code, and authenticates each WebSocket connection by signing a server
+challenge.
 
-## Pairing sequence
+```mermaid
+sequenceDiagram
+  actor Administrator
+  participant Server
+  participant OPPA
+  participant KeyStore as OS key store
+  Administrator->>Server: Create temporary pairing code
+  Server-->>Administrator: Pairing code and expiry
+  Administrator->>OPPA: Enter server URL and pairing code
+  OPPA->>KeyStore: Generate and store Ed25519 private key
+  KeyStore-->>OPPA: Credential reference and public key
+  OPPA->>Server: Pairing code and public JWK
+  Server-->>OPPA: agentId, keyId, serverId
+  Server->>OPPA: Socket-bound gateway challenge
+  OPPA->>KeyStore: Sign exact challenge bytes
+  KeyStore-->>OPPA: Ed25519 signature
+  OPPA->>Server: Authentication response
+  Server-->>OPPA: Authentication accepted
+```
 
-1. OPPA generates a cryptographically random state and PKCE verifier.
-2. It binds an ephemeral callback listener to `127.0.0.1`.
-3. It opens the selected service's validated authorization URL in the
-   system browser.
-4. The platform authenticates the user and redirects a short-lived
-   code to the loopback callback.
-5. OPPA compares state in constant time, accepts the code once, and
-   closes the listener.
-6. OPPA exchanges the code and verifier at the configured token
-   endpoint.
-7. Tokens, including a refresh credential when the provider issues
-   one, are written through `oppa-platform` secure credential storage.
+## Discovery
 
-The callback never binds to `0.0.0.0`, a LAN address, or a fixed
-public port. It expires quickly and stops after success, timeout, or
-cancellation.
+OPPA requests `GET /.well-known/openprinter` whenever it needs to
+establish a connection. The validated response contains the protocol
+version, stable server ID, server display/version metadata, pairing
+and gateway endpoints, authentication method, and challenge lifetime.
 
-## Token format
+Relative endpoints resolve against the configured base URL. HTTP
+gateway URLs become WS; HTTPS becomes WSS. A paired configuration
+stores the stable server ID. If discovery later returns another ID for
+that URL, OPPA stops and requires explicit re-pairing.
 
-OpenPrinter does not prescribe JWTs. The server authentication
-callback receives the Bearer token and may validate an opaque
-credential, signed device token, database-backed session, or JWT.
+## Pairing
 
-## Storage
+1. An authorized server workflow creates a random, short-lived pairing
+   code.
+2. The user enters the code in OPPA; it is sent only in the POST body.
+3. OPPA generates an Ed25519 key pair and places the private key in
+   operating-system secure storage.
+4. OPPA sends its agent metadata and public OKP JWK to the discovered
+   pairing endpoint.
+5. The server atomically consumes the code, persists the public
+   credential, and returns `agentId`, `keyId`, `serverId`, and
+   `pairedAt`.
+6. OPPA stores only those non-secret identifiers in settings.
 
-Access and refresh credentials must not be stored in SQLite, product
-configuration, diagnostic bundles, or logs. `oppa-platform` provides a
-secure credential interface backed by the operating system credential
-service. An in-memory implementation exists only for tests.
+The public key is not secret; it is useful only for verifying
+signatures from the private key that remains inside OPPA.
 
-## Revocation and refresh
+Codes are case-insensitive, single-use, and approximately five minutes
+by default. Core SDK code does not log them. Production servers need
+durable stores and attempt rate limiting.
 
-An invalid refresh response moves the agent to an
-authentication-required state and removes unusable credentials.
-Network failures do not erase a still-valid credential. Refresh work
-is bounded and never logs the token body.
+If pairing fails, OPPA removes the newly generated key. Forgetting or
+changing the service deletes the local key and requires a new pairing.
 
-Changing the authorization, token, or gateway URL is a provider
-boundary change. OPPA clears the previous credentials before saving
-the new endpoints and requires a new pairing flow.
+## Gateway challenge
+
+1. The server accepts a WebSocket and immediately sends an
+   unpredictable, socket-bound `auth.challenge`.
+2. OPPA signs the exact decoded challenge bytes with its local private
+   key.
+3. OPPA sends `auth.response` with the challenge, agent, and key
+   identifiers plus the Ed25519 signature.
+4. The server looks up the public key, rejects unknown or revoked
+   credentials, and verifies the signature.
+5. On `auth.accepted`, OPPA sends `agent.hello`; on `auth.rejected`,
+   the socket closes with an actionable state.
+
+Challenges expire and can be consumed only once. The private key never
+crosses the network. Ordinary OpenPrinter messages are not
+individually signed; the authenticated TLS/WebSocket session protects
+subsequent traffic.

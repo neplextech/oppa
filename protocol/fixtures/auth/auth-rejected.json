@@ -1,0 +1,5 @@
+{
+  "type": "auth.rejected",
+  "code": "credential_revoked",
+  "message": "Gateway authentication failed."
+}

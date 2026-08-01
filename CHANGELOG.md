@@ -2,6 +2,19 @@
 
 All notable changes to OPPA and OpenPrinter are documented here.
 
+## Unreleased
+
+### Breaking changes
+
+- Replace the three-endpoint browser/token flow with one server base
+  URL, `/.well-known/openprinter` discovery, one-time pairing codes,
+  locally generated Ed25519 credentials, and gateway challenge
+  authentication.
+- Change protocol version values from numeric `1` to string `"1"` and
+  remove `agent.authentication_metadata`.
+- Change `@openprinter/server` to authenticate accepted transports
+  against pluggable public credential stores before `agent.hello`.
+
 ## 0.2.0 — 2026-07-30
 
 ### Bug Fixes

@@ -38,13 +38,11 @@ export function OverviewScreen({
   const hasErrors = status.activeErrors.length > 0;
 
   const agentTone =
-    status.state === 'connected'
+    status.connectionState === 'connected'
       ? 'connected'
-      : status.state === 'degraded'
-        ? 'warning'
-        : status.state === 'disconnected'
-          ? 'error'
-          : 'pending';
+      : status.connectionState === 'authentication_failed' || status.connectionState === 'credential_revoked'
+        ? 'error'
+        : 'pending';
 
   return (
     <ScreenContainer>
@@ -82,13 +80,13 @@ export function OverviewScreen({
       <div className="border-border bg-card/50 shrink-0 border-b px-5 py-3">
         <div className="flex flex-wrap items-center gap-x-8 gap-y-2">
           <StatusItem label="Agent">
-            <StatusDot tone={agentTone} pulse={status.state === 'connecting'} />
+            <StatusDot
+              tone={agentTone}
+              pulse={status.connectionState === 'connecting' || status.connectionState === 'authenticating'}
+            />
             <span className={cn('ml-1', agentTone === 'connected' ? 'text-[var(--color-connected)]' : '')}>
-              {titleCase(status.state)}
+              {titleCase(status.connectionState)}
             </span>
-          </StatusItem>
-          <StatusItem label="Gateway">
-            <span>{titleCase(status.gatewayState)}</span>
           </StatusItem>
           <StatusItem label="Printers">
             <span>
@@ -173,7 +171,7 @@ export function OverviewScreen({
               <DefList>
                 <DefTerm>State</DefTerm>
                 <DefValue className={agentTone === 'connected' ? 'text-[var(--color-connected)]' : ''}>
-                  {titleCase(status.state)}
+                  {titleCase(status.connectionState)}
                 </DefValue>
                 <DefTerm>Product</DefTerm>
                 <DefValue>{status.product.id}</DefValue>

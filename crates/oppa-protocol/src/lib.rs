@@ -7,6 +7,7 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+mod auth;
 mod codec;
 mod document;
 mod error;
@@ -15,6 +16,13 @@ mod message;
 mod printer;
 mod validation;
 
+pub use auth::{
+    AUTHENTICATION_METHOD, DISCOVERY_PATH, DiscoveryAuthentication, DiscoveryDocument,
+    DiscoveryEndpoints, DiscoveryServer, GatewayAuthenticationAccepted,
+    GatewayAuthenticationChallenge, GatewayAuthenticationRejected, GatewayAuthenticationResponse,
+    GatewayAuthenticationServerMessage, PairingAgent, PairingCredential, PairingRequest,
+    PairingResponse, PublicEd25519Jwk, SIGNATURE_ALGORITHM,
+};
 pub use codec::{
     decode_agent_message, decode_protocol_message, decode_server_message, encode_agent_message,
     encode_protocol_message, encode_server_message,
@@ -26,11 +34,10 @@ pub use error::{ProtocolError, ValidationError};
 pub use job::PrintJob;
 pub use message::{
     AgentDiagnostics, AgentHealth, AgentHeartbeat, AgentHello, AgentMessage, AgentMessageKind,
-    AuthenticationMetadata, AuthenticationMethod, CancelJob, ConfigurationInvalidated,
-    ConfigurationScope, DiagnosticIssue, DiagnosticSeverity, Disconnect, FailureDetail,
-    HeartbeatRequest, JobFailed, JobReceived, JobStatus, JobSubmitted, OpenPrinterBrandMetadata,
-    PrinterInventory, PrinterInventoryChanged, ProtocolMessage, ProtocolVersion,
-    RequestPrinterInventory, ServerHello, ServerMessage, ServerMessageKind,
+    CancelJob, ConfigurationInvalidated, ConfigurationScope, DiagnosticIssue, DiagnosticSeverity,
+    Disconnect, FailureDetail, HeartbeatRequest, JobFailed, JobReceived, JobStatus, JobSubmitted,
+    OpenPrinterBrandMetadata, PrinterInventory, PrinterInventoryChanged, ProtocolMessage,
+    ProtocolVersion, RequestPrinterInventory, ServerHello, ServerMessage, ServerMessageKind,
 };
 pub use printer::{
     PrinterAvailability, PrinterCapabilities, PrinterConnection, PrinterDescriptor, PrinterKind,
@@ -38,10 +45,13 @@ pub use printer::{
 pub use validation::{Metadata, Validate};
 
 /// The only wire protocol version understood by this release.
-pub const PROTOCOL_VERSION: u16 = 1;
+pub const PROTOCOL_VERSION: &str = "1";
 
 /// Maximum UTF-8 size accepted by any protocol decoder.
 pub const MAX_WIRE_MESSAGE_BYTES: usize = 2 * 1024 * 1024;
+
+/// Maximum UTF-8 size accepted for a pre-handshake authentication frame.
+pub const MAX_AUTH_MESSAGE_BYTES: usize = 16 * 1024;
 
 /// Maximum number of primitives in one structured print document.
 pub const MAX_DOCUMENT_SECTIONS: usize = 256;

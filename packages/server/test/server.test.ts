@@ -1,696 +1,422 @@
-import { readFileSync } from 'node:fs';
+import { generateKeyPairSync, sign } from 'node:crypto';
 
 import {
-  decodeServerMessage,
-  encodeAgentMessage,
-  MAX_WIRE_MESSAGE_BYTES,
   PROTOCOL_VERSION,
-  type PrintJob,
-  type PrinterDescriptor,
-  type ServerMessage,
+  decodeBase64Url,
+  decodeGatewayAuthenticationServerMessage,
+  decodeServerMessage,
+  encodeGatewayAuthenticationResponse,
+  type GatewayAuthenticationChallenge,
+  type OpenPrinterPairingRequest,
 } from '@openprinter/protocol';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import {
-  createOpenPrinterServer,
-  deliveryResultOrThrow,
-  OpenPrinterDeliveryError,
   OpenPrinterServerConfigurationError,
-  type AgentMessageOf,
-  type OpenPrinterServerOptions,
-  type OpenPrinterSession,
-  type OpenPrinterTransport,
+  InMemoryPairingCodeStore,
+  createOpenPrinterServer,
+  type OpenPrinterServer,
   type OpenPrinterTransportCloseRequest,
 } from '../src/index.js';
 
-type Metadata = {
-  readonly organizationId: string;
-};
-
-const activeSessions = new Set<OpenPrinterSession<Metadata>>();
-
-afterEach(async () => {
-  await Promise.all([...activeSessions].map((session) => session.disconnect({ reconnect: false })));
-  activeSessions.clear();
-  vi.useRealTimers();
-});
-
-describe('createOpenPrinterServer', () => {
-  it('owns no HTTP/WebSocket lifecycle and creates independent sessions', async () => {
-    const manifest = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as {
-      dependencies?: Record<string, string>;
-    };
-    const connected: string[] = [];
-    const server = createOpenPrinterServer<Metadata>({
-      ...baseOptions(),
-      onAgentConnected: ({ session }) => {
-        connected.push(session.sessionId);
-      },
-    });
-    const firstTransport = new RecordingTransport();
-    const secondTransport = new RecordingTransport();
-    const first = track(
-      server.accept({
-        sessionId: 'session-first',
-        identity: authenticatedIdentity(),
-        transport: firstTransport,
-      }),
-    );
-    const second = track(
-      server.accept({
-        sessionId: 'session-second',
-        identity: authenticatedIdentity(),
-        transport: secondTransport,
-      }),
-    );
-
-    expect(manifest.dependencies).not.toHaveProperty('ws');
-    expect(server).not.toHaveProperty('handleUpgrade');
-
-    await Promise.all([
-      first.receive(encodeAgentMessage(createHello('hello-first'))),
-      second.receive(encodeAgentMessage(createHello('hello-second'))),
-    ]);
-
-    expect(first.state).toBe('connected');
-    expect(second.state).toBe('connected');
-    expect(connected).toEqual(['session-first', 'session-second']);
-    expect(firstTransport.message('server.hello')).toMatchObject({
-      correlationId: 'hello-first',
-      payload: {
-        brand: { name: 'Acme POS' },
-        sessionId: 'session-first',
-        selectedProtocolVersion: PROTOCOL_VERSION,
-      },
-    });
-    expect(secondTransport.message('server.hello')?.payload.sessionId).toBe('session-second');
-  });
-
-  it('returns session-not-ready before hello instead of inventing a global registry', async () => {
-    const { session } = createHarness();
-    const result = await session.sendJob(printJob);
-
-    expect(result).toEqual({
-      ok: false,
-      agentId: 'agent-1',
-      reason: 'session-not-ready',
-      retryable: true,
-    });
-    expect(() => deliveryResultOrThrow(result)).toThrowError(OpenPrinterDeliveryError);
-  });
-
-  it('serializes concurrent receive calls in invocation order', async () => {
-    const firstCallbackStarted = deferred<void>();
-    const releaseFirstCallback = deferred<void>();
-    const revisions: number[] = [];
-    const { session, transport } = createHarness({
-      onPrintersChanged: async ({ revision }) => {
-        revisions.push(revision);
-        if (revision === 1) {
-          firstCallbackStarted.resolve();
-          await releaseFirstCallback.promise;
-        }
-      },
-    });
-    await handshake(session, transport);
-
-    const snapshot = session.receive(
-      encodeAgentMessage({
-        ...agentEnvelope('inventory-1'),
-        type: 'agent.printer_inventory',
-        payload: {
-          revision: 1,
-          printers: [virtualPrinter],
-        },
-      }),
-    );
-    const updated: PrinterDescriptor = {
-      ...virtualPrinter,
-      name: 'Human-friendly virtual printer',
-    };
-    const change = session.receive(
-      encodeAgentMessage({
-        ...agentEnvelope('inventory-2'),
-        type: 'agent.printer_inventory_changed',
-        payload: {
-          revision: 2,
-          added: [],
-          updated: [updated],
-          removedPrinterIds: [],
-        },
-      }),
-    );
-
-    await firstCallbackStarted.promise;
-    expect(revisions).toEqual([1]);
-    expect(session.getAgent()?.printerRevision).toBe(1);
-    releaseFirstCallback.resolve();
-    await Promise.all([snapshot, change]);
-
-    expect(revisions).toEqual([1, 2]);
-    expect(session.getAgent()?.printerRevision).toBe(2);
-    expect(session.getPrinters()[0]?.name).toBe('Human-friendly virtual printer');
-  });
-
-  it('routes job lifecycle messages and hands application commands to the transport', async () => {
-    const received = deferred<AgentMessageOf<'agent.job_received'>>();
-    const submitted = deferred<AgentMessageOf<'agent.job_submitted'>>();
-    const failed = deferred<AgentMessageOf<'agent.job_failed'>>();
-    const { session, transport } = createHarness({
-      onJobReceived: ({ message }) => received.resolve(message),
-      onJobSubmitted: ({ message }) => submitted.resolve(message),
-      onJobFailed: ({ message }) => failed.resolve(message),
-    });
-    await handshake(session, transport);
-
-    const delivery = await session.sendJob(printJob);
-    expect(delivery.ok).toBe(true);
-    expect(transport.message('server.print_job')?.payload.jobId).toBe('job-1');
-    if (!delivery.ok) {
-      throw new Error('Expected transport handoff to succeed.');
-    }
-
-    await Promise.all([
-      session.receive(
-        encodeAgentMessage({
-          ...agentEnvelope('received-1'),
-          correlationId: delivery.messageId,
-          type: 'agent.job_received',
-          payload: {
-            jobId: 'job-1',
-            idempotencyKey: 'invoice-1',
-            status: 'received',
-            receivedAt: new Date().toISOString(),
-          },
-        }),
-      ),
-      session.receive(
-        encodeAgentMessage({
-          ...agentEnvelope('submitted-1'),
-          correlationId: delivery.messageId,
-          type: 'agent.job_submitted',
-          payload: {
-            jobId: 'job-1',
-            idempotencyKey: 'invoice-1',
-            printerId: 'printer-1',
-            status: 'submitted',
-            submittedAt: new Date().toISOString(),
-          },
-        }),
-      ),
-      session.receive(
-        encodeAgentMessage({
-          ...agentEnvelope('failed-1'),
-          correlationId: delivery.messageId,
-          type: 'agent.job_failed',
-          payload: {
-            jobId: 'job-1',
-            idempotencyKey: 'invoice-1',
-            status: 'failed',
-            failedAt: new Date().toISOString(),
-            error: {
-              code: 'printer_offline',
-              message: 'The printer is offline.',
-              retryable: true,
-            },
-          },
-        }),
-      ),
-    ]);
-
-    expect((await received.promise).payload.status).toBe('received');
-    expect((await submitted.promise).payload.status).toBe('submitted');
-    expect((await failed.promise).payload.status).toBe('failed');
-  });
-
-  it('closes an identity-mismatched handshake without exposing a connected agent', async () => {
-    const protocolError = deferred<Parameters<NonNullable<OpenPrinterServerOptions<Metadata>['onProtocolError']>>[0]>();
-    const disconnected = vi.fn();
-    const { session, transport } = createHarness({
-      onProtocolError: protocolError.resolve,
-      onAgentDisconnected: disconnected,
-    });
-    const hello = createHello();
-
-    await session.receive(
-      encodeAgentMessage({
-        ...hello,
-        payload: {
-          ...hello.payload,
-          agentId: 'different-agent',
-        },
-      }),
-    );
-
-    expect((await protocolError.promise).code).toBe('identity-mismatch');
-    expect(session.state).toBe('closed');
-    expect(session.getAgent()).toBeNull();
-    expect(transport.closes[0]?.reason).toBe('protocol-error');
-    expect(disconnected).not.toHaveBeenCalled();
-  });
-
-  it('reports invalid payloads without exposing their contents', async () => {
-    const protocolError = deferred<Parameters<NonNullable<OpenPrinterServerOptions<Metadata>['onProtocolError']>>[0]>();
-    const { session, transport } = createHarness({
-      onProtocolError: protocolError.resolve,
-    });
-    await handshake(session, transport);
-
-    await session.receive(
-      JSON.stringify({
-        ...agentEnvelope('bad-1'),
-        type: 'agent.job_received',
-        payload: {
-          privateReceipt: 'must-not-appear-in-errors',
-        },
-      }),
-    );
-
-    const event = await protocolError.promise;
-    expect(event.code).toBe('invalid-message');
-    expect(event.error.message).not.toContain('must-not-appear-in-errors');
-    expect(session.state).toBe('closed');
-  });
-
-  it('distinguishes unsupported protocol versions', async () => {
-    const protocolError = deferred<Parameters<NonNullable<OpenPrinterServerOptions<Metadata>['onProtocolError']>>[0]>();
-    const { session } = createHarness({
-      onProtocolError: protocolError.resolve,
-    });
-
-    await session.receive(
-      JSON.stringify({
-        ...createHello(),
-        protocolVersion: 99,
-      }),
-    );
-
-    expect((await protocolError.promise).code).toBe('unsupported-protocol-version');
-  });
-
-  it('closes a transport that never begins the protocol handshake', async () => {
-    vi.useFakeTimers({
-      toFake: ['Date', 'setInterval', 'clearInterval', 'setTimeout', 'clearTimeout'],
-    });
-    const protocolError = deferred<Parameters<NonNullable<OpenPrinterServerOptions<Metadata>['onProtocolError']>>[0]>();
-    const { session, transport } = createHarness({
-      handshakeTimeoutMs: 10,
-      onProtocolError: protocolError.resolve,
-    });
-
-    await vi.advanceTimersByTimeAsync(11);
-
-    expect((await protocolError.promise).code).toBe('handshake-timeout');
-    expect(transport.closes.at(-1)?.reason).toBe('protocol-error');
-    expect(session.state).toBe('closed');
-  });
-
-  it('enforces configured inbound and outbound message limits', async () => {
-    const protocolError = deferred<Parameters<NonNullable<OpenPrinterServerOptions<Metadata>['onProtocolError']>>[0]>();
-    const inbound = createHarness({
-      maxMessageBytes: 1_024,
-      onProtocolError: protocolError.resolve,
-    });
-    await handshake(inbound.session, inbound.transport);
-    await inbound.session.receive('x'.repeat(1_025));
-    expect((await protocolError.promise).code).toBe('message-too-large');
-
-    const outbound = createHarness({
-      maxMessageBytes: 1_024,
-    });
-    await handshake(outbound.session, outbound.transport);
-    const largeJob: PrintJob = {
-      ...printJob,
-      document: {
-        width: 80,
-        sections: [{ type: 'text', value: 'x'.repeat(2_000) }],
-      },
-    };
-    await expect(outbound.session.sendJob(largeJob)).rejects.toMatchObject({
-      code: 'message_too_large',
-    });
-  });
-
-  it('returns a stable transport-error result and finalizes the session when send rejects', async () => {
-    const disconnected =
-      deferred<Parameters<NonNullable<OpenPrinterServerOptions<Metadata>['onAgentDisconnected']>>[0]>();
-    const { session, transport } = createHarness({
-      onAgentDisconnected: disconnected.resolve,
-    });
-    await handshake(session, transport);
-    transport.failType = 'server.print_job';
-
-    const result = await session.sendJob(printJob);
-
-    expect(result).toEqual({
-      ok: false,
-      agentId: 'agent-1',
-      reason: 'transport-error',
-      retryable: true,
-    });
-    expect((await disconnected.promise).reason).toBe('transport-error');
-    expect(transport.closes.at(-1)?.reason).toBe('transport-error');
-    expect(session.state).toBe('closed');
-  });
-
-  it('bounds a stalled transport handoff and returns the same stable failure', async () => {
-    vi.useFakeTimers({
-      toFake: ['Date', 'setInterval', 'clearInterval', 'setTimeout', 'clearTimeout'],
-    });
-    const { session, transport } = createHarness({
-      heartbeatIntervalMs: 5_000,
-      heartbeatTimeoutMs: 6_000,
-      transportTimeoutMs: 20,
-    });
-    await handshake(session, transport);
-    transport.stallType = 'server.print_job';
-
-    const delivery = session.sendJob(printJob);
-    await vi.advanceTimersByTimeAsync(21);
-
-    await expect(delivery).resolves.toEqual({
-      ok: false,
-      agentId: 'agent-1',
-      reason: 'transport-error',
-      retryable: true,
-    });
-    expect(session.state).toBe('closed');
-  });
-
-  it('lets the host report transport closure without asking it to close twice', async () => {
-    const disconnected =
-      deferred<Parameters<NonNullable<OpenPrinterServerOptions<Metadata>['onAgentDisconnected']>>[0]>();
-    const { session, transport } = createHarness({
-      onAgentDisconnected: disconnected.resolve,
-    });
-    await handshake(session, transport);
-
-    await session.transportClosed({
-      reason: 'peer-closed',
-      detail: 'normal host shutdown',
-    });
-
-    expect(await disconnected.promise).toMatchObject({
-      reason: 'peer-closed',
-      detail: 'normal host shutdown',
-    });
-    expect(transport.close).not.toHaveBeenCalled();
-    expect(session.state).toBe('closed');
-  });
-
-  it('expires a session that does not answer protocol heartbeats', async () => {
-    vi.useFakeTimers({
-      toFake: ['Date', 'setInterval', 'clearInterval', 'setTimeout', 'clearTimeout'],
-    });
-    const timedOut = deferred<void>();
-    const disconnected = deferred<void>();
-    const { session, transport } = createHarness({
-      heartbeatIntervalMs: 5_000,
-      heartbeatTimeoutMs: 6_000,
-      transportTimeoutMs: 1_000,
-      onHeartbeatTimeout: () => timedOut.resolve(),
-      onAgentDisconnected: ({ reason }) => {
-        if (reason === 'heartbeat-timeout') {
-          disconnected.resolve();
-        }
-      },
-    });
-    await handshake(session, transport);
-
-    await vi.advanceTimersByTimeAsync(6_001);
-    await Promise.all([timedOut.promise, disconnected.promise]);
-
-    expect(transport.closes.at(-1)?.reason).toBe('heartbeat-timeout');
-    expect(session.state).toBe('closed');
-  });
-
-  it('isolates stalled callbacks while preserving later receive order', async () => {
-    const callbackError = deferred<Parameters<NonNullable<OpenPrinterServerOptions<Metadata>['onCallbackError']>>[0]>();
-    const inventory = deferred<void>();
-    const { session, transport } = createHarness({
-      callbackTimeoutMs: 20,
-      onJobReceived: () => new Promise<void>(() => undefined),
-      onPrintersChanged: () => inventory.resolve(),
-      onCallbackError: callbackError.resolve,
-    });
-    await handshake(session, transport);
-
-    const received = session.receive(
-      encodeAgentMessage({
-        ...agentEnvelope('received-stalled'),
-        correlationId: 'delivery-1',
-        type: 'agent.job_received',
-        payload: {
-          jobId: 'job-1',
-          idempotencyKey: 'invoice-1',
-          status: 'received',
-          receivedAt: new Date().toISOString(),
-        },
-      }),
-    );
-    const printers = session.receive(
-      encodeAgentMessage({
-        ...agentEnvelope('inventory-after-stall'),
-        type: 'agent.printer_inventory',
-        payload: {
-          revision: 1,
-          printers: [virtualPrinter],
-        },
-      }),
-    );
-
-    const event = await callbackError.promise;
-    await Promise.all([received, printers, inventory.promise]);
-    expect(event.callback).toBe('onJobReceived');
-    expect(event.error).toMatchObject({ name: 'HostCallbackTimeoutError' });
-    expect(session.getPrinters()).toHaveLength(1);
-  });
-
-  it('sends a semantic disconnect before requesting host transport closure', async () => {
-    const disconnected =
-      deferred<Parameters<NonNullable<OpenPrinterServerOptions<Metadata>['onAgentDisconnected']>>[0]>();
-    const { session, transport } = createHarness({
-      onAgentDisconnected: disconnected.resolve,
-    });
-    await handshake(session, transport);
-
-    expect(
-      await session.disconnect({
-        code: 'maintenance',
-        reason: 'Maintenance window',
-        reconnect: true,
-        retryAfterMs: 60_000,
-      }),
-    ).toBe(true);
-
-    expect(transport.message('server.disconnect')?.payload).toEqual({
-      code: 'maintenance',
-      reason: 'Maintenance window',
-      reconnect: true,
-      retryAfterMs: 60_000,
-    });
-    expect(transport.closes.at(-1)).toEqual({
-      reason: 'server-disconnect',
-      detail: 'Maintenance window',
-    });
-    expect((await disconnected.promise).reason).toBe('server-disconnect');
-    expect(await session.disconnect()).toBe(false);
-  });
-
-  it('rejects invalid server and accepted-session configuration synchronously', () => {
-    const unsafeBrandNames = [
-      ' Acme POS',
-      'Acme POS ',
-      'Acme POS\u00a0',
-      'Acme\u0007POS',
-      'Acme\u0085POS',
-      'Acme\u061cPOS',
-      'Acme\u200ePOS',
-      'Acme\u200fPOS',
-      'Acme\ud800POS',
-      'Acme\udfffPOS',
-      ...Array.from({ length: 5 }, (_, offset) => `Acme${String.fromCodePoint(0x202a + offset)}POS`),
-      ...Array.from({ length: 4 }, (_, offset) => `Acme${String.fromCodePoint(0x2066 + offset)}POS`),
-    ];
-    for (const name of unsafeBrandNames) {
-      expect(() =>
-        createOpenPrinterServer({
-          ...baseOptions(),
-          brand: { name },
-        }),
-      ).toThrowError(OpenPrinterServerConfigurationError);
-    }
-    expect(() =>
-      createOpenPrinterServer({
-        ...baseOptions(),
-        brand: { name: 'Acme 🖨️' },
-      }),
-    ).not.toThrow();
-
-    const server = createOpenPrinterServer<Metadata>(baseOptions());
-    expect(() =>
-      server.accept({
-        identity: {
-          agentId: 'invalid agent id',
-          metadata: { organizationId: 'organization-1' },
-        },
-        transport: new RecordingTransport(),
-      }),
-    ).toThrowError(OpenPrinterServerConfigurationError);
-  });
-
-  it('retains the protocol-wide maximum as an upper configuration bound', () => {
-    expect(() =>
-      createOpenPrinterServer({
-        ...baseOptions(),
-        maxMessageBytes: MAX_WIRE_MESSAGE_BYTES + 1,
-      }),
-    ).toThrowError(OpenPrinterServerConfigurationError);
-  });
-});
-
-class RecordingTransport implements OpenPrinterTransport {
-  public readonly frames: string[] = [];
-  public readonly closes: OpenPrinterTransportCloseRequest[] = [];
-  public failType: ServerMessage['type'] | null = null;
-  public stallType: ServerMessage['type'] | null = null;
-
-  public readonly send = vi.fn((message: string): Promise<void> => {
-    const decoded = decodeServerMessage(message);
-    if (decoded.type === this.stallType) {
-      return new Promise<void>(() => undefined);
-    }
-    if (decoded.type === this.failType) {
-      return Promise.reject(new Error('host transport unavailable'));
-    }
-    this.frames.push(message);
-    return Promise.resolve();
-  });
-
-  public readonly close = vi.fn((request: OpenPrinterTransportCloseRequest): Promise<void> => {
-    this.closes.push(request);
-    return Promise.resolve();
-  });
-
-  public messages(): ServerMessage[] {
-    return this.frames.map((frame) => decodeServerMessage(frame));
-  }
-
-  public message<Type extends ServerMessage['type']>(type: Type): Extract<ServerMessage, { type: Type }> | undefined {
-    return this.messages().find((message): message is Extract<ServerMessage, { type: Type }> => message.type === type);
-  }
+interface TestCredential {
+  readonly privateKey: ReturnType<typeof generateKeyPairSync>['privateKey'];
+  readonly publicKey: OpenPrinterPairingRequest['credential']['publicKey'];
 }
 
-function createHarness(overrides: Partial<OpenPrinterServerOptions<Metadata>> = {}): {
-  readonly session: OpenPrinterSession<Metadata>;
-  readonly transport: RecordingTransport;
-} {
-  const transport = new RecordingTransport();
-  const server = createOpenPrinterServer<Metadata>({
-    ...baseOptions(),
-    ...overrides,
-  });
-  const session = track(
-    server.accept({
-      sessionId: 'session-1',
-      identity: authenticatedIdentity(),
-      transport,
-    }),
-  );
-  return { session, transport };
-}
-
-function baseOptions(): OpenPrinterServerOptions<Metadata> {
-  return {
-    brand: { name: 'Acme POS' },
-    serverId: 'acme-openprinter',
-    serverVersion: '1.2.3',
+interface TestTransport {
+  readonly sent: string[];
+  readonly closes: OpenPrinterTransportCloseRequest[];
+  readonly transport: {
+    send(message: string): void;
+    close(request: OpenPrinterTransportCloseRequest): void;
   };
 }
 
-function authenticatedIdentity(): {
-  readonly agentId: string;
-  readonly metadata: Metadata;
-} {
+function credential(): TestCredential {
+  const pair = generateKeyPairSync('ed25519');
+  const jwk = pair.publicKey.export({ format: 'jwk' });
   return {
-    agentId: 'agent-1',
-    metadata: { organizationId: 'organization-1' },
+    privateKey: pair.privateKey,
+    publicKey: { kty: 'OKP', crv: 'Ed25519', x: jwk.x! },
   };
 }
 
-function track(session: OpenPrinterSession<Metadata>): OpenPrinterSession<Metadata> {
-  activeSessions.add(session);
-  return session;
-}
-
-async function handshake(session: OpenPrinterSession<Metadata>, transport: RecordingTransport): Promise<void> {
-  await session.receive(encodeAgentMessage(createHello()));
-  expect(session.state).toBe('connected');
-  expect(transport.message('server.hello')).toBeDefined();
-  expect(transport.message('server.heartbeat')).toBeDefined();
-}
-
-function createHello(messageId = 'hello-1'): AgentMessageOf<'agent.hello'> {
+function transport(): TestTransport {
+  const sent: string[] = [];
+  const closes: OpenPrinterTransportCloseRequest[] = [];
   return {
-    ...agentEnvelope(messageId),
-    type: 'agent.hello',
-    payload: {
-      agentId: 'agent-1',
-      agentVersion: '0.1.0',
-      productId: 'oppa',
-      productVersion: '0.1.0',
-      supportedProtocolVersions: [PROTOCOL_VERSION],
+    sent,
+    closes,
+    transport: {
+      send(message) {
+        sent.push(message);
+      },
+      close(request) {
+        closes.push(request);
+      },
     },
   };
 }
 
-function agentEnvelope(messageId: string): {
-  readonly protocolVersion: typeof PROTOCOL_VERSION;
-  readonly messageId: string;
-  readonly sentAt: string;
-} {
+function server(
+  overrides: Parameters<typeof createOpenPrinterServer<Record<string, string>>>[0] = {
+    brand: { name: 'Test Print Service' },
+  },
+) {
+  const { brand, ...rest } = overrides;
+  return createOpenPrinterServer<Record<string, string>>({
+    serverId: 'test-service',
+    serverVersion: '1.2.3',
+    heartbeatIntervalMs: 60_000,
+    heartbeatTimeoutMs: 120_000,
+    ...rest,
+    brand,
+  });
+}
+
+function pairingRequest(
+  code: string,
+  key: TestCredential,
+  installationId = 'installation-01',
+): OpenPrinterPairingRequest {
   return {
     protocolVersion: PROTOCOL_VERSION,
-    messageId,
-    sentAt: new Date().toISOString(),
+    code,
+    agent: {
+      name: 'Front Counter',
+      version: '1.0.0',
+      platform: 'test',
+      installationId,
+    },
+    credential: { algorithm: 'Ed25519', publicKey: key.publicKey },
   };
 }
 
-function deferred<Value>(): {
-  readonly promise: Promise<Value>;
-  readonly resolve: (value: Value) => void;
-} {
-  let resolve!: (value: Value) => void;
-  const promise = new Promise<Value>((innerResolve) => {
-    resolve = innerResolve;
-  });
-  return { promise, resolve };
+async function waitFor(predicate: () => boolean): Promise<void> {
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    if (predicate()) return;
+    await new Promise((resolve) => setTimeout(resolve, 1));
+  }
+  throw new Error('Timed out waiting for test state.');
 }
 
-const virtualPrinter: PrinterDescriptor = {
-  id: 'printer-1',
-  fingerprint: 'virtual:printer-1',
-  name: 'Development virtual printer',
-  kind: 'virtual',
-  connection: { type: 'virtual' },
-  capabilities: {
-    mediaWidths: [80],
-    raster: true,
-    cut: true,
-    qr: true,
-    barcode: true,
-  },
-  enabled: true,
-  availability: 'online',
-};
+async function pairAgent(openprinter: OpenPrinterServer<Record<string, string>>, key: TestCredential) {
+  const pairing = await openprinter.createPairingCode({ metadata: { tenantId: 'tenant-1' } });
+  const result = await openprinter.pair(pairingRequest(pairing.code.toLowerCase(), key));
+  if ('error' in result) throw new Error(result.error.code);
+  return result;
+}
 
-const printJob: PrintJob = {
-  jobId: 'job-1',
-  idempotencyKey: 'invoice-1',
-  printerId: 'printer-1',
-  createdAt: '2026-07-28T10:00:00.000Z',
-  document: {
-    width: 80,
-    sections: [{ type: 'text', value: 'Test receipt' }, { type: 'cut' }],
-  },
-};
+async function authenticate(
+  openprinter: OpenPrinterServer<Record<string, string>>,
+  key: TestCredential,
+  agent: Awaited<ReturnType<typeof pairAgent>>,
+) {
+  const wire = transport();
+  const session = openprinter.accept({ transport: wire.transport });
+  await waitFor(() => wire.sent.length === 1);
+  const challenge = decodeGatewayAuthenticationServerMessage(wire.sent[0]!) as GatewayAuthenticationChallenge;
+  const signature = sign(null, decodeBase64Url(challenge.payload), key.privateKey).toString('base64url');
+  await session.receive(
+    encodeGatewayAuthenticationResponse({
+      type: 'auth.response',
+      challengeId: challenge.challengeId,
+      agentId: agent.agentId,
+      keyId: agent.keyId,
+      algorithm: 'Ed25519',
+      signature,
+    }),
+  );
+  expect(decodeGatewayAuthenticationServerMessage(wire.sent[1]!)).toMatchObject({
+    type: 'auth.accepted',
+    agentId: agent.agentId,
+  });
+  return { session, wire };
+}
+
+function hello(agentId: string) {
+  return JSON.stringify({
+    protocolVersion: PROTOCOL_VERSION,
+    messageId: 'hello-01',
+    sentAt: '2026-08-01T09:00:00.000Z',
+    type: 'agent.hello',
+    payload: {
+      agentId,
+      agentVersion: '1.0.0',
+      productId: 'oppa',
+      productVersion: '1.0.0',
+      supportedProtocolVersions: [PROTOCOL_VERSION],
+    },
+  });
+}
+
+describe('discovery and pairing', () => {
+  it('returns default relative paths and supports custom paths', async () => {
+    const defaults = server();
+    expect(await defaults.discover()).toMatchObject({
+      protocolVersion: '1',
+      endpoints: {
+        pairing: '/openprinter/pair',
+        gateway: '/.well-known/openprinter/gateway',
+      },
+      authentication: { method: 'pairing-code-ed25519', challengeTtlSeconds: 30 },
+    });
+
+    const custom = server({
+      brand: { name: 'Custom' },
+      paths: { discovery: '/printer/discovery', pairing: '/printer/pair', gateway: '/printer/gateway' },
+    });
+    expect(custom.paths).toEqual({
+      discovery: '/printer/discovery',
+      pairing: '/printer/pair',
+      gateway: '/printer/gateway',
+    });
+    expect((await custom.discover()).endpoints.gateway).toBe('/printer/gateway');
+  });
+
+  it('rejects invalid or colliding paths', () => {
+    expect(() => server({ brand: { name: 'Bad' }, paths: { pairing: '/same', gateway: '/same' } })).toThrow(
+      OpenPrinterServerConfigurationError,
+    );
+    expect(() => server({ brand: { name: 'Bad' }, paths: { pairing: 'relative' } })).toThrow(
+      OpenPrinterServerConfigurationError,
+    );
+  });
+
+  it('creates case-insensitive, expiring, single-use pairing codes', async () => {
+    const openprinter = server();
+    const key = credential();
+    expect(await openprinter.pair(pairingRequest('ZZZZ-ZZZZ', key))).toMatchObject({
+      error: { code: 'pairing_code_invalid' },
+    });
+    const pairing = await openprinter.createPairingCode({ expiresInMs: 60_000 });
+    expect(pairing.code).toMatch(/^[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}$/);
+    const first = await openprinter.pair(pairingRequest(pairing.code.toLowerCase(), key));
+    expect(first).toMatchObject({ serverId: 'test-service' });
+    expect(await openprinter.pair(pairingRequest(pairing.code, credential()))).toEqual({
+      error: { code: 'pairing_code_consumed', message: 'The pairing code has already been used.' },
+    });
+  });
+
+  it('atomically permits only one concurrent redemption', async () => {
+    const openprinter = server();
+    const pairing = await openprinter.createPairingCode();
+    const results = await Promise.all([
+      openprinter.pair(pairingRequest(pairing.code, credential(), 'installation-a')),
+      openprinter.pair(pairingRequest(pairing.code, credential(), 'installation-b')),
+    ]);
+    expect(results.filter((result) => !('error' in result))).toHaveLength(1);
+    expect(results.filter((result) => 'error' in result)[0]).toMatchObject({
+      error: { code: 'pairing_code_consumed' },
+    });
+  });
+
+  it('expires pairing grants without invoking credential registration', async () => {
+    const store = new InMemoryPairingCodeStore<unknown>();
+    const register = vi.fn(() => Promise.resolve());
+    await store.create({
+      code: 'ABCD-EFGH',
+      createdAt: new Date('2026-08-01T09:00:00.000Z'),
+      expiresAt: new Date('2026-08-01T09:05:00.000Z'),
+    });
+    await expect(store.consume('abcd-efgh', new Date('2026-08-01T09:05:00.001Z'), register)).resolves.toBe('expired');
+    expect(register).not.toHaveBeenCalled();
+  });
+
+  it('rejects invalid keys and invokes the rate-limit policy', async () => {
+    const checkPairingRateLimit = vi.fn(() => false);
+    const limited = server({ brand: { name: 'Limited' }, checkPairingRateLimit });
+    expect(await limited.pair({})).toMatchObject({ error: { code: 'pairing_rate_limited' } });
+    expect(checkPairingRateLimit).toHaveBeenCalledOnce();
+
+    const openprinter = server();
+    const pairing = await openprinter.createPairingCode();
+    expect(
+      await openprinter.pair({
+        ...pairingRequest(pairing.code, credential()),
+        credential: { algorithm: 'Ed25519', publicKey: { kty: 'OKP', crv: 'Ed25519', x: 'short' } },
+      }),
+    ).toMatchObject({ error: { code: 'invalid_public_key' } });
+  });
+});
+
+describe('gateway authentication', () => {
+  it('authenticates before hello and preserves authenticated session behavior', async () => {
+    const onAgentConnected = vi.fn();
+    const openprinter = server({ brand: { name: 'Test' }, onAgentConnected });
+    const key = credential();
+    const paired = await pairAgent(openprinter, key);
+    const { session, wire } = await authenticate(openprinter, key, paired);
+    expect(session.state).toBe('handshaking');
+    expect(session.identity).toMatchObject({ agentId: paired.agentId, metadata: { tenantId: 'tenant-1' } });
+    expect(onAgentConnected).not.toHaveBeenCalled();
+
+    await session.receive(hello(paired.agentId));
+    expect(session.state).toBe('connected');
+    expect(decodeServerMessage(wire.sent[2]!)).toMatchObject({ type: 'server.hello' });
+    expect(onAgentConnected).toHaveBeenCalledOnce();
+
+    const delivery = await session.requestPrinters();
+    expect(delivery).toMatchObject({ ok: true, agentId: paired.agentId });
+  });
+
+  it('rejects normal protocol traffic before authentication', async () => {
+    const openprinter = server();
+    const wire = transport();
+    const session = openprinter.accept({ transport: wire.transport });
+    await waitFor(() => wire.sent.length === 1);
+    await session.receive(hello('agent-01'));
+    expect(decodeGatewayAuthenticationServerMessage(wire.sent[1]!)).toMatchObject({
+      type: 'auth.rejected',
+      code: 'challenge_invalid',
+    });
+    expect(session.state).toBe('closed');
+    expect(wire.closes[0]).toMatchObject({ reason: 'authentication-failed' });
+  });
+
+  it('rejects wrong signatures and revoked credentials without lifecycle hooks', async () => {
+    const onAgentConnected = vi.fn();
+    const openprinter = server({ brand: { name: 'Test' }, onAgentConnected });
+    const key = credential();
+    const paired = await pairAgent(openprinter, key);
+    const wire = transport();
+    const session = openprinter.accept({ transport: wire.transport });
+    await waitFor(() => wire.sent.length === 1);
+    const challenge = decodeGatewayAuthenticationServerMessage(wire.sent[0]!) as GatewayAuthenticationChallenge;
+    const wrongSignature = sign(null, decodeBase64Url(challenge.payload), credential().privateKey).toString(
+      'base64url',
+    );
+    await session.receive(
+      encodeGatewayAuthenticationResponse({
+        type: 'auth.response',
+        challengeId: challenge.challengeId,
+        agentId: paired.agentId,
+        keyId: paired.keyId,
+        algorithm: 'Ed25519',
+        signature: wrongSignature,
+      }),
+    );
+    expect(decodeGatewayAuthenticationServerMessage(wire.sent[1]!)).toMatchObject({ code: 'invalid_signature' });
+    expect(onAgentConnected).not.toHaveBeenCalled();
+
+    await openprinter.revokeCredential(paired.agentId, paired.keyId);
+    const revokedWire = transport();
+    const revokedSession = openprinter.accept({ transport: revokedWire.transport });
+    await waitFor(() => revokedWire.sent.length === 1);
+    const revokedChallenge = decodeGatewayAuthenticationServerMessage(
+      revokedWire.sent[0]!,
+    ) as GatewayAuthenticationChallenge;
+    await revokedSession.receive(
+      encodeGatewayAuthenticationResponse({
+        type: 'auth.response',
+        challengeId: revokedChallenge.challengeId,
+        agentId: paired.agentId,
+        keyId: paired.keyId,
+        algorithm: 'Ed25519',
+        signature: sign(null, decodeBase64Url(revokedChallenge.payload), key.privateKey).toString('base64url'),
+      }),
+    );
+    expect(decodeGatewayAuthenticationServerMessage(revokedWire.sent[1]!)).toMatchObject({
+      code: 'credential_revoked',
+    });
+  });
+
+  it('rejects unknown credentials and a challenge replayed on another socket', async () => {
+    const openprinter = server();
+    const key = credential();
+    const paired = await pairAgent(openprinter, key);
+
+    const unknownWire = transport();
+    const unknownSession = openprinter.accept({ transport: unknownWire.transport });
+    await waitFor(() => unknownWire.sent.length === 1);
+    const unknownChallenge = decodeGatewayAuthenticationServerMessage(
+      unknownWire.sent[0]!,
+    ) as GatewayAuthenticationChallenge;
+    await unknownSession.receive(
+      encodeGatewayAuthenticationResponse({
+        type: 'auth.response',
+        challengeId: unknownChallenge.challengeId,
+        agentId: 'unknown-agent',
+        keyId: 'unknown-key',
+        algorithm: 'Ed25519',
+        signature: sign(null, decodeBase64Url(unknownChallenge.payload), key.privateKey).toString('base64url'),
+      }),
+    );
+    expect(decodeGatewayAuthenticationServerMessage(unknownWire.sent[1]!)).toMatchObject({
+      type: 'auth.rejected',
+      code: 'credential_not_found',
+    });
+
+    const sourceWire = transport();
+    openprinter.accept({ transport: sourceWire.transport });
+    const targetWire = transport();
+    const targetSession = openprinter.accept({ transport: targetWire.transport });
+    await waitFor(() => sourceWire.sent.length === 1 && targetWire.sent.length === 1);
+    const sourceChallenge = decodeGatewayAuthenticationServerMessage(
+      sourceWire.sent[0]!,
+    ) as GatewayAuthenticationChallenge;
+    await targetSession.receive(
+      encodeGatewayAuthenticationResponse({
+        type: 'auth.response',
+        challengeId: sourceChallenge.challengeId,
+        agentId: paired.agentId,
+        keyId: paired.keyId,
+        algorithm: 'Ed25519',
+        signature: sign(null, decodeBase64Url(sourceChallenge.payload), key.privateKey).toString('base64url'),
+      }),
+    );
+    expect(decodeGatewayAuthenticationServerMessage(targetWire.sent[1]!)).toMatchObject({
+      type: 'auth.rejected',
+      code: 'challenge_invalid',
+    });
+  });
+
+  it('rejects a signature submitted after the challenge expires', async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date('2026-08-01T09:00:00.000Z'));
+      const openprinter = server({ brand: { name: 'Test' }, challengeTtlMs: 5_000 });
+      const key = credential();
+      const paired = await pairAgent(openprinter, key);
+      const wire = transport();
+      const session = openprinter.accept({ transport: wire.transport });
+      await vi.advanceTimersByTimeAsync(0);
+      const challenge = decodeGatewayAuthenticationServerMessage(wire.sent[0]!) as GatewayAuthenticationChallenge;
+      vi.setSystemTime(new Date('2026-08-01T09:00:06.000Z'));
+      await session.receive(
+        encodeGatewayAuthenticationResponse({
+          type: 'auth.response',
+          challengeId: challenge.challengeId,
+          agentId: paired.agentId,
+          keyId: paired.keyId,
+          algorithm: 'Ed25519',
+          signature: sign(null, decodeBase64Url(challenge.payload), key.privateKey).toString('base64url'),
+        }),
+      );
+      expect(decodeGatewayAuthenticationServerMessage(wire.sent[1]!)).toMatchObject({
+        type: 'auth.rejected',
+        code: 'challenge_expired',
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('times out an unanswered challenge', async () => {
+    vi.useFakeTimers();
+    try {
+      const openprinter = server({ brand: { name: 'Timeout' }, authenticationTimeoutMs: 1_000 });
+      const wire = transport();
+      const session = openprinter.accept({ transport: wire.transport });
+      await vi.advanceTimersByTimeAsync(1_001);
+      expect(session.state).toBe('closed');
+      expect(decodeGatewayAuthenticationServerMessage(wire.sent[1]!)).toMatchObject({
+        type: 'auth.rejected',
+        code: 'authentication_timeout',
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

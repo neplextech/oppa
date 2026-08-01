@@ -60,13 +60,13 @@ pub enum PlatformError {
     Task(String),
 }
 
-/// Opens provider authorization URLs using the user's system browser.
+/// Opens validated product documentation, support, and legal URLs.
 pub trait BrowserOpener: Send + Sync {
     /// Opens an HTTP(S) URL without blocking the caller on the browser process.
     fn open(&self, url: &url::Url) -> PlatformResult<()>;
 }
 
-/// Default browser integration based on the operating-system URL handler.
+/// Default product-link integration based on the operating-system URL handler.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct SystemBrowser;
 

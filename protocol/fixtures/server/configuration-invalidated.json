@@ -1,5 +1,5 @@
 {
-  "protocolVersion": 1,
+  "protocolVersion": "1",
   "messageId": "msg_configuration_001",
   "sentAt": "2026-07-28T10:05:00Z",
   "type": "server.configuration_invalidated",

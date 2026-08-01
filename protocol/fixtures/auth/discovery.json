@@ -1,0 +1,16 @@
+{
+  "protocolVersion": "1",
+  "server": {
+    "id": "openprinter-example",
+    "name": "OpenPrinter Example",
+    "version": "1.0.0"
+  },
+  "endpoints": {
+    "pairing": "/openprinter/pair",
+    "gateway": "/.well-known/openprinter/gateway"
+  },
+  "authentication": {
+    "method": "pairing-code-ed25519",
+    "challengeTtlSeconds": 30
+  }
+}

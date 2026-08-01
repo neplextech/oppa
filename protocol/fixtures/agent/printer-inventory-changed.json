@@ -1,5 +1,5 @@
 {
-  "protocolVersion": 1,
+  "protocolVersion": "1",
   "messageId": "msg_inventory_changed_001",
   "sentAt": "2026-07-28T10:01:00Z",
   "type": "agent.printer_inventory_changed",

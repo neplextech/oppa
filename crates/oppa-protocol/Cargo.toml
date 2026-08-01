@@ -7,5 +7,6 @@ description = "Validated Rust representation of the OpenPrinter wire protocol"
 readme = "README.md"
 
 [dependencies]
+base64.workspace = true
 serde.workspace = true
 serde_json.workspace = true

@@ -1,0 +1,6 @@
+{
+  "type": "auth.accepted",
+  "sessionId": "session-01",
+  "agentId": "agent-01",
+  "heartbeatIntervalMs": 15000
+}

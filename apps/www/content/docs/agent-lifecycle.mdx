@@ -8,22 +8,28 @@ description:
 `oppa-agent` owns the runtime state machine. Desktop UI labels are
 projections of this state, not a second source of truth.
 
-| State         | Meaning                                                |
-| ------------- | ------------------------------------------------------ |
-| Unconfigured  | No usable authorization credential exists              |
-| Authorizing   | A bounded browser pairing flow is active               |
-| Disconnected  | Configured but no gateway session exists               |
-| Connecting    | Transport negotiation or authentication is in progress |
-| Connected     | Gateway and local processing are healthy               |
-| Degraded      | The core loop runs, but one subsystem needs attention  |
-| Shutting down | New work is stopped while current resources close      |
+| State         | Meaning                                               |
+| ------------- | ----------------------------------------------------- |
+| Unconfigured  | No paired local key and agent identity exist          |
+| Pairing       | Local key generation and code redemption are active   |
+| Disconnected  | Paired but no gateway session exists                  |
+| Connecting    | Transport establishment is in progress                |
+| Connected     | Gateway and local processing are healthy              |
+| Degraded      | The core loop runs, but one subsystem needs attention |
+| Shutting down | New work is stopped while current resources close     |
 
 ## Startup
 
 The agent loads the embedded product, opens and migrates SQLite,
-restores printer bindings, restores pending jobs, checks credentials,
-starts enabled discovery providers, and connects to the configured
-gateway.
+restores printer bindings, restores pending jobs, checks the local
+key, starts enabled printer-discovery providers, discovers the
+configured server, and connects to its current gateway.
+
+The desktop connection flow separately exposes `idle`, `discovering`,
+`discovery_failed`, `unpaired`, `pairing`, `paired`, `connecting`,
+`authenticating`, `connected`, `authentication_failed`, and
+`credential_revoked` so setup failures are never collapsed into one
+ambiguous flag.
 
 Incomplete jobs are reconciled conservatively. A job persisted as
 received but not submitted can be retried. A job whose submission

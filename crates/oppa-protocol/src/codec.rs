@@ -6,7 +6,7 @@ use crate::{
     ServerMessage, Validate, ValidationError,
 };
 
-const SUPPORTED_VERSIONS: &[u16] = &[PROTOCOL_VERSION];
+const SUPPORTED_VERSIONS: &[&str] = &[PROTOCOL_VERSION];
 const JSON_SAFE_INTEGER: f64 = 9_007_199_254_740_991.0;
 const ENVELOPE_FIELDS: &[&str] = &[
     "protocolVersion",

@@ -1,5 +1,5 @@
 {
-  "protocolVersion": 1,
+  "protocolVersion": "1",
   "messageId": "msg_job_submitted_001",
   "correlationId": "msg_print_job_001",
   "sentAt": "2026-07-28T10:02:03Z",

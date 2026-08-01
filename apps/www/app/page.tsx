@@ -19,13 +19,13 @@ import { SiteHeader } from '@/components/site-header';
 const constraints = [
   {
     icon: KeyRound,
-    label: 'Loopback auth only',
-    detail: 'PKCE and state-bound callbacks bind to ephemeral 127.0.0.1 and expire.',
+    label: 'Local keys stay local',
+    detail: 'OPPA stores its Ed25519 private key in the operating-system credential store.',
   },
   {
     icon: ShieldCheck,
     label: 'Credentials never touch SQLite',
-    detail: 'OS-native secure storage holds secrets; the local database never sees them.',
+    detail: 'Only public identity metadata reaches SQLite; private key bytes never do.',
   },
   {
     icon: Ruler,

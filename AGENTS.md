@@ -73,8 +73,12 @@ binary.
   proxying
 - no unrestricted frontend filesystem, SQL, shell, or network
   capability
-- loopback authorization binds only to ephemeral `127.0.0.1`, uses
-  state and PKCE, and expires
+- discovery and pairing accept plain HTTP only on loopback; production
+  service and gateway endpoints require TLS
+- private Ed25519 keys remain behind `oppa-platform` secure storage;
+  only public keys cross the network
+- gateway challenges are unpredictable, socket-bound, single-use, and
+  expire before normal protocol traffic is accepted
 - credentials stay in operating-system secure storage and out of logs
   and diagnostics
 - validate message, document, image, queue, and diagnostic limits

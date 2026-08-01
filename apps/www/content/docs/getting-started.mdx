@@ -1,93 +1,70 @@
 ---
 title: Getting Started
 description:
-  Run the local example server and exercise OPPA with a virtual
-  printer.
+  Pair OPPA with the local example and deliver a virtual print job.
 ---
 
-## Prerequisites
+## Install and run
 
-- Node.js 22 or newer
-- pnpm 11
-- the current Rust stable toolchain with `rustfmt` and Clippy
-- the native prerequisites required by Tauri on your operating system
-
-Install JavaScript dependencies from the repository root:
+From the repository root:
 
 ```bash
 pnpm install
-```
-
-## 1. Start the example server
-
-```bash
 pnpm --filter openprinter-node-example dev
 ```
 
-The example listens on `127.0.0.1:8787`. Its authorization and token
-endpoints are intended only for local development.
+The example listens on `http://127.0.0.1:8787`, exposes the standard
+discovery/pairing/gateway paths, and logs a short-lived development
+pairing code.
 
-## 2. Run OPPA
-
-The default product is already configured for the example server:
+In another terminal:
 
 ```bash
 OPPA_PRODUCT_DIR=products/default pnpm oppa:dev
 ```
 
-Select **Connect account**. The browser authorization page redirects
-to a one-time loopback callback bound to `127.0.0.1`.
+## Pair
 
-## 3. Create a virtual printer
+1. Enter `http://127.0.0.1:8787` as the Server URL.
+2. Select **Discover server** and confirm the returned service
+   identity.
+3. Enter the logged pairing code and an agent name.
+4. Select **Pair and connect**.
 
-Open **Virtual Printers**, create an 80 mm printer, and leave its
-simulation mode on **Always succeed**. The agent includes it in the
-next inventory snapshot.
+OPPA generates an Ed25519 key locally. The example stores only its
+public key. After challenge authentication and hello negotiation, the
+overview shows the connected service and agent ID.
 
-## 4. Send a test job
+## Create a virtual printer
 
-List connected agents:
+Open **Printers**, create a virtual printer, and copy its printer ID.
+Virtual output is deterministic and requires no physical device.
 
-```bash
-curl http://127.0.0.1:8787/agents
-```
+## Send a job
 
-Then send a structured job using the endpoint documented by the
-example:
+Copy the connected agent ID and call:
 
 ```bash
 curl -X POST http://127.0.0.1:8787/agents/AGENT_ID/jobs \
   -H 'content-type: application/json' \
-  --data '{
-    "jobId": "job_getting_started_1",
-    "idempotencyKey": "getting_started_1",
+  -d '{
+    "jobId": "job_quickstart_001",
+    "idempotencyKey": "job_quickstart_001_v1",
     "printerId": "PRINTER_ID",
-    "createdAt": "2026-07-28T10:00:00.000Z",
+    "createdAt": "2026-08-01T09:00:00Z",
     "document": {
       "width": 80,
-      "sections": [
-        {
-          "type": "text",
-          "value": "OpenPrinter test",
-          "align": "center",
-          "bold": true
-        },
-        { "type": "cut" }
-      ]
+      "sections": [{ "type": "text", "value": "Hello from OpenPrinter" }]
     }
   }'
 ```
 
-OPPA should show a local job that advances from received to submitted,
-and the virtual printer should expose its captured output.
+Check **Jobs** and **Virtual output**. `received` means OPPA durably
+stored the job; `submitted` means the virtual backend accepted it.
 
-## Validate the workspace
+## Reconnect and reset
 
-```bash
-pnpm typecheck
-pnpm test
-pnpm lint
-pnpm build
-```
-
-Physical printers are not required for the automated test suite.
+Restarting OPPA reuses the local key and paired identity. Restarting
+the example removes its in-memory public credentials, so the next
+connection is rejected and must be paired again. Use **Forget server**
+to delete OPPA's key and local pairing metadata deliberately.

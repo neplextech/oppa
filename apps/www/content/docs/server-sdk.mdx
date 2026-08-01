@@ -1,129 +1,74 @@
 ---
 title: Server SDK
 description:
-  Framework-neutral protocol sessions over host-owned transports.
+  Framework-neutral discovery, pairing, authentication, and sessions.
 ---
 
-`@openprinter/server` is a protocol-session SDK. The integrating
-application authenticates a connection, supplies `send` and `close`
-callbacks, and forwards inbound frames. The SDK performs version
-negotiation, validates messages, runs heartbeats, tracks that
-session's printer inventory, and exposes typed lifecycle events.
+`@openprinter/server` fits inside an existing application. It
+validates discovery and pairing, verifies the initial Ed25519
+challenge, and runs each protocol session. The application owns
+HTTP/WebSocket routing, durable stores, rate limiting, live-session
+routing, cluster coordination, and durable jobs.
 
 ```ts
-import { createOpenPrinterServer } from '@openprinter/server';
-
-const openPrinter = createOpenPrinterServer({
-  brand: {
-    name: 'Acme POS',
-  },
-  onAgentConnected({ agent, session }) {
-    liveSessions.register(agent.agentId, session);
-  },
-  onAgentDisconnected({ agent, session }) {
-    liveSessions.removeIfCurrent(agent.agentId, session);
-  },
-  onPrintersChanged({ agent, printers }) {
-    inventory.replace(agent.agentId, printers);
-  },
-  onJobReceived({ agent, message }) {
-    jobs.markReceived(agent.agentId, message.payload.jobId);
-  },
+const server = createOpenPrinterServer({
+  brand: { name: 'Acme Print Service' },
+  serverId: 'acme-print-v1',
+  serverVersion: '1.0.0',
+  pairingCodeStore,
+  credentialStore,
+  checkPairingRateLimit: ({ remoteAddress }) =>
+    limiter.check(remoteAddress),
+  onAgentConnected: ({ agent, session }) =>
+    sessions.register(agent.agentId, session),
+  onJobReceived: ({ agent, message }) =>
+    jobs.markReceived(agent.agentId, message.payload.jobId),
 });
 ```
 
-After the host authenticates its WebSocket, framework connection, or
-broker route, it accepts one independent protocol session:
+## Discovery and pairing routes
 
 ```ts
-const session = openPrinter.accept({
-  identity: {
-    agentId: authenticatedAgent.id,
-    metadata: {
-      organizationId: authenticatedAgent.organizationId,
-    },
-  },
-  transport: {
-    send: (message) => connection.send(message),
-    close: ({ reason, detail }) => {
-      connection.close(mapCloseReason(reason), detail);
-    },
-  },
+app.get(server.paths.discovery, async (_request, response) => {
+  response.json(await server.discover());
 });
 
-connection.onMessage((message) => {
-  void session.receive(message);
-});
-
-connection.onClose((detail) => {
-  void session.transportClosed({
-    reason: 'peer-closed',
-    detail,
-  });
+app.post(server.paths.pairing, async (request, response) => {
+  response.json(
+    await server.pair(request.body, { remoteAddress: request.ip }),
+  );
 });
 ```
 
-`brand.name` is required in `server.hello`. OPPA uses it to show the
-service that accepted the connection. Brand metadata cannot contain an
-icon or resource URL, so displaying it never requires a sensitive
-third-party request.
+`createPairingCode` creates a secure, short-lived, single-use grant.
+Protect code creation with application authorization. Use the
+in-memory stores only for tests and local examples.
 
-## What the SDK owns
-
-- protocol handshake, version negotiation, and runtime validation
-- ordered inbound processing within one accepted session
-- bounded heartbeat, message, callback, and transport handoff timing
-- per-session printer inventory and typed lifecycle callbacks
-- validated application commands and structured transport failures
-- semantic protocol disconnect messages
-
-## What the host owns
-
-- HTTP and WebSocket server or broker lifecycle
-- authentication parsing, policy, and token format
-- connection registry, agent affinity, and replacement policy
-- Node cluster coordination or distributed routing
-- durable jobs and retry schedules
-- database, Redis, RabbitMQ, NATS, or queue choice
-- tenant models, logical printer routing, billing, and user sessions
-
-Two sessions with the same authenticated agent ID remain independent.
-This prevents a process-local registry from being mistaken for a
-cluster-wide routing solution. The host may keep a local map in a
-single-process application or announce session ownership through its
-chosen backplane.
-
-Every job callback is structurally validated, but the host must still
-match agent, correlation, job, and idempotency identifiers against its
-durable application record. Those correlations outlive an SDK session
-and cannot be authorized by the SDK alone.
-
-## Session commands
-
-The host selects the session before sending:
+## Gateway
 
 ```ts
-const session = await liveSessions.resolve(agentId);
-
-if (session === null) {
-  await jobs.keepQueued(job.id, 'agent-offline');
-  return;
-}
-
-const result = await session.sendJob({
-  jobId: job.id,
-  idempotencyKey: job.idempotencyKey,
-  printerId: job.printerId,
-  createdAt: job.createdAt.toISOString(),
-  document: job.document,
+wss.handleUpgrade(request, socket, head, (webSocket) => {
+  server.handleGatewayConnection(webSocket);
 });
-
-if (!result.ok) {
-  await jobs.keepQueued(job.id, result.reason);
-}
 ```
 
-`send`, `sendJob`, `requestPrinters`, `cancelJob`, and
-`invalidateConfiguration` report immediate transport handoff only.
-They never silently create a durable queue. The `received` callback is
-the later proof that OPPA persisted a delivered job.
+The convenience adapter is structural rather than tied to `ws`. Custom
+transports call `server.accept({ transport })`, forward frames to
+`session.receive`, and report closure through
+`session.transportClosed`.
+
+`accept()` starts unauthenticated. The SDK sends and verifies the
+initial challenge before accepting `agent.hello`. The authenticated
+identity comes from the stored public credential, not from
+host-supplied socket metadata.
+
+## Delivery ownership
+
+Store application jobs durably before selecting a live session and
+calling `sendJob`. If no worker owns the session, keep the job queued.
+Two sessions for one agent are independent; host code or a backplane
+decides affinity, replacement, and distributed delivery.
+
+`agent.job_received` confirms local durable receipt.
+`agent.job_submitted` confirms backend acceptance, not universal
+physical completion.

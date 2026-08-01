@@ -1,0 +1,18 @@
+{
+  "protocolVersion": "1",
+  "code": "ABCD-EFGH",
+  "agent": {
+    "name": "Front Counter",
+    "version": "1.0.0",
+    "platform": "macos",
+    "installationId": "installation-01"
+  },
+  "credential": {
+    "algorithm": "Ed25519",
+    "publicKey": {
+      "kty": "OKP",
+      "crv": "Ed25519",
+      "x": "11qYAYKxCrfVS_7TyWfd0GEQYBxPjS_8Z_xBiwx6QmY"
+    }
+  }
+}

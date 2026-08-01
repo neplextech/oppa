@@ -61,7 +61,9 @@ pub fn run() {
         .on_window_event(desktop::handle_close_request)
         .invoke_handler(tauri::generate_handler![
             commands::get_agent_status,
-            commands::begin_authorization,
+            commands::discover_server,
+            commands::pair_server,
+            commands::forget_server,
             commands::list_printers,
             commands::refresh_printers,
             commands::configure_printer,

@@ -1,53 +1,34 @@
 ---
-title: Run the Example Server
+title: Example Server
 description:
-  Development endpoints and limitations of the in-memory Node.js
-  example.
+  Disposable Node.js discovery, pairing, gateway, and job integration.
 ---
 
-The Node.js example demonstrates how an existing HTTP application owns
-WebSocket upgrades, authentication, and a local session registry
-around `@openprinter/server`. It has no database and no external
-queue.
+`examples/node-server` is a local `node:http` and `ws` host for the
+published package boundaries.
+
+| Route                              | Purpose                                             |
+| ---------------------------------- | --------------------------------------------------- |
+| `GET /.well-known/openprinter`     | Discovery document                                  |
+| `POST /openprinter/pair`           | Pairing-code redemption and public-key registration |
+| `/.well-known/openprinter/gateway` | Challenge-authenticated WebSocket upgrade           |
+| `POST /development/pairing-code`   | Create a disposable local code                      |
+| `POST /agents/:agentId/jobs`       | Deliver a validated job to a live session           |
+
+The process logs one development pairing code at startup. It uses the
+SDK's volatile stores, so restarting invalidates every pairing. That
+behavior is useful for tests but unsuitable for production.
+
+The host owns the WebSocket upgrade and its process-local session map.
+`handleGatewayConnection` owns challenge verification, hello,
+heartbeat, and normal message routing after the socket is accepted.
+
+Production integrations must add durable pairing/public credential
+stores, authorization around code creation, pairing rate limits,
+durable jobs, and cluster-aware session routing.
+
+Run all example checks with:
 
 ```bash
-pnpm --filter openprinter-node-example dev
+pnpm --filter openprinter-node-example check
 ```
-
-The server provides:
-
-| Endpoint                        | Purpose                                                        |
-| ------------------------------- | -------------------------------------------------------------- |
-| `GET /authorize`                | Development-only approval page and authorization-code issuance |
-| `POST /token`                   | PKCE-aware one-time authorization-code exchange                |
-| `GET /agents`                   | Connected agent summaries                                      |
-| `GET /agents/:agentId/printers` | Last inventory reported by one agent                           |
-| `POST /agents/:agentId/jobs`    | Send a small structured test job                               |
-
-## Development authentication
-
-The token registry, authorization codes, session routing, and
-connected inventory live only in memory. Restarting the example clears
-them. This implementation exists to exercise the provider-neutral OPPA
-flow; it is not a production identity provider.
-
-Production integrations must validate the user session on the
-authorization endpoint, bind approval to an allowed account or
-organization, make authorization codes single-use and short-lived,
-store refresh credentials safely, and revoke credentials when access
-changes.
-
-## Offline behavior
-
-If an agent is offline, the job endpoint returns a structured
-unavailable response. The example does not invent a durable queue. A
-real application should retain the job in its own database and retry
-delivery according to its own policy.
-
-## Product configuration
-
-Set OPPA's runtime server settings to the example's authorization,
-token, and gateway URLs on `127.0.0.1:8787`. The checked-in
-`examples/node-server/product/product.json` remains available for
-branded and automated builds, and supplies the OAuth client ID used by
-the development server.

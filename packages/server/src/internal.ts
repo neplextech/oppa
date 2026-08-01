@@ -1,9 +1,16 @@
-import { MAX_WIRE_MESSAGE_BYTES, type OpenPrinterBrandMetadata } from '@openprinter/protocol';
+import {
+  MAX_WIRE_MESSAGE_BYTES,
+  OPENPRINTER_DISCOVERY_PATH,
+  OPENPRINTER_GATEWAY_PATH,
+  OPENPRINTER_PAIRING_PATH,
+  type OpenPrinterBrandMetadata,
+} from '@openprinter/protocol';
 
 import { OpenPrinterServerConfigurationError } from './errors.js';
 import type {
   AcceptOpenPrinterSessionInput,
   OpenPrinterServerOptions,
+  OpenPrinterServerPaths,
   OpenPrinterTransportCloseRequest,
 } from './types.js';
 
@@ -12,15 +19,18 @@ const encoder = new TextEncoder();
 
 /** Validated server configuration shared by all accepted sessions. */
 export interface ResolvedOpenPrinterServerOptions {
+  readonly authenticationTimeoutMs: number;
   readonly brand: OpenPrinterBrandMetadata;
   readonly callbackTimeoutMs: number;
   readonly handshakeTimeoutMs: number;
   readonly heartbeatIntervalMs: number;
   readonly heartbeatTimeoutMs: number;
   readonly maxMessageBytes: number;
+  readonly paths: OpenPrinterServerPaths;
   readonly serverId: string;
   readonly serverVersion: string;
   readonly transportTimeoutMs: number;
+  readonly challengeTtlMs: number;
 }
 
 export function isValidIdentifier(value: string): boolean {
@@ -49,6 +59,8 @@ export function validateOptions<Metadata>(
   }
 
   const callbackTimeoutMs = options.callbackTimeoutMs ?? 5_000;
+  const authenticationTimeoutMs = options.authenticationTimeoutMs ?? 30_000;
+  const challengeTtlMs = options.challengeTtlMs ?? 30_000;
   const handshakeTimeoutMs = options.handshakeTimeoutMs ?? 10_000;
   const heartbeatIntervalMs = options.heartbeatIntervalMs ?? 15_000;
   const heartbeatTimeoutMs = options.heartbeatTimeoutMs ?? 45_000;
@@ -58,6 +70,8 @@ export function validateOptions<Metadata>(
   const transportTimeoutMs = options.transportTimeoutMs ?? 10_000;
 
   requireIntegerInRange('callbackTimeoutMs', callbackTimeoutMs, 1, 30_000);
+  requireIntegerInRange('authenticationTimeoutMs', authenticationTimeoutMs, 1_000, 300_000);
+  requireIntegerInRange('challengeTtlMs', challengeTtlMs, 5_000, 300_000);
   requireIntegerInRange('handshakeTimeoutMs', handshakeTimeoutMs, 1, 300_000);
   requireIntegerInRange('heartbeatIntervalMs', heartbeatIntervalMs, 5_000, 300_000);
   requireIntegerInRange('heartbeatTimeoutMs', heartbeatTimeoutMs, 1_000, 120_000);
@@ -81,28 +95,29 @@ export function validateOptions<Metadata>(
   }
 
   const brand = validateBrand(options.brand);
+  const paths = validatePaths(options.paths);
 
   return {
     brand,
+    authenticationTimeoutMs,
     callbackTimeoutMs,
+    challengeTtlMs,
     handshakeTimeoutMs,
     heartbeatIntervalMs,
     heartbeatTimeoutMs,
     maxMessageBytes,
+    paths,
     serverId,
     serverVersion,
     transportTimeoutMs,
   };
 }
 
-export function validateAcceptInput<Metadata>(input: AcceptOpenPrinterSessionInput<Metadata>): void {
+export function validateAcceptInput(input: AcceptOpenPrinterSessionInput): void {
   if (typeof input !== 'object' || input === null) {
     throw new OpenPrinterServerConfigurationError('accept() input must be an object.');
   }
 
-  if (typeof input.identity?.agentId !== 'string' || !isValidIdentifier(input.identity.agentId)) {
-    throw new OpenPrinterServerConfigurationError('accept().identity.agentId must be a valid OpenPrinter identifier.');
-  }
   if (input.sessionId !== undefined && !isValidIdentifier(input.sessionId)) {
     throw new OpenPrinterServerConfigurationError('accept().sessionId must be a valid OpenPrinter identifier.');
   }
@@ -111,6 +126,25 @@ export function validateAcceptInput<Metadata>(input: AcceptOpenPrinterSessionInp
       'accept().transport must provide send(message) and close(request) functions.',
     );
   }
+}
+
+function validatePaths(paths: OpenPrinterServerOptions<unknown>['paths']): OpenPrinterServerPaths {
+  const resolved = {
+    discovery: paths?.discovery ?? OPENPRINTER_DISCOVERY_PATH,
+    pairing: paths?.pairing ?? OPENPRINTER_PAIRING_PATH,
+    gateway: paths?.gateway ?? OPENPRINTER_GATEWAY_PATH,
+  };
+  for (const [name, path] of Object.entries(resolved)) {
+    if (!/^\/[A-Za-z0-9._~!$&'()*+,;=:@%/-]*$/.test(path) || path.includes('//')) {
+      throw new OpenPrinterServerConfigurationError(
+        `paths.${name} must be an absolute URL path without a query, fragment, or repeated slash.`,
+      );
+    }
+  }
+  if (new Set(Object.values(resolved)).size !== 3) {
+    throw new OpenPrinterServerConfigurationError('Discovery, pairing, and gateway paths must be distinct.');
+  }
+  return Object.freeze(resolved);
 }
 
 export function transportCloseRequest(

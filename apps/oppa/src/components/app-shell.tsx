@@ -63,17 +63,18 @@ export function AppShell({
 
 function TitleBar({ status, developerMode }: { status: AgentStatus; developerMode: boolean }) {
   const agentId = status.agentId;
-  const connected = status.state === 'connected';
+  const connected = status.connectionState === 'connected';
   const tone =
-    status.state === 'connected'
+    status.connectionState === 'connected'
       ? 'connected'
-      : status.state === 'degraded'
-        ? 'warning'
-        : status.state === 'disconnected' || status.state === 'shutting_down'
-          ? 'error'
-          : status.state === 'connecting' || status.state === 'authorizing'
-            ? 'pending'
-            : 'offline';
+      : status.connectionState === 'authentication_failed' || status.connectionState === 'credential_revoked'
+        ? 'error'
+        : status.connectionState === 'connecting' ||
+            status.connectionState === 'authenticating' ||
+            status.connectionState === 'pairing' ||
+            status.connectionState === 'discovering'
+          ? 'pending'
+          : 'offline';
 
   return (
     <header
@@ -93,9 +94,12 @@ function TitleBar({ status, developerMode }: { status: AgentStatus; developerMod
 
       {/* Connection state */}
       <div className="text-muted-foreground flex items-center gap-2 text-sm" data-no-drag>
-        <span className={cn('status-dot', `status-dot--${tone}`)} aria-label={`State: ${titleCase(status.state)}`} />
+        <span
+          className={cn('status-dot', `status-dot--${tone}`)}
+          aria-label={`State: ${titleCase(status.connectionState)}`}
+        />
         <span className={cn(connected ? 'text-foreground/70' : 'text-muted-foreground')}>
-          {titleCase(status.state)}
+          {titleCase(status.connectionState)}
         </span>
         {status.connectedService ? (
           <>

@@ -10,19 +10,19 @@ reachable only from a user's local machine or network.
 
 **OPPA** is the Open Printer Proxy Agent. It is a lightweight Tauri
 desktop application backed by a shell-independent Rust agent. It
-authenticates with a validated OpenPrinter service selected from
-embedded defaults or runtime settings, discovers local printers,
-receives jobs, writes them to SQLite, renders their structured
-documents, submits them to a concrete printer transport, and reports
-the resulting state.
+discovers and authenticates with a validated OpenPrinter service
+selected in runtime settings, discovers local printers, receives jobs,
+writes them to SQLite, renders their structured documents, submits
+them to a concrete printer transport, and reports the resulting state.
 
 **OpenPrinter** is the generic integration layer.
 `@openprinter/protocol` publishes the canonical TypeScript schemas and
 codecs. `@openprinter/server` runs validated protocol sessions over
 host-owned transports. The integrating application owns HTTP,
-WebSocket or broker lifecycle, authentication, and connection routing.
-Neither package contains restaurant, tenant, station, billing, or
-application-specific routing concepts.
+WebSocket or broker lifecycle, pairing authorization, durable public
+credential storage, and connection routing; the SDK verifies the
+initial gateway challenge. Neither package contains restaurant,
+tenant, station, billing, or application-specific routing concepts.
 
 ## The important invariant
 

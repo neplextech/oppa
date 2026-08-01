@@ -6,7 +6,7 @@ use tauri_plugin_autostart::ManagerExt;
 use crate::{
     error::CommandError,
     models::{
-        AgentStatus, AuthorizationStart, ConfigurePrinterChanges, Diagnostics, JobSummary,
+        AgentStatus, ConfigurePrinterChanges, Diagnostics, DiscoveredServiceSummary, JobSummary,
         ManualPrinterInput, PrinterSummary, ProductLink, VirtualPrinterInput, VirtualPrinterMode,
     },
     server_configuration::{OpenPrinterServerConfiguration, OpenPrinterServerConfigurationInput},
@@ -23,10 +23,24 @@ pub async fn get_agent_status(
 }
 
 #[tauri::command]
-pub async fn begin_authorization(
+pub async fn discover_server(
     service: State<'_, Arc<DesktopService>>,
-) -> Result<AuthorizationStart, CommandError> {
-    service.inner().begin_authorization().await
+) -> Result<DiscoveredServiceSummary, CommandError> {
+    service.discover_server().await
+}
+
+#[tauri::command]
+pub async fn pair_server(
+    service: State<'_, Arc<DesktopService>>,
+    code: String,
+    agent_name: String,
+) -> Result<DiscoveredServiceSummary, CommandError> {
+    service.pair_server(code, agent_name).await
+}
+
+#[tauri::command]
+pub async fn forget_server(service: State<'_, Arc<DesktopService>>) -> Result<(), CommandError> {
+    service.forget_server().await
 }
 
 #[tauri::command]

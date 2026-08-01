@@ -3,12 +3,9 @@ use std::fmt;
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
 
 use crate::{
-    MAX_PRINTERS_PER_INVENTORY, MAX_WIRE_MESSAGE_BYTES, Metadata, PROTOCOL_VERSION, PrintJob,
+    MAX_PRINTERS_PER_INVENTORY, MAX_WIRE_MESSAGE_BYTES, PROTOCOL_VERSION, PrintJob,
     PrinterDescriptor, Validate, ValidationError,
-    validation::{
-        validate_brand_name, validate_identifier, validate_metadata, validate_string,
-        validate_timestamp,
-    },
+    validation::{validate_brand_name, validate_identifier, validate_string, validate_timestamp},
 };
 
 const MAX_SAFE_INTEGER: u64 = 9_007_199_254_740_991;
@@ -21,8 +18,8 @@ impl ProtocolVersion {
     /// Current protocol version used by new messages.
     pub const CURRENT: Self = Self;
 
-    /// Returns the numeric wire representation.
-    pub const fn get(self) -> u16 {
+    /// Returns the stable string wire representation.
+    pub const fn get(self) -> &'static str {
         PROTOCOL_VERSION
     }
 }
@@ -38,7 +35,7 @@ impl Serialize for ProtocolVersion {
     where
         S: Serializer,
     {
-        serializer.serialize_u16(PROTOCOL_VERSION)
+        serializer.serialize_str(PROTOCOL_VERSION)
     }
 }
 
@@ -56,22 +53,11 @@ impl<'de> Deserialize<'de> for ProtocolVersion {
                 write!(formatter, "protocol version {PROTOCOL_VERSION}")
             }
 
-            fn visit_u64<E>(self, value: u64) -> Result<Self::Value, E>
+            fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
             where
                 E: de::Error,
             {
-                if value == u64::from(PROTOCOL_VERSION) {
-                    Ok(ProtocolVersion)
-                } else {
-                    Err(E::custom(format!("unsupported protocol version {value}")))
-                }
-            }
-
-            fn visit_i64<E>(self, value: i64) -> Result<Self::Value, E>
-            where
-                E: de::Error,
-            {
-                if value == i64::from(PROTOCOL_VERSION) {
+                if value == PROTOCOL_VERSION {
                     Ok(ProtocolVersion)
                 } else {
                     Err(E::custom(format!("unsupported protocol version {value}")))
@@ -127,44 +113,6 @@ impl Validate for AgentHello {
             &self.supported_protocol_versions,
             "supportedProtocolVersions",
         )
-    }
-}
-
-/// Authentication mechanism metadata that never contains credentials.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum AuthenticationMethod {
-    /// OAuth 2.0 transport authentication.
-    Oauth2,
-    /// API-key transport authentication.
-    ApiKey,
-    /// No transport authentication, for explicitly trusted development only.
-    None,
-}
-
-/// Non-secret context describing the authenticated connection.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct AuthenticationMetadata {
-    /// Authentication mechanism used by the transport.
-    pub method: AuthenticationMethod,
-    /// Optional non-secret remote subject identifier.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub subject: Option<String>,
-    /// Optional bounded, non-secret authentication context.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub metadata: Option<Metadata>,
-}
-
-impl Validate for AuthenticationMetadata {
-    fn validate(&self) -> Result<(), ValidationError> {
-        if let Some(subject) = &self.subject {
-            validate_string(subject, "subject", 1, 256)?;
-        }
-        if let Some(metadata) = &self.metadata {
-            validate_metadata(metadata, "metadata")?;
-        }
-        Ok(())
     }
 }
 
@@ -426,9 +374,6 @@ pub enum AgentMessageKind {
     /// Initial agent handshake.
     #[serde(rename = "agent.hello")]
     Hello(AgentHello),
-    /// Non-secret authentication context.
-    #[serde(rename = "agent.authentication_metadata")]
-    AuthenticationMetadata(AuthenticationMetadata),
     /// Heartbeat response.
     #[serde(rename = "agent.heartbeat")]
     Heartbeat(AgentHeartbeat),
@@ -457,7 +402,6 @@ impl AgentMessageKind {
     pub const fn message_type(&self) -> &'static str {
         match self {
             Self::Hello(_) => "agent.hello",
-            Self::AuthenticationMetadata(_) => "agent.authentication_metadata",
             Self::Heartbeat(_) => "agent.heartbeat",
             Self::PrinterInventory(_) => "agent.printer_inventory",
             Self::PrinterInventoryChanged(_) => "agent.printer_inventory_changed",
@@ -473,7 +417,6 @@ impl Validate for AgentMessageKind {
     fn validate(&self) -> Result<(), ValidationError> {
         match self {
             Self::Hello(payload) => payload.validate(),
-            Self::AuthenticationMetadata(payload) => payload.validate(),
             Self::Heartbeat(payload) => payload.validate(),
             Self::PrinterInventory(payload) => payload.validate(),
             Self::PrinterInventoryChanged(payload) => payload.validate(),
@@ -532,7 +475,6 @@ impl Validate for AgentMessage {
                 ));
             }
             AgentMessageKind::Hello(_)
-            | AgentMessageKind::AuthenticationMetadata(_)
             | AgentMessageKind::PrinterInventoryChanged(_)
             | AgentMessageKind::Diagnostics(_)
                 if correlation =>

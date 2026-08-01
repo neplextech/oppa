@@ -1,55 +1,49 @@
 ---
 title: Security
 description:
-  The remote-command boundary, credential safety, limits, and
-  diagnostics redaction.
+  OpenPrinter's command, credential, transport, and data boundaries.
 ---
 
-OPPA is a privileged bridge to local printer hardware. Treat every
-remote message as untrusted input.
-
-## Remote command boundary
-
-The agent accepts only documented OpenPrinter messages. It does not
-expose:
-
-- arbitrary shell or script execution
-- unrestricted filesystem access
-- generic HTTP proxying
-- server-selected local file paths
-- a JavaScript runtime or plugin loader
-- remote desktop functionality
-
-Tauri commands are similarly narrow and typed.
+OPPA is a privileged local bridge with a deliberately narrow protocol
+surface.
 
 ## Authentication
 
-- authorization uses PKCE and cryptographic state
-- the callback binds only to ephemeral `127.0.0.1`
-- authorization codes are accepted once and expire quickly
-- the WebSocket uses Bearer authentication over TLS in production
-- refresh credentials use operating-system secure storage
+- OPPA accepts one validated server base URL; production discovery and
+  pairing require HTTPS.
+- Pairing codes are random, short-lived, single-use, body-only, and
+  should be rate-limited.
+- OPPA generates the Ed25519 key pair locally and stores the private
+  key through the operating system.
+- The server stores only the public JWK and revocation metadata.
+- Gateway challenges are unpredictable, domain-separated,
+  socket-bound, single-use, and expiring.
+- Authentication, handshake, network, printer, and lifecycle
+  operations have explicit timeouts.
+- Normal frames are not individually signed; WSS protects the
+  authenticated session.
 
-Tokens are never written to SQLite, product JSON, logs, or diagnostic
-exports.
+If discovery returns a different stable server ID for a paired URL,
+OPPA refuses automatic connection. Changing or forgetting a service
+deletes the local key and requires pairing again.
 
-## Input and resource limits
+## Command boundary
 
-The protocol bounds encoded messages, document sections, metadata,
-strings, images, and inventory size. OPPA validates a job's printer ID
-against its enabled local registry. Network submission uses explicit
-connect and write timeouts.
+OpenPrinter permits only documented message types. It has no arbitrary
+shell, script, filesystem, SQL, plugin execution, remote desktop, or
+generic proxy command. Remote printer IDs are validated against the
+enabled local registry.
 
-Local jobs, processed idempotency history, captured virtual output,
-and diagnostic logs all have retention limits. A remote peer cannot
-grow them without bound.
+## Limits and diagnostics
 
-## Product builds
+Messages, documents, images, queues, printer inventories, callbacks,
+and diagnostic histories are bounded. Errors are sanitized.
+Diagnostics exclude private keys, pairing codes, signatures, complete
+challenges, and full print documents by default.
 
-Production products use `https:` and `wss:` endpoints. Product
-configuration is validated and embedded during compilation, which
-prevents an unprivileged local edit from redirecting an installed
-agent to another provider.
+## Server responsibilities
 
-Report suspected vulnerabilities privately to the maintainers before
-opening a public issue.
+Production hosts must use durable pairing/public credential stores,
+authorize code creation, rate-limit attempts, revoke credentials when
+access ends, retain jobs durably, and implement connection affinity
+appropriate to their deployment.

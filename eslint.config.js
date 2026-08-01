@@ -41,6 +41,7 @@ export default tseslint.config(
       '**/coverage/**',
       '**/out/**',
       '**/target/**',
+      'docs/scratchpad/**',
       'protocol/schema/openprinter.schema.json',
     ],
   },

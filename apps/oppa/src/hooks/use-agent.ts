@@ -5,6 +5,7 @@ import { isVirtualPrinter } from '@/lib/types';
 import type {
   AgentStatus,
   Diagnostics,
+  DiscoveredServiceSummary,
   JobSummary,
   ManualPrinterInput,
   OpenPrinterServerConfiguration,
@@ -18,6 +19,7 @@ export function useAgent() {
   const [printers, setPrinters] = useState<PrinterSummary[]>([]);
   const [jobs, setJobs] = useState<JobSummary[]>([]);
   const [diagnostics, setDiagnostics] = useState<Diagnostics | null>(null);
+  const [discoveredService, setDiscoveredService] = useState<DiscoveredServiceSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -87,10 +89,21 @@ export function useAgent() {
 
   const actions = useMemo(
     () => ({
-      authorize: async () => {
-        const result = await run('authorize', () => agentClient.beginAuthorization());
-        setStatus((current) => (current ? { ...current, state: 'authorizing' } : current));
+      discoverServer: async () => {
+        const result = await run('discover-server', () => agentClient.discoverServer());
+        setDiscoveredService(result);
         return result;
+      },
+      pairServer: async (code: string, agentName: string) => {
+        const result = await run('pair-server', () => agentClient.pairServer(code, agentName));
+        setDiscoveredService(result);
+        await load();
+        return result;
+      },
+      forgetServer: async () => {
+        await run('forget-server', () => agentClient.forgetServer());
+        setDiscoveredService(null);
+        await load();
       },
       refreshPrinters: async () => {
         const nextPrinters = await run('refresh-printers', () => agentClient.refreshPrinters());
@@ -165,6 +178,7 @@ export function useAgent() {
     printers,
     jobs,
     diagnostics,
+    discoveredService,
     loading,
     busy,
     error,

@@ -6,8 +6,10 @@ This crate owns durable, non-secret local agent state.
   acknowledges receipt.
 - Keep migrations append-only once released. Add the next numbered SQL
   file and migration entry; never rewrite a deployed migration.
-- Do not store access tokens, refresh tokens, authorization codes,
-  PKCE verifiers, or other credentials in SQLite.
+- Do not store private keys, pairing codes, signatures, complete
+  challenges, or other secret credentials in SQLite. Paired public
+  identifiers and opaque credential references are non-secret
+  metadata.
 - Keep job state transitions explicit and transactional. `submitted`
   means a backend accepted the job, not that physical output was
   verified.

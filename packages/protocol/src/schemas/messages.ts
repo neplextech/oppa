@@ -6,13 +6,7 @@ import {
   PROTOCOL_SCHEMA_ID,
   PROTOCOL_VERSION,
 } from '../constants.js';
-import {
-  IdentifierSchema,
-  MetadataSchema,
-  ProtocolVersionSchema,
-  ShortStringSchema,
-  TimestampSchema,
-} from './common.js';
+import { IdentifierSchema, ProtocolVersionSchema, ShortStringSchema, TimestampSchema } from './common.js';
 import { PrintJobSchema } from './job.js';
 import { PrinterDescriptorSchema } from './printer.js';
 
@@ -84,30 +78,6 @@ export type AgentHelloMessage = Static<typeof AgentHelloMessageSchema>;
 
 /** Agent hello payload without its wire envelope. */
 export type AgentHello = AgentHelloMessage['payload'];
-
-/**
- * Non-secret authentication context.
- *
- * Access and refresh tokens belong to the transport handshake and must never
- * be placed in this payload.
- */
-export const AuthenticationMetadataMessageSchema = messageSchema(
-  'agent.authentication_metadata',
-  Type.Object(
-    {
-      method: Type.Union([Type.Literal('oauth2'), Type.Literal('api_key'), Type.Literal('none')]),
-      subject: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),
-      metadata: Type.Optional(MetadataSchema),
-    },
-    { additionalProperties: false },
-  ),
-);
-
-/** TypeScript representation of authentication metadata. */
-export type AuthenticationMetadataMessage = Static<typeof AuthenticationMetadataMessageSchema>;
-
-/** Non-secret authentication metadata payload. */
-export type AuthenticationMetadata = AuthenticationMetadataMessage['payload'];
 
 /** Correlated response to a server heartbeat request. */
 export const AgentHeartbeatMessageSchema = correlatedMessageSchema(
@@ -301,7 +271,6 @@ export type AgentDiagnostics = AgentDiagnosticsMessage['payload'];
 export const AgentMessageSchema = Type.Union(
   [
     AgentHelloMessageSchema,
-    AuthenticationMetadataMessageSchema,
     AgentHeartbeatMessageSchema,
     PrinterInventoryMessageSchema,
     PrinterInventoryChangedMessageSchema,
@@ -510,7 +479,6 @@ export type OpenPrinterProtocolMessage = Static<typeof OpenPrinterProtocolSchema
 /** Stable discriminator strings accepted from OPPA agents. */
 export const AGENT_MESSAGE_TYPES = [
   'agent.hello',
-  'agent.authentication_metadata',
   'agent.heartbeat',
   'agent.printer_inventory',
   'agent.printer_inventory_changed',
