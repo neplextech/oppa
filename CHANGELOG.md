@@ -2,20 +2,31 @@
 
 All notable changes to OPPA and OpenPrinter are documented here.
 
-## Unreleased
+## 0.3.0 — 2026-08-01
 
-### Breaking changes
+### Bug Fixes
 
-- Replace the three-endpoint browser/token flow with one server base
-  URL, `/.well-known/openprinter` discovery, one-time pairing codes,
-  locally generated Ed25519 credentials, and gateway challenge
-  authentication.
-- Change protocol version values from numeric `1` to string `"1"` and
-  remove `agent.authentication_metadata`.
-- Change `@openprinter/server` to authenticate accepted transports
-  against pluggable public credential stores before `agent.hello`.
+- Build protocol package before running ESLint on packages
+  ([a2a853b](https://github.com/neplextech/oppa/commit/a2a853b0704f6b8a59315d54fec4f8ff64c68497))
 
-## 0.2.0 — 2026-07-30
+- Build server package before linting to resolve examples types
+  ([bfbbbd8](https://github.com/neplextech/oppa/commit/bfbbbd89c6b9529354c7d534cbff97ae6c4f3401))
+
+### Features
+
+- Add skills.sh skill definitions for @openprinter/protocol and
+  @openprinter/server
+  ([d44102f](https://github.com/neplextech/oppa/commit/d44102f84783691aae33883ac10c99b41947a6cb))
+
+- Add og images
+  ([f2a4a6f](https://github.com/neplextech/oppa/commit/f2a4a6f8b467e94fca57dd68f88d01e1c5d834e5))
+
+### Refactoring
+
+- Oppa authentication system
+  ([2a8d40c](https://github.com/neplextech/oppa/commit/2a8d40cb251578e21037105a14ae2c4de642fe70))
+
+## oppa-v0.1.0 — 2026-07-30
 
 ### Bug Fixes
 
@@ -89,6 +100,9 @@ All notable changes to OPPA and OpenPrinter are documented here.
 
 - Lint fixes
   ([88f5138](https://github.com/neplextech/oppa/commit/88f51389db48821d14f1846115802e5d09304732))
+
+- Release
+  ([5916944](https://github.com/neplextech/oppa/commit/59169447a0d9dfc17195857654a252964eb1da3c))
 
 ### Refactoring
 
