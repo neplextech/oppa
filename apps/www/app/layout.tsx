@@ -16,12 +16,21 @@ const mono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL('https://oppa.neplex.dev'),
   title: {
     default: 'OpenPrinter — local printing for cloud applications',
     template: '%s · OpenPrinter',
   },
   description:
     'OPPA is the local printer agent. OpenPrinter is the versioned protocol and server SDK that connects it to cloud applications.',
+  openGraph: {
+    description:
+      'OPPA is the local printer agent. OpenPrinter is the versioned protocol and server SDK that connects it to cloud applications.',
+    locale: 'en_US',
+    siteName: 'OpenPrinter',
+    title: 'OpenPrinter — local printing for cloud applications',
+    type: 'website',
+  },
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

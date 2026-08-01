@@ -6,6 +6,12 @@ export const metadata: Metadata = {
   title: 'Download OPPA',
   description:
     'Download the latest stable OPPA desktop agent for macOS, Windows, or Linux, with published SHA-256 checksums.',
+  openGraph: {
+    description:
+      'Download the latest stable OPPA desktop agent for macOS, Windows, or Linux, with published SHA-256 checksums.',
+    title: 'Download OPPA',
+    type: 'website',
+  },
 };
 
 export default function DownloadsPage() {
