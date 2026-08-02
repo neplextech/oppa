@@ -173,13 +173,19 @@ impl PairingClient {
     /// Fetches current discovery metadata from a normalized server base URL.
     pub async fn discover(&self, server_url: &Url) -> AuthResult<DiscoveredServer> {
         validate_server_url(server_url)?;
-        let discovery_url = server_url.join(DISCOVERY_PATH)?;
-        let response = self.client.get(discovery_url).send().await?;
+        // Build the discovery URL by appending the path relative to the server URL's own path.
+        // Using `Url::join` with an absolute path (starting with `/`) would discard the
+        // server URL's path segments, turning e.g. `.../api/v1/openprinter/{id}` into just
+        // the origin, which breaks servers mounted at a sub-path.
+        let mut discovery_url = server_url.clone();
+        let base_path = server_url.path().trim_end_matches('/');
+        discovery_url.set_path(&format!("{base_path}{DISCOVERY_PATH}"));
+        let response = self.client.get(discovery_url.clone()).send().await?;
         let status = response.status();
         let bytes = bounded_body(response).await?;
         if !status.is_success() {
             return Err(AuthError::Discovery(format!(
-                "server returned HTTP {status}"
+                "server returned HTTP {status} for url {discovery_url}"
             )));
         }
         let document: DiscoveryDocument = serde_json::from_slice(&bytes).map_err(|error| {
@@ -476,6 +482,33 @@ mod tests {
                 .expect("missing")
         );
         assert!(!format!("{generated:?}").contains(secret_marker()));
+    }
+
+    #[test]
+    fn discovery_url_preserves_server_url_path_prefix() {
+        // Servers mounted under a sub-path (e.g. /api/v1/openprinter/{id}) must have
+        // the discovery path appended to that prefix, not resolved from the host root.
+        let path_url =
+            normalize_server_url("https://api.example.com/api/v1/openprinter/71217dfb")
+                .expect("path URL");
+        let mut discovery = path_url.clone();
+        let base_path = path_url.path().trim_end_matches('/');
+        discovery.set_path(&format!("{base_path}{DISCOVERY_PATH}"));
+        assert_eq!(
+            discovery.as_str(),
+            "https://api.example.com/api/v1/openprinter/71217dfb/.well-known/openprinter"
+        );
+
+        // Root-only URLs should still resolve to /.well-known/openprinter.
+        let root_url =
+            normalize_server_url("https://print.example.com/").expect("root URL");
+        let mut discovery_root = root_url.clone();
+        let base_path_root = root_url.path().trim_end_matches('/');
+        discovery_root.set_path(&format!("{base_path_root}{DISCOVERY_PATH}"));
+        assert_eq!(
+            discovery_root.as_str(),
+            "https://print.example.com/.well-known/openprinter"
+        );
     }
 
     #[test]
