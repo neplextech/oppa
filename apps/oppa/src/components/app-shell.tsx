@@ -20,6 +20,7 @@ export function AppShell({
   onNavigate,
   status,
   developerMode,
+  paired,
   commandOpen,
   onOpenCommand,
   onCloseCommand,
@@ -30,6 +31,7 @@ export function AppShell({
   onNavigate: (screen: ScreenId) => void;
   status: AgentStatus;
   developerMode: boolean;
+  paired: boolean;
   commandOpen: boolean;
   onOpenCommand: () => void;
   onCloseCommand: () => void;
@@ -39,16 +41,18 @@ export function AppShell({
   return (
     <div className="bg-background text-foreground flex h-dvh flex-col overflow-hidden">
       {/* Title bar */}
-      <TitleBar status={status} developerMode={developerMode} />
+      <TitleBar status={status} />
 
       <div className="flex flex-1 overflow-hidden">
-        {/* Sidebar navigation */}
-        <Sidebar
-          activeScreen={activeScreen}
-          onNavigate={onNavigate}
-          onOpenCommand={onOpenCommand}
-          developerMode={developerMode}
-        />
+        {/* Sidebar navigation — hidden until server is paired */}
+        {paired && (
+          <Sidebar
+            activeScreen={activeScreen}
+            onNavigate={onNavigate}
+            onOpenCommand={onOpenCommand}
+            developerMode={developerMode}
+          />
+        )}
 
         {/* Main workspace */}
         <main className="bg-background flex-1 overflow-x-hidden overflow-y-auto" id="main-content" tabIndex={-1}>
@@ -61,7 +65,7 @@ export function AppShell({
   );
 }
 
-function TitleBar({ status, developerMode }: { status: AgentStatus; developerMode: boolean }) {
+function TitleBar({ status }: { status: AgentStatus }) {
   const agentId = status.agentId;
   const connected = status.connectionState === 'connected';
   const tone =
@@ -81,23 +85,20 @@ function TitleBar({ status, developerMode }: { status: AgentStatus; developerMod
       data-tauri-drag-region
       className="border-sidebar-border bg-sidebar flex h-11 shrink-0 items-center border-b select-none"
     >
-      {/* macOS traffic-light space */}
-      <div className="w-[72px] shrink-0" data-no-drag />
+      {/* Space reserved for macOS traffic lights — no drag region here */}
+      <div className="w-[72px] shrink-0" />
 
       {/* Product identity */}
-      <div className="flex items-center gap-2 px-2">
-        <img src="/oppa-icon.png" alt="" className="size-5 shrink-0 rounded-md" draggable={false} />
-        <span className="text-foreground/90 text-sm font-semibold">{status.product.name}</span>
+      <div data-tauri-drag-region className="flex items-center gap-2 px-2">
+        <img src="/oppa-icon.png" alt="" className="size-5 shrink-0 rounded-md pointer-events-none" draggable={false} />
+        <span data-tauri-drag-region className="text-foreground/90 text-sm font-semibold pointer-events-none">{status.product.name}</span>
       </div>
 
-      <div className="bg-border mx-3 h-3.5 w-px" />
+      <div data-tauri-drag-region className="bg-border mx-3 h-3.5 w-px pointer-events-none" />
 
-      {/* Connection state */}
-      <div className="text-muted-foreground flex items-center gap-2 text-sm" data-no-drag>
-        <span
-          className={cn('status-dot', `status-dot--${tone}`)}
-          aria-label={`State: ${titleCase(status.connectionState)}`}
-        />
+      {/* Connection state — non-interactive, all pointer-events-none so drag passes through */}
+      <div data-tauri-drag-region className="text-muted-foreground pointer-events-none flex items-center gap-2 text-sm">
+        <span className={cn('status-dot', `status-dot--${tone}`)} aria-label={`State: ${titleCase(status.connectionState)}`} />
         <span className={cn(connected ? 'text-foreground/70' : 'text-muted-foreground')}>
           {titleCase(status.connectionState)}
         </span>
@@ -121,15 +122,16 @@ function TitleBar({ status, developerMode }: { status: AgentStatus; developerMod
         )}
       </div>
 
-      <div className="flex-1" />
+      {/* Primary drag target — wide empty space in the middle */}
+      <div data-tauri-drag-region className="flex-1 self-stretch" />
 
-      <div className="flex items-center gap-2 px-4" data-no-drag>
-        {developerMode && (
+      <div className="flex items-center gap-2 px-4">
+        {import.meta.env.DEV && (
           <span className="border-primary/30 text-primary bg-primary/10 rounded px-1.5 py-0.5 font-mono text-xs font-medium tracking-wide">
             DEV
           </span>
         )}
-        <span className="text-muted-foreground/50 font-mono text-xs">v{status.version}</span>
+        <span className="text-muted-foreground/50 pointer-events-none font-mono text-xs">v{status.version}</span>
       </div>
     </header>
   );

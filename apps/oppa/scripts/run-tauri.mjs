@@ -57,7 +57,10 @@ const applicationId = requireProductString(product, 'applicationId');
 
 config.productName = productName;
 // Use a distinct identifier in dev so tauri dev data is isolated from the release build.
-config.identifier = mode === 'dev' ? `${applicationId}.dev` : applicationId;
+const resolvedIdentifier = mode === 'dev' ? `${applicationId}.dev` : applicationId;
+config.identifier = resolvedIdentifier;
+// Expose the effective app identifier to Vite so the frontend can display it.
+process.env.VITE_APP_IDENTIFIER = resolvedIdentifier;
 if (Array.isArray(config.app?.windows)) {
   config.app.windows = config.app.windows.map((window) => ({ ...window, title: productName }));
 }

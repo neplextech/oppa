@@ -16,9 +16,11 @@ mod virtual_spooler;
 
 use std::sync::Arc;
 
+use base64::Engine as _;
 use desktop::QuitState;
+use models::{DeepLinkPayload, PendingDeepLink};
 use service::DesktopService;
-use tauri::Manager;
+use tauri::{Emitter, Listener, Manager, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_autostart::MacosLauncher;
 
 /// Starts the OPPA desktop process and its background agent runtime.
@@ -29,6 +31,7 @@ use tauri_plugin_autostart::MacosLauncher;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_single_instance::init(
@@ -41,7 +44,27 @@ pub fn run() {
             None,
         ))
         .manage(QuitState::default())
+        .manage(Arc::new(PendingDeepLink::default()))
         .setup(|app| {
+            // Create the main window in Rust so that platform-specific title bar
+            // configuration is applied before the webview loads, which is required
+            // for data-tauri-drag-region to work correctly on macOS.
+            let win_builder = WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
+                .title("OPPA")
+                .inner_size(1120.0, 760.0)
+                .min_inner_size(840.0, 600.0)
+                .center();
+
+            #[cfg(target_os = "macos")]
+            let win_builder = win_builder
+                .title_bar_style(tauri::TitleBarStyle::Overlay)
+                .hidden_title(true);
+
+            #[cfg(not(target_os = "macos"))]
+            let win_builder = win_builder.decorations(false);
+
+            win_builder.build()?;
+
             let service =
                 tauri::async_runtime::block_on(DesktopService::initialize(app.handle().clone()))?;
             app.manage(Arc::clone(&service));
@@ -55,6 +78,26 @@ pub fn run() {
                     .log
                     .warn("desktop", format!("App menu is unavailable: {error}"));
             }
+
+            // Listen for deep-link URLs arriving while the app is already running.
+            let dl_handle = app.handle().clone();
+            app.listen("deep-link://new-url", move |event| {
+                let urls: Vec<String> = match serde_json::from_str(event.payload()) {
+                    Ok(u) => u,
+                    Err(_) => return,
+                };
+                for raw_url in urls {
+                    if let Some(payload) = parse_deep_link_pair(&raw_url) {
+                        if let Some(state) = dl_handle.try_state::<Arc<PendingDeepLink>>() {
+                            if let Ok(mut guard) = state.0.lock() {
+                                *guard = Some(payload.clone());
+                            }
+                        }
+                        let _ = dl_handle.emit("oppa://deep-link", payload);
+                    }
+                }
+            });
+
             Ok(())
         })
         .on_menu_event(|app, event| desktop::handle_app_menu_event(app, &event))
@@ -84,7 +127,32 @@ pub fn run() {
             commands::set_server_configuration,
             commands::reset_server_configuration,
             commands::open_product_link,
+            commands::list_recent_servers,
+            commands::apply_recent_server,
+            commands::get_pending_deep_link,
         ])
         .run(tauri::generate_context!())
         .expect("unrecoverable Tauri application failure");
+}
+
+/// Parses an `oppa://pair?server=<base64url>&key=<code>` deep link.
+fn parse_deep_link_pair(raw_url: &str) -> Option<DeepLinkPayload> {
+    let parsed = raw_url.parse::<url::Url>().ok()?;
+    if parsed.scheme() != "oppa" {
+        return None;
+    }
+    if parsed.path().trim_matches('/') != "pair" {
+        return None;
+    }
+    let params: std::collections::HashMap<_, _> = parsed.query_pairs().into_owned().collect();
+    let server_b64 = params.get("server")?;
+    let pair_key = params.get("key")?;
+    let server_bytes = base64::prelude::BASE64_URL_SAFE_NO_PAD
+        .decode(server_b64)
+        .ok()?;
+    let server_url = String::from_utf8(server_bytes).ok()?;
+    Some(DeepLinkPayload {
+        server_url,
+        pair_key: pair_key.clone(),
+    })
 }

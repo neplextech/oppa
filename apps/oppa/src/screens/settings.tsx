@@ -1,3 +1,4 @@
+import { getTauriVersion } from '@tauri-apps/api/app';
 import {
   ArrowLeft,
   Code2,
@@ -9,10 +10,10 @@ import {
   Moon,
   Power,
   RotateCcw,
-  ShieldCheck,
   Sun,
 } from 'lucide-react';
 import type { ReactNode } from 'react';
+import { useEffect, useState } from 'react';
 
 import type { Theme } from '@/App';
 import { ServerConfigurationForm } from '@/components/server-configuration-form';
@@ -60,6 +61,15 @@ export function SettingsScreen({
   onBackToSetup?: () => void;
 }) {
   const { checkForUpdates, isChecking, lastResult } = useUpdater();
+  const [tauriVersion, setTauriVersion] = useState<string | null>(null);
+
+  useEffect(() => {
+    if ('__TAURI_INTERNALS__' in window) {
+      getTauriVersion()
+        .then((v) => setTauriVersion(v))
+        .catch(() => undefined);
+    }
+  }, []);
 
   return (
     <ScreenContainer>
@@ -76,7 +86,8 @@ export function SettingsScreen({
         }
       />
 
-      <div className="max-w-2xl flex-1 space-y-8 overflow-y-auto p-6">
+      <div className="flex flex-1 justify-center overflow-y-auto">
+      <div className="w-full max-w-2xl space-y-8 p-8">
         {/* Appearance */}
         <Section title="Appearance" description="Interface color scheme">
           <div className="bg-card/50 px-5 py-4">
@@ -136,7 +147,7 @@ export function SettingsScreen({
             onReset={onResetServerConfiguration}
           />
           <p className="border-border/50 text-muted-foreground/70 border-t px-5 py-3 text-xs leading-4">
-            Changing the URL deletes the current local private key before pairing with a different server.
+            Changing the server URL will unpair this computer and require pairing again.
           </p>
           <div className="border-border/50 border-t px-5 py-3">
             <Button
@@ -211,16 +222,15 @@ export function SettingsScreen({
               </div>
             </div>
           </div>
-          <div className="bg-card/30 border-border/50 flex items-center gap-2 border-t px-5 py-3">
-            <span className="text-muted-foreground font-mono text-xs">v{status.version}</span>
-            <span className="text-border">·</span>
-            <span className="text-muted-foreground text-xs">{status.platform}</span>
-            {status.agentId && (
-              <>
-                <span className="text-border">·</span>
-                <span className="text-muted-foreground truncate font-mono text-xs">{status.agentId}</span>
-              </>
+          <div className="bg-card/30 border-border/50 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 border-t px-5 py-4">
+            <AboutRow label="App version" value={`v${status.version}`} mono />
+            {tauriVersion && <AboutRow label="Tauri" value={`v${tauriVersion}`} mono />}
+            <AboutRow label="Platform" value={status.platform} />
+            {import.meta.env.VITE_APP_IDENTIFIER && (
+              <AboutRow label="Identifier" value={import.meta.env.VITE_APP_IDENTIFIER as string} mono />
             )}
+            {status.agentId && <AboutRow label="Agent ID" value={status.agentId} mono />}
+            <AboutRow label="Build" value={import.meta.env.DEV ? 'Development' : 'Release'} />
           </div>
         </Section>
 
@@ -229,24 +239,12 @@ export function SettingsScreen({
           <SettingRow
             icon={<Code2 className="size-4" aria-hidden />}
             title="Developer Mode"
-            description="Reveals virtual printer controls, enables Copy ID in context menus, and shows a DEV badge in the title bar."
+            description="Reveals virtual printer controls and enables Copy ID in context menus."
             control={<Toggle checked={developerMode} label="Enable developer mode" onChange={onDeveloperModeChange} />}
           />
         </Section>
 
-        {/* Security */}
-        <Section title="Security">
-          <div className="flex items-start gap-4 px-5 py-4">
-            <ShieldCheck className="mt-0.5 size-5 shrink-0 text-[var(--color-connected)]" aria-hidden />
-            <div>
-              <p className="text-sm font-semibold text-[var(--color-connected)]">Security boundary active</p>
-              <p className="mt-1.5 text-sm leading-5 text-[var(--color-connected)]/70">
-                The connected server can send only versioned OpenPrinter messages. It cannot run scripts, browse local
-                files, or proxy arbitrary network requests.
-              </p>
-            </div>
-          </div>
-        </Section>
+      </div>
       </div>
     </ScreenContainer>
   );
@@ -283,6 +281,15 @@ function SettingRow({
       </div>
       {control}
     </div>
+  );
+}
+
+function AboutRow({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+  return (
+    <>
+      <span className="text-muted-foreground text-xs">{label}</span>
+      <span className={`text-foreground/80 text-xs ${mono ? 'font-mono' : ''}`}>{value}</span>
+    </>
   );
 }
 

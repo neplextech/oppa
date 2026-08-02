@@ -10,16 +10,7 @@
     "frontendDist": "../dist"
   },
   "app": {
-    "windows": [
-      {
-        "title": "OPPA",
-        "width": 1120,
-        "height": 760,
-        "minWidth": 840,
-        "minHeight": 600,
-        "center": true
-      }
-    ],
+    "windows": [],
     "security": {
       "csp": "default-src 'self'; connect-src ipc: http://ipc.localhost; img-src 'self' asset: http://asset.localhost data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:"
     }
@@ -36,6 +27,13 @@
     }
   },
   "plugins": {
+    "deep-link": {
+      "desktop": [
+        {
+          "schemes": ["oppa"]
+        }
+      ]
+    },
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEYyRTg3MzdBNDg5NzgyRjYKUldUMmdwZEllblBvOG91dmc5UnRKdFBIbXdyTGNjYkRUQTA1ODZFK2xDMnhQdlZ5UGxEcm5WdVcK",
       "endpoints": ["https://github.com/neplextech/oppa/releases/latest/download/latest.json"],
