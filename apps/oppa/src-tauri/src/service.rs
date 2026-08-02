@@ -296,14 +296,14 @@ impl DesktopService {
         Ok(service)
     }
 
-    pub async fn status(&self, start_on_login: bool) -> AgentStatus {
+    pub async fn status(&self, start_on_login: bool, version: String) -> AgentStatus {
         let snapshot = self.agent.handle().snapshot().await;
         let agent_id = self.agent_id.read().await.clone();
         AgentStatus {
             agent_id,
             product: ProductSummary::from(&self.product),
             last_connection_at: self.last_connection_at.read().await.clone(),
-            version: env!("CARGO_PKG_VERSION").to_owned(),
+            version,
             pending_jobs: snapshot.pending_jobs,
             active_errors: snapshot.active_errors,
             start_on_login,

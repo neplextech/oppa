@@ -20,7 +20,8 @@ pub async fn get_agent_status(
     service: State<'_, Arc<DesktopService>>,
 ) -> Result<AgentStatus, CommandError> {
     let start_on_login = app.autolaunch().is_enabled().unwrap_or(false);
-    Ok(service.status(start_on_login).await)
+    let version = app.package_info().version.to_string();
+    Ok(service.status(start_on_login, version).await)
 }
 
 #[tauri::command]
@@ -201,7 +202,8 @@ pub async fn reconnect(
     service.reconnect().await?;
     tokio::task::yield_now().await;
     let start_on_login = app.autolaunch().is_enabled().unwrap_or(false);
-    Ok(service.status(start_on_login).await)
+    let version = app.package_info().version.to_string();
+    Ok(service.status(start_on_login, version).await)
 }
 
 #[tauri::command]
