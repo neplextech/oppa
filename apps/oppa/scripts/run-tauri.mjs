@@ -56,7 +56,8 @@ const productName = requireProductString(product, 'productName');
 const applicationId = requireProductString(product, 'applicationId');
 
 config.productName = productName;
-config.identifier = applicationId;
+// Use a distinct identifier in dev so tauri dev data is isolated from the release build.
+config.identifier = mode === 'dev' ? `${applicationId}.dev` : applicationId;
 if (Array.isArray(config.app?.windows)) {
   config.app.windows = config.app.windows.map((window) => ({ ...window, title: productName }));
 }

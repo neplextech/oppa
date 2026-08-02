@@ -1,4 +1,4 @@
-import { Clipboard, Database, Download, RefreshCw, ShieldCheck } from 'lucide-react';
+import { Clipboard, Database, Download, RefreshCw, ShieldCheck, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 
 import { ScreenContainer, ScreenHeader, SectionHeader, StatusDot } from '@/components/ui';
@@ -11,11 +11,13 @@ export function DiagnosticsScreen({
   busy,
   onReload,
   onExport,
+  onClearLogs,
 }: {
   diagnostics: Diagnostics;
   busy: string | null;
   onReload: () => Promise<void>;
   onExport: () => Promise<string>;
+  onClearLogs: () => Promise<void>;
 }) {
   const [exportedPath, setExportedPath] = useState<string | null>(null);
 
@@ -42,14 +44,27 @@ export function DiagnosticsScreen({
           <div className="flex items-center gap-2">
             <Button variant="ghost" size="sm" disabled={busy === 'reload'} onClick={() => void onReload()}>
               {busy === 'reload' ? (
-                <RefreshCw className="size-3 animate-spin" aria-hidden />
+                <RefreshCw className="size-3.5 animate-spin" aria-hidden />
               ) : (
-                <RefreshCw className="size-3" aria-hidden />
+                <RefreshCw className="size-3.5" aria-hidden />
               )}
               Refresh
             </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={busy === 'clear-logs' || diagnostics.logs.length === 0}
+              onClick={() => void onClearLogs()}
+            >
+              {busy === 'clear-logs' ? (
+                <RefreshCw className="size-3.5 animate-spin" aria-hidden />
+              ) : (
+                <Trash2 className="size-3.5" aria-hidden />
+              )}
+              Clear logs
+            </Button>
             <Button variant="outline" size="sm" onClick={() => void copyDiagnostics()}>
-              <Clipboard className="size-3" aria-hidden />
+              <Clipboard className="size-3.5" aria-hidden />
               Copy
             </Button>
             <Button
@@ -62,9 +77,9 @@ export function DiagnosticsScreen({
               }}
             >
               {busy === 'export-diagnostics' ? (
-                <RefreshCw className="size-3 animate-spin" aria-hidden />
+                <RefreshCw className="size-3.5 animate-spin" aria-hidden />
               ) : (
-                <Download className="size-3" aria-hidden />
+                <Download className="size-3.5" aria-hidden />
               )}
               Export bundle
             </Button>
@@ -73,7 +88,7 @@ export function DiagnosticsScreen({
       />
 
       {exportedPath && (
-        <div className="flex shrink-0 items-center gap-2 border-b border-[var(--color-connected)]/20 bg-[var(--color-connected)]/5 px-5 py-2.5 text-[11px]">
+        <div className="flex shrink-0 items-center gap-2 border-b border-[var(--color-connected)]/20 bg-[var(--color-connected)]/5 px-5 py-2.5 text-xs">
           <span className="text-[var(--color-connected)]">Bundle exported:</span>
           <span className="text-muted-foreground font-mono select-all">{exportedPath}</span>
         </div>
@@ -85,7 +100,7 @@ export function DiagnosticsScreen({
           {/* System info */}
           <div className="border-border border-b px-4 py-3">
             <SectionHeader title="System" className="mb-3" />
-            <div className="space-y-2 text-[11px]">
+            <div className="space-y-2 text-xs">
               <InfoRow label="Agent" value={`v${diagnostics.agentVersion}`} />
               <InfoRow label="Product" value={diagnostics.productId} />
               <InfoRow label="Platform" value={diagnostics.platform} />
@@ -96,7 +111,7 @@ export function DiagnosticsScreen({
 
           {/* Database */}
           <div className="border-border border-b px-4 py-3">
-            <div className="flex items-center gap-2 text-[11px]">
+            <div className="flex items-center gap-2 text-xs">
               <Database className="text-muted-foreground size-3.5 shrink-0" aria-hidden />
               <span className="text-muted-foreground font-medium">Database</span>
               <span
@@ -115,13 +130,13 @@ export function DiagnosticsScreen({
             <SectionHeader title="Discovery" className="mb-3" />
             <div className="space-y-2.5">
               {diagnostics.discoveryProviders.map((provider) => (
-                <div key={provider.name} className="text-[11px]">
+                <div key={provider.name} className="text-xs">
                   <div className="flex items-center gap-1.5">
                     <StatusDot tone={provider.available ? 'connected' : 'error'} />
                     <span className="text-foreground/80 font-medium">{provider.name}</span>
                   </div>
-                  <p className="text-muted-foreground/60 mt-0.5 ml-4 text-[10px] leading-3.5">{provider.detail}</p>
-                  <p className="text-muted-foreground/40 ml-4 text-[10px]">{formatRelativeTime(provider.lastScanAt)}</p>
+                  <p className="text-muted-foreground/60 mt-0.5 ml-4 text-xs leading-4">{provider.detail}</p>
+                  <p className="text-muted-foreground/40 ml-4 text-xs">{formatRelativeTime(provider.lastScanAt)}</p>
                 </div>
               ))}
             </div>
@@ -129,8 +144,8 @@ export function DiagnosticsScreen({
 
           {/* Redaction notice */}
           <div className="border-border mt-auto border-t px-4 py-3">
-            <div className="text-muted-foreground/60 flex items-start gap-1.5 text-[10px]">
-              <ShieldCheck className="mt-0.5 size-3 shrink-0" aria-hidden />
+            <div className="text-muted-foreground/60 flex items-start gap-1.5 text-xs">
+              <ShieldCheck className="mt-0.5 size-3.5 shrink-0" aria-hidden />
               <p>Private keys, pairing codes, signatures, and document contents are excluded.</p>
             </div>
           </div>
@@ -140,22 +155,22 @@ export function DiagnosticsScreen({
         <div className="flex flex-1 flex-col overflow-hidden">
           <div className="border-border flex shrink-0 items-center justify-between border-b px-5 py-2">
             <SectionHeader title="Log stream" description="Bounded local operational history" />
-            <span className="text-muted-foreground/50 font-mono text-[10px]">{diagnostics.logs.length} entries</span>
+            <span className="text-muted-foreground/50 font-mono text-xs">{diagnostics.logs.length} entries</span>
           </div>
 
           <div className="flex-1 overflow-y-auto">
             {diagnostics.logs.length === 0 ? (
-              <div className="text-muted-foreground/50 flex items-center justify-center py-12 text-[11px]">
+              <div className="text-muted-foreground/50 flex items-center justify-center py-12 text-sm">
                 No log entries
               </div>
             ) : (
-              <table className="w-full font-mono text-[10px]">
+              <table className="w-full font-mono text-xs">
                 <thead className="bg-background/95 sticky top-0 backdrop-blur-sm">
                   <tr className="border-border border-b text-left">
-                    <th className="text-muted-foreground/60 px-5 py-2 font-medium whitespace-nowrap">Time</th>
-                    <th className="text-muted-foreground/60 px-3 py-2 font-medium">Level</th>
-                    <th className="text-muted-foreground/60 px-3 py-2 font-medium">Target</th>
-                    <th className="text-muted-foreground/60 px-3 py-2 font-medium">Message</th>
+                    <th className="text-muted-foreground/60 px-5 py-2.5 font-medium whitespace-nowrap">Time</th>
+                    <th className="text-muted-foreground/60 px-3 py-2.5 font-medium">Level</th>
+                    <th className="text-muted-foreground/60 px-3 py-2.5 font-medium">Target</th>
+                    <th className="text-muted-foreground/60 px-3 py-2.5 font-medium">Message</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -164,14 +179,14 @@ export function DiagnosticsScreen({
                       key={`${entry.timestamp}-${index}`}
                       className="border-border/30 hover:bg-accent/20 border-b transition-colors"
                     >
-                      <td className="text-muted-foreground/50 px-5 py-1.5 whitespace-nowrap">
+                      <td className="text-muted-foreground/50 px-5 py-2 whitespace-nowrap">
                         {new Intl.DateTimeFormat(undefined, {
                           hour: '2-digit',
                           minute: '2-digit',
                           second: '2-digit',
                         }).format(new Date(entry.timestamp))}
                       </td>
-                      <td className="px-3 py-1.5">
+                      <td className="px-3 py-2">
                         <span
                           className={cn(
                             'uppercase tracking-wide',
@@ -185,8 +200,8 @@ export function DiagnosticsScreen({
                           {entry.level}
                         </span>
                       </td>
-                      <td className="text-muted-foreground/60 px-3 py-1.5 whitespace-nowrap">{entry.target}</td>
-                      <td className="text-foreground/70 px-3 py-1.5 leading-4">{entry.message}</td>
+                      <td className="text-muted-foreground/60 px-3 py-2 whitespace-nowrap">{entry.target}</td>
+                      <td className="text-foreground/70 px-3 py-2 leading-5">{entry.message}</td>
                     </tr>
                   ))}
                 </tbody>

@@ -162,6 +162,14 @@ export function useAgent() {
         await run('reset-server-configuration', () => agentClient.resetServerConfiguration());
         await load();
       },
+      clearJobs: async () => {
+        await run('clear-jobs', () => agentClient.clearJobs());
+        setJobs([]);
+      },
+      clearLogs: async () => {
+        await run('clear-logs', () => agentClient.clearLogs());
+        setDiagnostics((current) => (current ? { ...current, logs: [] } : current));
+      },
       exportDiagnostics: async () => {
         return run('export-diagnostics', () => agentClient.exportDiagnostics());
       },

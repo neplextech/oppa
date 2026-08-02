@@ -661,6 +661,14 @@ impl DesktopService {
         self.jobs.list().await
     }
 
+    pub async fn clear_jobs(&self) -> Result<(), CommandError> {
+        self.jobs.clear().await
+    }
+
+    pub fn clear_logs(&self) {
+        self.log.clear();
+    }
+
     pub async fn diagnostics(&self) -> Diagnostics {
         let migration = self.storage.migration_version().await;
         if let Err(error) = &migration {

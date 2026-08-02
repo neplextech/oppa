@@ -75,6 +75,8 @@ pub fn run() {
             commands::set_virtual_printer_sound,
             commands::send_test_print,
             commands::list_recent_jobs,
+            commands::clear_jobs,
+            commands::clear_logs,
             commands::get_diagnostics,
             commands::export_diagnostics,
             commands::set_start_on_login,

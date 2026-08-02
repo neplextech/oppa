@@ -523,7 +523,7 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 
 function Cap({ children }: { children: React.ReactNode }) {
   return (
-    <span className="border-border bg-secondary text-muted-foreground rounded border px-2 py-0.5 font-mono text-[11px] tracking-wide uppercase">
+    <span className="border-border bg-secondary text-muted-foreground rounded border px-2 py-0.5 font-mono text-xs tracking-wide uppercase">
       {children}
     </span>
   );

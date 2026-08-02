@@ -116,7 +116,7 @@ function TitleBar({ status, developerMode }: { status: AgentStatus; developerMod
         {agentId && (
           <>
             <span className="text-border/60">·</span>
-            <span className="font-mono text-[11px]">{agentId}</span>
+            <span className="font-mono text-xs">{agentId}</span>
           </>
         )}
       </div>
@@ -125,11 +125,11 @@ function TitleBar({ status, developerMode }: { status: AgentStatus; developerMod
 
       <div className="flex items-center gap-2 px-4" data-no-drag>
         {developerMode && (
-          <span className="border-primary/30 text-primary bg-primary/10 rounded px-1.5 py-0.5 font-mono text-[10px] font-medium tracking-wide">
+          <span className="border-primary/30 text-primary bg-primary/10 rounded px-1.5 py-0.5 font-mono text-xs font-medium tracking-wide">
             DEV
           </span>
         )}
-        <span className="text-muted-foreground/50 font-mono text-[11px]">v{status.version}</span>
+        <span className="text-muted-foreground/50 font-mono text-xs">v{status.version}</span>
       </div>
     </header>
   );

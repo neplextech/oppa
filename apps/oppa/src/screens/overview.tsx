@@ -66,8 +66,8 @@ export function OverviewScreen({
         <div className="flex shrink-0 items-start gap-3 border-b border-[var(--color-warning)]/20 bg-[var(--color-warning)]/5 px-5 py-3">
           <TriangleAlert className="mt-0.5 size-3.5 shrink-0 text-[var(--color-warning)]" aria-hidden />
           <div className="min-w-0 flex-1">
-            <p className="text-[11px] font-semibold text-[var(--color-warning)]">Action required</p>
-            <ul className="mt-1 space-y-0.5 text-[11px] text-[var(--color-warning)]/70">
+            <p className="text-xs font-semibold text-[var(--color-warning)]">Action required</p>
+            <ul className="mt-1 space-y-0.5 text-xs text-[var(--color-warning)]/70">
               {status.activeErrors.map((msg) => (
                 <li key={msg}>{msg}</li>
               ))}
@@ -103,7 +103,7 @@ export function OverviewScreen({
           </StatusItem>
           {status.agentId && (
             <StatusItem label="Agent ID">
-              <span className="font-mono text-[10px]">{status.agentId}</span>
+              <span className="font-mono text-xs">{status.agentId}</span>
             </StatusItem>
           )}
         </div>
@@ -118,7 +118,7 @@ export function OverviewScreen({
             <button
               type="button"
               onClick={onNavigateJobs}
-              className="text-muted-foreground hover:text-foreground flex items-center gap-1 text-[11px] transition-colors"
+              className="text-muted-foreground hover:text-foreground flex items-center gap-1 text-xs transition-colors"
             >
               All jobs
               <ArrowRight className="size-3" aria-hidden />
@@ -132,7 +132,7 @@ export function OverviewScreen({
                 description="Jobs will appear here once the agent receives work from the server."
               />
             ) : (
-              <table className="w-full text-[11px]">
+              <table className="w-full text-xs">
                 <thead className="bg-background/95 sticky top-0 backdrop-blur-sm">
                   <tr className="border-border border-b text-left">
                     <th className="text-muted-foreground px-5 py-2 font-medium">State</th>
@@ -158,7 +158,7 @@ export function OverviewScreen({
             <button
               type="button"
               onClick={onNavigatePrinters}
-              className="text-muted-foreground hover:text-foreground text-[11px] transition-colors"
+              className="text-muted-foreground hover:text-foreground text-xs transition-colors"
             >
               Manage
             </button>
@@ -167,7 +167,7 @@ export function OverviewScreen({
           <div className="space-y-4 px-4 py-3">
             {/* System health */}
             <div>
-              <p className="text-muted-foreground/60 mb-2 text-[10px] font-semibold tracking-wider uppercase">System</p>
+              <p className="text-muted-foreground/60 mb-2 text-xs font-semibold tracking-wider uppercase">System</p>
               <DefList>
                 <DefTerm>State</DefTerm>
                 <DefValue className={agentTone === 'connected' ? 'text-[var(--color-connected)]' : ''}>
@@ -184,15 +184,15 @@ export function OverviewScreen({
 
             {/* Printer health */}
             <div>
-              <p className="text-muted-foreground/60 mb-2 text-[10px] font-semibold tracking-wider uppercase">
+              <p className="text-muted-foreground/60 mb-2 text-xs font-semibold tracking-wider uppercase">
                 Printers
               </p>
               {enabled.length === 0 ? (
-                <p className="text-muted-foreground/60 text-[11px]">No printers enabled.</p>
+                <p className="text-muted-foreground/60 text-xs">No printers enabled.</p>
               ) : (
                 <div className="space-y-1">
                   {enabled.slice(0, 6).map((printer) => (
-                    <div key={printer.id} className="flex items-center gap-2 text-[11px]">
+                    <div key={printer.id} className="flex items-center gap-2 text-xs">
                       <StatusDot tone={printer.available ? 'connected' : 'error'} />
                       <span className="text-foreground/80 flex-1 truncate">{printer.displayName}</span>
                       <span className="text-muted-foreground/60 shrink-0">
@@ -201,7 +201,7 @@ export function OverviewScreen({
                     </div>
                   ))}
                   {enabled.length > 6 && (
-                    <p className="text-muted-foreground/50 text-[11px]">+{enabled.length - 6} more</p>
+                    <p className="text-muted-foreground/50 text-xs">+{enabled.length - 6} more</p>
                   )}
                 </div>
               )}
@@ -209,7 +209,7 @@ export function OverviewScreen({
 
             {/* Queue stats */}
             <div>
-              <p className="text-muted-foreground/60 mb-2 text-[10px] font-semibold tracking-wider uppercase">Queue</p>
+              <p className="text-muted-foreground/60 mb-2 text-xs font-semibold tracking-wider uppercase">Queue</p>
               <DefList>
                 <DefTerm>Pending</DefTerm>
                 <DefValue>{status.pendingJobs}</DefValue>
@@ -232,7 +232,7 @@ export function OverviewScreen({
 
 function StatusItem({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="flex items-baseline gap-1.5 text-[11px]">
+    <div className="flex items-baseline gap-1.5 text-xs">
       <span className="text-muted-foreground/60">{label}</span>
       <span className="text-foreground/80 flex items-center gap-1 font-mono">{children}</span>
     </div>
@@ -246,8 +246,8 @@ function JobRow({ job }: { job: JobSummary }) {
         <StateBadge state={job.state} />
       </td>
       <td className="px-3 py-2">
-        <span className="text-foreground/80 font-mono text-[10px]">{job.id}</span>
-        {job.error && <p className="mt-0.5 truncate text-[10px] text-[var(--color-error)]/70">{job.error}</p>}
+        <span className="text-foreground/80 font-mono text-xs">{job.id}</span>
+        {job.error && <p className="mt-0.5 truncate text-xs text-[var(--color-error)]/70">{job.error}</p>}
       </td>
       <td className="hidden px-3 py-2 md:table-cell">
         <span className="text-foreground/70 truncate">{job.printerName}</span>

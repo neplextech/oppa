@@ -1,12 +1,13 @@
-import { Search, X } from 'lucide-react';
+import { RefreshCw, Search, Trash2, X } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
 import { EmptyState, ScreenContainer, ScreenHeader, StateBadge } from '@/components/ui';
+import { Button } from '@/components/ui/button';
 import type { JobState, JobSummary } from '@/lib/types';
 import { cn, formatRelativeTime } from '@/lib/utils';
 
 const STATE_OPTIONS: Array<{ value: JobState | 'all'; label: string }> = [
-  { value: 'all', label: 'All states' },
+  { value: 'all', label: 'All' },
   { value: 'queued', label: 'Queued' },
   { value: 'received', label: 'Received' },
   { value: 'submitted', label: 'Submitted' },
@@ -14,7 +15,15 @@ const STATE_OPTIONS: Array<{ value: JobState | 'all'; label: string }> = [
   { value: 'cancelled', label: 'Cancelled' },
 ];
 
-export function JobsScreen({ jobs }: { jobs: JobSummary[] }) {
+export function JobsScreen({
+  jobs,
+  busy,
+  onClear,
+}: {
+  jobs: JobSummary[];
+  busy: string | null;
+  onClear: () => Promise<void>;
+}) {
   const [query, setQuery] = useState('');
   const [stateFilter, setStateFilter] = useState<JobState | 'all'>('all');
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -37,14 +46,29 @@ export function JobsScreen({ jobs }: { jobs: JobSummary[] }) {
       <ScreenHeader
         title="Jobs"
         description="Durable local delivery records. Submitted means the job was handed to the printer transport."
+        action={
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={busy === 'clear-jobs' || jobs.length === 0}
+            onClick={() => void onClear()}
+          >
+            {busy === 'clear-jobs' ? (
+              <RefreshCw className="size-3.5 animate-spin" aria-hidden />
+            ) : (
+              <Trash2 className="size-3.5" aria-hidden />
+            )}
+            Clear records
+          </Button>
+        }
       />
 
       {/* Toolbar */}
-      <div className="border-border bg-card/30 flex shrink-0 items-center gap-2 border-b px-3 py-2">
+      <div className="border-border bg-card/30 flex shrink-0 items-center gap-3 border-b px-4 py-2.5">
         <div className="relative max-w-xs flex-1">
-          <Search className="text-muted-foreground/50 absolute top-1/2 left-2 size-3 -translate-y-1/2" aria-hidden />
+          <Search className="text-muted-foreground/50 absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2" aria-hidden />
           <input
-            className="border-border bg-secondary text-foreground placeholder:text-muted-foreground/50 focus:border-primary/50 focus:ring-primary/20 h-7 w-full rounded border pr-7 pl-6 text-[11px] transition outline-none focus:ring-1"
+            className="border-border bg-secondary text-foreground placeholder:text-muted-foreground/50 focus:border-primary/50 focus:ring-primary/20 h-8 w-full rounded border pr-7 pl-8 text-sm transition outline-none focus:ring-1"
             placeholder="Search by job ID, printer, or key…"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -57,7 +81,7 @@ export function JobsScreen({ jobs }: { jobs: JobSummary[] }) {
               className="text-muted-foreground/50 hover:text-foreground absolute top-1/2 right-1.5 -translate-y-1/2 rounded p-0.5 transition-colors"
               aria-label="Clear search"
             >
-              <X className="size-3" aria-hidden />
+              <X className="size-3.5" aria-hidden />
             </button>
           )}
         </div>
@@ -69,7 +93,7 @@ export function JobsScreen({ jobs }: { jobs: JobSummary[] }) {
               type="button"
               onClick={() => setStateFilter(opt.value)}
               className={cn(
-                'rounded px-2.5 py-1 text-[11px] font-medium transition-colors',
+                'rounded px-2.5 py-1 text-xs font-medium transition-colors',
                 stateFilter === opt.value
                   ? 'bg-secondary text-foreground'
                   : 'text-muted-foreground hover:text-foreground',
@@ -80,7 +104,7 @@ export function JobsScreen({ jobs }: { jobs: JobSummary[] }) {
           ))}
         </div>
 
-        <span className="text-muted-foreground/60 ml-auto text-[11px]">
+        <span className="text-muted-foreground/60 ml-auto text-xs">
           {filtered.length} {filtered.length === 1 ? 'job' : 'jobs'}
         </span>
       </div>
@@ -99,14 +123,14 @@ export function JobsScreen({ jobs }: { jobs: JobSummary[] }) {
             />
           ) : (
             <div className="flex-1 overflow-y-auto">
-              <table className="w-full text-[11px]">
+              <table className="w-full text-sm">
                 <thead className="bg-background/95 sticky top-0 z-10 backdrop-blur-sm">
                   <tr className="border-border border-b text-left">
-                    <th className="text-muted-foreground px-5 py-2 font-medium">State</th>
-                    <th className="text-muted-foreground px-3 py-2 font-medium">Job ID</th>
-                    <th className="text-muted-foreground hidden px-3 py-2 font-medium lg:table-cell">Printer</th>
-                    <th className="text-muted-foreground hidden px-3 py-2 font-medium xl:table-cell">Attempts</th>
-                    <th className="text-muted-foreground px-3 py-2 text-right font-medium">Updated</th>
+                    <th className="text-muted-foreground px-5 py-2.5 text-xs font-medium">State</th>
+                    <th className="text-muted-foreground px-3 py-2.5 text-xs font-medium">Job ID</th>
+                    <th className="text-muted-foreground hidden px-3 py-2.5 text-xs font-medium lg:table-cell">Printer</th>
+                    <th className="text-muted-foreground hidden px-3 py-2.5 text-xs font-medium xl:table-cell">Attempts</th>
+                    <th className="text-muted-foreground px-3 py-2.5 text-right text-xs font-medium">Updated</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -126,22 +150,22 @@ export function JobsScreen({ jobs }: { jobs: JobSummary[] }) {
                         }
                       }}
                     >
-                      <td className="px-5 py-2.5">
+                      <td className="px-5 py-3">
                         <StateBadge state={job.state} />
                       </td>
-                      <td className="px-3 py-2.5">
-                        <p className="text-foreground/90 font-mono text-[10px]">{job.id}</p>
-                        <p className="text-muted-foreground/60 mt-0.5 max-w-[180px] truncate font-mono text-[9px]">
+                      <td className="px-3 py-3">
+                        <p className="text-foreground/90 font-mono text-xs">{job.id}</p>
+                        <p className="text-muted-foreground/60 mt-0.5 max-w-[180px] truncate font-mono text-xs">
                           {job.idempotencyKey}
                         </p>
                       </td>
-                      <td className="hidden px-3 py-2.5 lg:table-cell">
+                      <td className="hidden px-3 py-3 lg:table-cell">
                         <span className="text-foreground/80">{job.printerName}</span>
                       </td>
-                      <td className="hidden px-3 py-2.5 xl:table-cell">
+                      <td className="hidden px-3 py-3 xl:table-cell">
                         <span className="text-muted-foreground">{job.attempts}</span>
                       </td>
-                      <td className="text-muted-foreground px-3 py-2.5 text-right">
+                      <td className="text-muted-foreground px-3 py-3 text-right text-xs">
                         {formatRelativeTime(job.updatedAt)}
                       </td>
                     </tr>
@@ -181,7 +205,7 @@ function JobDetail({ job, onClose }: { job: JobSummary; onClose: () => void }) {
   return (
     <>
       <div className="border-border flex items-center justify-between border-b px-4 py-3">
-        <p className="text-muted-foreground text-[11px] font-semibold tracking-wider uppercase">Job detail</p>
+        <p className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">Job detail</p>
         <button
           type="button"
           onClick={onClose}
@@ -192,12 +216,12 @@ function JobDetail({ job, onClose }: { job: JobSummary; onClose: () => void }) {
         </button>
       </div>
 
-      <div className="space-y-4 p-4 text-[11px]">
+      <div className="space-y-4 p-4 text-sm">
         {/* State */}
         <div>
           <StateBadge state={job.state} />
           {job.error && (
-            <p className="mt-2 rounded border border-[var(--color-error)]/20 bg-[var(--color-error)]/5 px-2 py-1.5 font-mono text-[10px] leading-4 text-[var(--color-error)]/80">
+            <p className="mt-2 rounded border border-[var(--color-error)]/20 bg-[var(--color-error)]/5 px-2 py-1.5 font-mono text-xs leading-4 text-[var(--color-error)]/80">
               {job.error}
             </p>
           )}
@@ -235,7 +259,7 @@ function JobDetail({ job, onClose }: { job: JobSummary; onClose: () => void }) {
                 />
                 <span
                   className={cn(
-                    'font-mono uppercase tracking-wide text-[10px]',
+                    'font-mono text-xs uppercase tracking-wide',
                     step.done ? 'text-foreground/70' : 'text-muted-foreground/40',
                   )}
                 >
@@ -253,7 +277,7 @@ function JobDetail({ job, onClose }: { job: JobSummary; onClose: () => void }) {
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div>
-      <p className="text-muted-foreground/50 mb-2 text-[10px] font-semibold tracking-wider uppercase">{title}</p>
+      <p className="text-muted-foreground/50 mb-2 text-xs font-semibold tracking-wider uppercase">{title}</p>
       <div className="space-y-1.5">{children}</div>
     </div>
   );
@@ -262,8 +286,8 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 function KV({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex flex-col gap-0.5">
-      <span className="text-muted-foreground/60 text-[10px]">{label}</span>
-      <span className="text-foreground/80 font-mono text-[10px] break-all">{children}</span>
+      <span className="text-muted-foreground/60 text-xs">{label}</span>
+      <span className="text-foreground/80 font-mono text-xs break-all">{children}</span>
     </div>
   );
 }

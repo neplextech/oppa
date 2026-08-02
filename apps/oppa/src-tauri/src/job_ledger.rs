@@ -89,6 +89,11 @@ impl JobLedger {
         self.persist().await
     }
 
+    pub async fn clear(&self) -> Result<(), CommandError> {
+        self.jobs.write().await.clear();
+        self.persist().await
+    }
+
     pub async fn restore_pending(&self, pending: Vec<JobSummary>) -> Result<(), CommandError> {
         let mut jobs = self.jobs.write().await;
         for job in pending {

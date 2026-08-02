@@ -53,7 +53,7 @@ export function StateBadge({
   return (
     <span
       className={cn(
-        'inline-flex items-center rounded px-1.5 py-0.5 font-mono text-[10px] font-medium tracking-wide uppercase',
+        'inline-flex items-center rounded px-1.5 py-0.5 font-mono text-xs font-medium tracking-wide uppercase',
         state === 'submitted' && 'bg-[var(--color-connected)]/10 text-[var(--color-connected)]',
         state === 'failed' && 'bg-[var(--color-error)]/10 text-[var(--color-error)]',
         state === 'queued' && 'bg-[var(--color-pending)]/10 text-[var(--color-pending)]',
@@ -177,7 +177,7 @@ export function ErrorBanner({ message, onRetry }: { message: string; onRetry?: (
 /* ── Definition list ─────────────────────────────────────────────── */
 
 export function DefList({ children, className }: HTMLAttributes<HTMLDListElement>) {
-  return <dl className={cn('grid grid-cols-[auto_1fr] gap-x-6 gap-y-1.5 text-[11px]', className)}>{children}</dl>;
+  return <dl className={cn('grid grid-cols-[auto_1fr] gap-x-6 gap-y-1.5 text-xs', className)}>{children}</dl>;
 }
 
 export function DefTerm({ children }: { children: ReactNode }) {

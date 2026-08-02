@@ -124,7 +124,7 @@ export function VirtualPrintersScreen({
 
       {showCreate && (
         <div className="border-border bg-card/50 shrink-0 border-b px-5 py-4">
-          <p className="text-muted-foreground mb-3 text-[11px] font-semibold">New virtual printer</p>
+          <p className="text-muted-foreground mb-3 text-xs font-semibold">New virtual printer</p>
           <div className="flex flex-wrap items-end gap-3">
             <div>
               <FieldLabel htmlFor="virtual-name">Display name</FieldLabel>
@@ -185,7 +185,7 @@ export function VirtualPrintersScreen({
           {/* Sidebar list */}
           <div className="border-border bg-card/30 w-48 shrink-0 overflow-y-auto border-r xl:w-56">
             <div className="px-3 pt-3 pb-1">
-              <p className="text-muted-foreground/50 text-[10px] font-semibold tracking-wider uppercase">
+              <p className="text-muted-foreground/50 text-xs font-semibold tracking-wider uppercase">
                 Virtual targets
               </p>
             </div>
@@ -196,7 +196,7 @@ export function VirtualPrintersScreen({
                     render={<button type="button" />}
                     onClick={() => setSelectedId(printer.id)}
                     className={cn(
-                      'flex w-full items-center gap-2.5 rounded px-2.5 py-2 text-left text-[11px] transition-colors',
+                      'flex w-full items-center gap-2.5 rounded px-2.5 py-2 text-left text-xs transition-colors',
                       selected?.id === printer.id
                         ? 'bg-primary/10 text-primary'
                         : 'text-muted-foreground hover:bg-accent hover:text-foreground',
@@ -205,7 +205,7 @@ export function VirtualPrintersScreen({
                     <MonitorCog className="size-3.5 shrink-0" aria-hidden />
                     <div className="min-w-0">
                       <p className="truncate font-medium">{printer.displayName}</p>
-                      <p className="text-muted-foreground/60 text-[10px]">{printer.history.length} captured</p>
+                      <p className="text-muted-foreground/60 text-xs">{printer.history.length} captured</p>
                     </div>
                   </ContextMenuTrigger>
                   <ContextMenuContent className="min-w-48">
@@ -262,7 +262,7 @@ export function VirtualPrintersScreen({
                 <div className="mb-3 flex items-center justify-between">
                   <div>
                     <p className="text-foreground text-sm font-semibold">{selected.displayName}</p>
-                    <p className="text-muted-foreground font-mono text-[11px]">{selected.id}</p>
+                    <p className="text-muted-foreground font-mono text-xs">{selected.id}</p>
                   </div>
                   <Button
                     variant="outline"
@@ -298,7 +298,7 @@ export function VirtualPrintersScreen({
                         </option>
                       ))}
                     </select>
-                    <p className="text-muted-foreground/60 mt-1 text-[10px]">
+                    <p className="text-muted-foreground/60 mt-1 text-xs">
                       {MODES.find((m) => m.value === selected.mode)?.description}
                     </p>
                   </div>
@@ -314,7 +314,7 @@ export function VirtualPrintersScreen({
                       value={selected.delayMs}
                       onChange={(e) => void onUpdate(selected.id, selected.mode, Number(e.target.value))}
                     />
-                    <p className="text-muted-foreground/60 mt-1 text-[10px]">Active only in delay mode.</p>
+                    <p className="text-muted-foreground/60 mt-1 text-xs">Active only in delay mode.</p>
                   </div>
                 </div>
 
@@ -329,7 +329,7 @@ export function VirtualPrintersScreen({
                       />
                       <div>
                         <p className="text-foreground text-xs font-medium">Printer sound</p>
-                        <p className="text-muted-foreground/70 text-[11px] leading-4">
+                        <p className="text-muted-foreground/70 text-xs leading-4">
                           Plays audio on any print job with a ≥3.5 s enforced delay.
                         </p>
                       </div>
@@ -345,7 +345,7 @@ export function VirtualPrintersScreen({
 
               {/* Captured output */}
               <div className="border-border flex shrink-0 items-center justify-between border-b px-5 py-3">
-                <p className="text-muted-foreground text-[11px] font-semibold tracking-wider uppercase">
+                <p className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">
                   Captured output
                 </p>
                 <Button
@@ -374,16 +374,16 @@ export function VirtualPrintersScreen({
                       >
                         <div>
                           <div className="flex items-center gap-2">
-                            <span className="text-foreground/80 font-mono text-[11px]">{output.jobId}</span>
-                            <span className="border-border bg-secondary text-muted-foreground rounded border px-1.5 py-0.5 font-mono text-[9px] tracking-wide uppercase">
+                            <span className="text-foreground/80 font-mono text-xs">{output.jobId}</span>
+                            <span className="border-border bg-secondary text-muted-foreground rounded border px-1.5 py-0.5 font-mono text-xs tracking-wide uppercase">
                               {output.format}
                             </span>
                           </div>
-                          <p className="text-muted-foreground/60 mt-0.5 text-[10px]">
+                          <p className="text-muted-foreground/60 mt-0.5 text-xs">
                             {formatRelativeTime(output.createdAt)} · {output.byteLength} bytes
                           </p>
                         </div>
-                        <pre className="border-border text-muted-foreground max-h-36 w-full overflow-auto rounded border bg-[oklch(0.07_0_0)] p-3 font-mono text-[10px] leading-4 lg:w-64">
+                        <pre className="border-border text-muted-foreground max-h-36 w-full overflow-auto rounded border bg-[oklch(0.07_0_0)] p-3 font-mono text-xs leading-4 lg:w-64">
                           {output.preview}
                         </pre>
                       </div>

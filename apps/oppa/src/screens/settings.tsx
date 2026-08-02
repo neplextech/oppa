@@ -1,4 +1,5 @@
 import {
+  ArrowLeft,
   Code2,
   Download,
   ExternalLink,
@@ -32,6 +33,7 @@ export function SettingsScreen({
   busy,
   theme,
   developerMode,
+  fromSetup,
   onThemeChange,
   onDeveloperModeChange,
   onStartOnLogin,
@@ -40,11 +42,13 @@ export function SettingsScreen({
   onResetServerConfiguration,
   onForgetServer,
   onOpenProductLink,
+  onBackToSetup,
 }: {
   status: AgentStatus;
   busy: string | null;
   theme: Theme;
   developerMode: boolean;
+  fromSetup?: boolean;
   onThemeChange: (t: Theme) => void;
   onDeveloperModeChange: (enabled: boolean) => void;
   onStartOnLogin: (enabled: boolean) => Promise<void>;
@@ -53,12 +57,24 @@ export function SettingsScreen({
   onResetServerConfiguration: () => Promise<void>;
   onForgetServer: () => Promise<void>;
   onOpenProductLink: (link: 'documentation' | 'support', browserFallbackUrl: string) => Promise<void>;
+  onBackToSetup?: () => void;
 }) {
   const { checkForUpdates, isChecking, lastResult } = useUpdater();
 
   return (
     <ScreenContainer>
-      <ScreenHeader title="Settings" description="Agent preferences and product configuration." />
+      <ScreenHeader
+        title="Settings"
+        description="Agent preferences and product configuration."
+        action={
+          fromSetup && onBackToSetup ? (
+            <Button variant="ghost" size="sm" onClick={onBackToSetup}>
+              <ArrowLeft className="size-3.5" aria-hidden />
+              Back to pairing
+            </Button>
+          ) : undefined
+        }
+      />
 
       <div className="max-w-2xl flex-1 space-y-8 overflow-y-auto p-6">
         {/* Appearance */}
@@ -99,7 +115,7 @@ export function SettingsScreen({
                 <p className="text-muted-foreground mt-0.5 text-xs">
                   Connected service · server {status.connectedService.serverVersion}
                 </p>
-                <p className="text-muted-foreground/60 mt-1 truncate font-mono text-[10px]">
+                <p className="text-muted-foreground/60 mt-1 truncate font-mono text-xs">
                   {status.connectedService.gatewayUrl}
                 </p>
               </div>

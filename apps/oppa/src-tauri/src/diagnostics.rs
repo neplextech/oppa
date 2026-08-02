@@ -44,6 +44,13 @@ impl DiagnosticLog {
             .collect()
     }
 
+    pub fn clear(&self) {
+        self.entries
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clear();
+    }
+
     fn push(&self, level: DiagnosticLevel, target: &str, message: &str) {
         let mut entries = self
             .entries

@@ -397,8 +397,22 @@ export const agentClient = {
     return isTauri() ? command('list_recent_jobs') : structuredClone(demoJobs);
   },
 
+  async clearJobs(): Promise<void> {
+    if (isTauri()) {
+      await command('clear_jobs');
+    }
+    demoJobs.length = 0;
+  },
+
   async getDiagnostics(): Promise<Diagnostics> {
     return isTauri() ? command('get_diagnostics') : structuredClone(demoDiagnostics);
+  },
+
+  async clearLogs(): Promise<void> {
+    if (isTauri()) {
+      await command('clear_logs');
+    }
+    demoDiagnostics.logs.length = 0;
   },
 
   async exportDiagnostics(): Promise<string> {

@@ -48,12 +48,14 @@ export default function App() {
   const screen: ScreenId = VALID_SCREENS.has(rawPath) ? rawPath : 'overview';
 
   function setScreen(s: ScreenId) {
+    if (s !== 'settings') setSettingsFromSetup(false);
     void navigate('/' + s);
   }
 
   const [theme, setThemeState] = useState<Theme>(initialTheme);
   const [developerMode, setDeveloperModeState] = useState(() => localStorage.getItem('oppa-developer-mode') === 'true');
   const [commandOpen, setCommandOpen] = useState(false);
+  const [settingsFromSetup, setSettingsFromSetup] = useState(false);
   const { status, printers, jobs, diagnostics, discoveredService, loading, busy, error, actions } = useAgent();
 
   function setTheme(t: Theme) {
@@ -180,15 +182,16 @@ export default function App() {
     );
   }
 
-  if (
+  const isSetupState =
     status.connectionState === 'idle' ||
     status.connectionState === 'discovering' ||
     status.connectionState === 'discovery_failed' ||
     status.connectionState === 'unpaired' ||
     status.connectionState === 'pairing' ||
     status.connectionState === 'authentication_failed' ||
-    status.connectionState === 'credential_revoked'
-  ) {
+    status.connectionState === 'credential_revoked';
+
+  if (isSetupState && !settingsFromSetup) {
     return (
       <SetupScreen
         status={status}
@@ -199,6 +202,8 @@ export default function App() {
         onForget={actions.forgetServer}
         onSaveServerConfiguration={actions.setServerConfiguration}
         onResetServerConfiguration={actions.resetServerConfiguration}
+        onReconnect={actions.reconnect}
+        onOpenSettings={() => setSettingsFromSetup(true)}
       />
     );
   }
@@ -249,7 +254,7 @@ export default function App() {
       );
       break;
     case 'jobs':
-      content = <JobsScreen jobs={jobs} />;
+      content = <JobsScreen jobs={jobs} busy={busy} onClear={actions.clearJobs} />;
       break;
     case 'diagnostics':
       content = (
@@ -258,6 +263,7 @@ export default function App() {
           busy={busy}
           onReload={actions.reload}
           onExport={actions.exportDiagnostics}
+          onClearLogs={actions.clearLogs}
         />
       );
       break;
@@ -268,6 +274,7 @@ export default function App() {
           busy={busy}
           theme={theme}
           developerMode={developerMode}
+          fromSetup={settingsFromSetup}
           onThemeChange={setTheme}
           onDeveloperModeChange={setDeveloperMode}
           onStartOnLogin={actions.setStartOnLogin}
@@ -276,6 +283,7 @@ export default function App() {
           onResetServerConfiguration={actions.resetServerConfiguration}
           onForgetServer={actions.forgetServer}
           onOpenProductLink={actions.openProductLink}
+          onBackToSetup={() => setSettingsFromSetup(false)}
         />
       );
       break;

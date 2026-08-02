@@ -137,6 +137,21 @@ pub async fn list_recent_jobs(
 }
 
 #[tauri::command]
+pub async fn clear_jobs(
+    service: State<'_, Arc<DesktopService>>,
+) -> Result<(), CommandError> {
+    service.clear_jobs().await
+}
+
+#[tauri::command]
+pub async fn clear_logs(
+    service: State<'_, Arc<DesktopService>>,
+) -> Result<(), CommandError> {
+    service.clear_logs();
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn get_diagnostics(
     service: State<'_, Arc<DesktopService>>,
 ) -> Result<Diagnostics, CommandError> {
