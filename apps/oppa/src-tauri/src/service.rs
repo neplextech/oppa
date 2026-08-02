@@ -35,14 +35,14 @@ use crate::{
     models::{
         AgentStatus, ConnectedServiceSummary, DesktopJobState, DiagnosticExport, Diagnostics,
         DiscoveredServiceSummary, FeatureAvailability, JobSummary, ManualPrinterInput,
-        OpenPrinterConnectionState, PrinterSummary, ProductLink, ProductSummary,
+        OpenPrinterConnectionState, PrinterSummary, ProductLink, ProductSummary, RecentServer,
         VirtualPrinterInput, VirtualPrinterMode,
     },
     printer_catalog::PrinterCatalog,
     server_configuration::{
         CONNECTION_SETTING, LEGACY_SERVER_CONFIGURATION_SETTING, OpenPrinterConnection,
         OpenPrinterServerConfiguration, OpenPrinterServerConfigurationInput,
-        SERVER_CONFIGURATION_SETTING, migrate_legacy_configuration,
+        RECENT_SERVERS_SETTING, SERVER_CONFIGURATION_SETTING, migrate_legacy_configuration,
     },
     virtual_spooler::PerPrinterVirtualSpooler,
 };
@@ -469,6 +469,11 @@ impl DesktopService {
             .connection_control
             .send(ConnectionControl::Reconnect)
             .await;
+        self.save_recent_server(
+            server_url.as_str(),
+            Some(discovered.document.server.name.clone()),
+        )
+        .await;
         self.log
             .info("authentication", "OpenPrinter pairing completed.");
         self.emit(STATE_CHANGED_EVENT);
@@ -764,6 +769,56 @@ impl DesktopService {
             .info("authentication", "Local paired credential was deleted.");
         self.emit(STATE_CHANGED_EVENT);
         Ok(())
+    }
+
+    /// Returns servers that were paired in this installation, most-recent first.
+    pub async fn list_recent_servers(&self) -> Result<Vec<RecentServer>, CommandError> {
+        let servers: Vec<RecentServer> = self
+            .storage
+            .setting(RECENT_SERVERS_SETTING)
+            .await
+            .map_err(|error| CommandError::internal(error.to_string()))?
+            .and_then(|v| serde_json::from_value(v).ok())
+            .unwrap_or_default();
+        Ok(servers)
+    }
+
+    /// Forgets the current connection and sets a different server URL, ready for pairing.
+    pub async fn apply_recent_server(&self, server_url: String) -> Result<(), CommandError> {
+        let configuration = OpenPrinterServerConfiguration::from_input(
+            &OpenPrinterServerConfigurationInput { server_url },
+        )?;
+        self.apply_server_configuration(configuration).await?;
+        Ok(())
+    }
+
+    /// Prepends `server_url` to the persisted recent-server list (best-effort, silently ignored on failure).
+    async fn save_recent_server(&self, server_url: &str, name: Option<String>) {
+        use chrono::Utc;
+
+        let mut servers: Vec<RecentServer> = self
+            .storage
+            .setting(RECENT_SERVERS_SETTING)
+            .await
+            .ok()
+            .flatten()
+            .and_then(|v| serde_json::from_value(v).ok())
+            .unwrap_or_default();
+
+        servers.retain(|s| s.server_url != server_url);
+        servers.insert(
+            0,
+            RecentServer {
+                server_url: server_url.to_owned(),
+                name,
+                paired_at: Utc::now().to_rfc3339(),
+            },
+        );
+        servers.truncate(10);
+
+        if let Ok(value) = serde_json::to_value(&servers) {
+            let _ = self.storage.set_setting(RECENT_SERVERS_SETTING, &value).await;
+        }
     }
 
     async fn apply_server_configuration(

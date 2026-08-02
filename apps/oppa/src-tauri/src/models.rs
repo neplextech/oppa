@@ -337,6 +337,32 @@ pub struct FeatureAvailability {
     pub remote_diagnostics: bool,
 }
 
+/// Non-secret server entry retained across pairing cycles.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecentServer {
+    /// Validated server base URL.
+    pub server_url: String,
+    /// Display name captured from the `OpenPrinter` service document.
+    pub name: Option<String>,
+    /// ISO 8601 timestamp of the last successful pairing.
+    pub paired_at: String,
+}
+
+/// Parsed deep-link pair request emitted to the frontend.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeepLinkPayload {
+    /// Decoded server base URL.
+    pub server_url: String,
+    /// Pairing code from the deep link.
+    pub pair_key: String,
+}
+
+/// Pending deep-link buffered until the frontend is ready to handle it.
+#[derive(Default)]
+pub struct PendingDeepLink(pub std::sync::Mutex<Option<DeepLinkPayload>>);
+
 #[cfg(test)]
 mod tests {
     use super::OpenPrinterConnectionState;

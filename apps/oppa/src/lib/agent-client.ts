@@ -3,12 +3,14 @@ import { listen } from '@tauri-apps/api/event';
 
 import type {
   AgentStatus,
+  DeepLinkPairing,
   DiscoveredServiceSummary,
   Diagnostics,
   JobSummary,
   ManualPrinterInput,
   OpenPrinterServerConfiguration,
   PrinterSummary,
+  RecentServer,
   VirtualPrinterInput,
   VirtualPrinterMode,
   VirtualPrinterSummary,
@@ -458,5 +460,26 @@ export const agentClient = {
       return;
     }
     window.open(browserFallbackUrl, '_blank', 'noopener,noreferrer');
+  },
+
+  async listRecentServers(): Promise<RecentServer[]> {
+    return isTauri() ? command('list_recent_servers') : [];
+  },
+
+  async applyRecentServer(serverUrl: string): Promise<void> {
+    if (isTauri()) {
+      await command('apply_recent_server', { serverUrl });
+    }
+  },
+
+  async getPendingDeepLink(): Promise<DeepLinkPairing | null> {
+    return isTauri() ? command<DeepLinkPairing | null>('get_pending_deep_link') : null;
+  },
+
+  async subscribeDeepLink(onDeepLink: (data: DeepLinkPairing) => void): Promise<() => void> {
+    if (!isTauri()) return () => undefined;
+    return listen<DeepLinkPairing>('oppa://deep-link', ({ payload }) => {
+      onDeepLink(payload);
+    });
   },
 };

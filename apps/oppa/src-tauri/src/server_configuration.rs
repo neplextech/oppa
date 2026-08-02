@@ -8,6 +8,7 @@ use crate::error::CommandError;
 pub const SERVER_CONFIGURATION_SETTING: &str = "openprinter-server-configuration-v2";
 pub const LEGACY_SERVER_CONFIGURATION_SETTING: &str = "openprinter-server-configuration-v1";
 pub const CONNECTION_SETTING: &str = "openprinter-connection-v1";
+pub const RECENT_SERVERS_SETTING: &str = "recent-servers-v1";
 pub const DEFAULT_SERVER_URL: &str = "http://127.0.0.1:8787/";
 
 /// Validated, non-secret `OpenPrinter` base URL persisted by the desktop host.

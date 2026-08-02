@@ -141,3 +141,14 @@ export interface VirtualPrinterInput {
 export function isVirtualPrinter(printer: PrinterSummary): printer is VirtualPrinterSummary {
   return printer.isVirtual && 'mode' in printer && 'delayMs' in printer && 'history' in printer;
 }
+
+export interface RecentServer {
+  serverUrl: string;
+  name: string | null;
+  pairedAt: string;
+}
+
+export interface DeepLinkPairing {
+  serverUrl: string;
+  pairKey: string;
+}

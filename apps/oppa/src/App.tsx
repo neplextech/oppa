@@ -4,9 +4,11 @@ import { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 
 import { AppShell, type ScreenId } from '@/components/app-shell';
+import { DeepLinkDialog } from '@/components/deep-link-dialog';
 import { ErrorBanner } from '@/components/ui';
 import { useAgent } from '@/hooks/use-agent';
 import { agentClient } from '@/lib/agent-client';
+import type { DeepLinkPairing } from '@/lib/types';
 import { DiagnosticsScreen } from '@/screens/diagnostics';
 import { JobsScreen } from '@/screens/jobs';
 import { OverviewScreen } from '@/screens/overview';
@@ -56,6 +58,7 @@ export default function App() {
   const [developerMode, setDeveloperModeState] = useState(() => localStorage.getItem('oppa-developer-mode') === 'true');
   const [commandOpen, setCommandOpen] = useState(false);
   const [settingsFromSetup, setSettingsFromSetup] = useState(false);
+  const [pendingDeepLink, setPendingDeepLink] = useState<DeepLinkPairing | null>(null);
   const { status, printers, jobs, diagnostics, discoveredService, loading, busy, error, actions } = useAgent();
 
   function setTheme(t: Theme) {
@@ -119,6 +122,32 @@ export default function App() {
       })
       .catch((cause: unknown) => {
         console.error('Unable to subscribe to printer sound events.', cause);
+      });
+    return () => {
+      disposed = true;
+      unsubscribe();
+    };
+  }, []);
+
+  // Subscribe to deep-link pair requests and check for one that arrived at launch.
+  useEffect(() => {
+    let disposed = false;
+    let unsubscribe: () => void = () => undefined;
+
+    void agentClient.getPendingDeepLink().then((pending) => {
+      if (!disposed && pending) setPendingDeepLink(pending);
+    });
+
+    void agentClient
+      .subscribeDeepLink((data) => {
+        if (!disposed) setPendingDeepLink(data);
+      })
+      .then((stop) => {
+        if (disposed) stop();
+        else unsubscribe = stop;
+      })
+      .catch((cause: unknown) => {
+        console.error('Unable to subscribe to deep-link events.', cause);
       });
     return () => {
       disposed = true;
@@ -193,18 +222,36 @@ export default function App() {
 
   if (isSetupState && !settingsFromSetup) {
     return (
-      <SetupScreen
-        status={status}
-        discoveredService={discoveredService}
-        busy={busy}
-        onDiscover={actions.discoverServer}
-        onPair={actions.pairServer}
-        onForget={actions.forgetServer}
-        onSaveServerConfiguration={actions.setServerConfiguration}
-        onResetServerConfiguration={actions.resetServerConfiguration}
-        onReconnect={actions.reconnect}
-        onOpenSettings={() => setSettingsFromSetup(true)}
-      />
+      <>
+        <SetupScreen
+          status={status}
+          discoveredService={discoveredService}
+          busy={busy}
+          onDiscover={actions.discoverServer}
+          onPair={actions.pairServer}
+          onForget={actions.forgetServer}
+          onSaveServerConfiguration={actions.setServerConfiguration}
+          onResetServerConfiguration={actions.resetServerConfiguration}
+          onReconnect={actions.reconnect}
+          onOpenSettings={() => {
+            setSettingsFromSetup(true);
+            void navigate('/settings');
+          }}
+        />
+        <DeepLinkDialog
+          open={pendingDeepLink !== null}
+          pairing={pendingDeepLink}
+          status={status}
+          busy={busy}
+          onConfirm={async (agentName) => {
+            if (!pendingDeepLink) return;
+            await actions.setServerConfiguration({ serverUrl: pendingDeepLink.serverUrl });
+            await actions.pairServer(pendingDeepLink.pairKey, agentName);
+            setPendingDeepLink(null);
+          }}
+          onCancel={() => setPendingDeepLink(null)}
+        />
+      </>
     );
   }
 
@@ -290,18 +337,34 @@ export default function App() {
   }
 
   return (
-    <AppShell
-      activeScreen={screen}
-      onNavigate={setScreen}
-      status={status}
-      developerMode={developerMode}
-      commandOpen={commandOpen}
-      onOpenCommand={() => setCommandOpen(true)}
-      onCloseCommand={() => setCommandOpen(false)}
-      onReconnect={actions.reconnect}
-    >
-      {error ? <ErrorBanner message={error} onRetry={() => void actions.reload()} /> : null}
-      {content}
-    </AppShell>
+    <>
+      <AppShell
+        activeScreen={screen}
+        onNavigate={setScreen}
+        status={status}
+        developerMode={developerMode}
+        paired={!isSetupState}
+        commandOpen={commandOpen}
+        onOpenCommand={() => setCommandOpen(true)}
+        onCloseCommand={() => setCommandOpen(false)}
+        onReconnect={actions.reconnect}
+      >
+        {error ? <ErrorBanner message={error} onRetry={() => void actions.reload()} /> : null}
+        {content}
+      </AppShell>
+      <DeepLinkDialog
+        open={pendingDeepLink !== null}
+        pairing={pendingDeepLink}
+        status={status}
+        busy={busy}
+        onConfirm={async (agentName) => {
+          if (!pendingDeepLink) return;
+          await actions.setServerConfiguration({ serverUrl: pendingDeepLink.serverUrl });
+          await actions.pairServer(pendingDeepLink.pairKey, agentName);
+          setPendingDeepLink(null);
+        }}
+        onCancel={() => setPendingDeepLink(null)}
+      />
+    </>
   );
 }

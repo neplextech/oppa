@@ -6,8 +6,9 @@ use tauri_plugin_autostart::ManagerExt;
 use crate::{
     error::CommandError,
     models::{
-        AgentStatus, ConfigurePrinterChanges, Diagnostics, DiscoveredServiceSummary, JobSummary,
-        ManualPrinterInput, PrinterSummary, ProductLink, VirtualPrinterInput, VirtualPrinterMode,
+        AgentStatus, ConfigurePrinterChanges, DeepLinkPayload, Diagnostics,
+        DiscoveredServiceSummary, JobSummary, ManualPrinterInput, PendingDeepLink, PrinterSummary,
+        ProductLink, RecentServer, VirtualPrinterInput, VirtualPrinterMode,
     },
     server_configuration::{OpenPrinterServerConfiguration, OpenPrinterServerConfigurationInput},
     service::{DesktopService, STATE_CHANGED_EVENT},
@@ -229,4 +230,28 @@ pub fn open_product_link(
     link: ProductLink,
 ) -> Result<(), CommandError> {
     service.open_product_link(link)
+}
+
+#[tauri::command]
+pub async fn list_recent_servers(
+    service: State<'_, Arc<DesktopService>>,
+) -> Result<Vec<RecentServer>, CommandError> {
+    service.list_recent_servers().await
+}
+
+#[tauri::command]
+pub async fn apply_recent_server(
+    service: State<'_, Arc<DesktopService>>,
+    server_url: String,
+) -> Result<(), CommandError> {
+    service.apply_recent_server(server_url).await
+}
+
+/// Returns and clears any deep-link pair request that arrived before the frontend was ready.
+#[tauri::command]
+#[allow(clippy::needless_pass_by_value)]
+pub fn get_pending_deep_link(
+    state: State<'_, Arc<PendingDeepLink>>,
+) -> Option<DeepLinkPayload> {
+    state.0.lock().ok()?.take()
 }
