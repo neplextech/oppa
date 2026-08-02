@@ -1,7 +1,8 @@
 ---
 title: Deep Link Pairing
 description:
-  Open OPPA and pre-fill pairing details from a URL, QR code, or server dashboard.
+  Open OPPA and pre-fill pairing details from a URL, QR code, or
+  server dashboard.
 ---
 
 A server or dashboard can direct a user to pair OPPA by opening a
@@ -15,10 +16,10 @@ making any changes.
 oppa://pair?server=<base64url-server-url>&key=<pairing-code>
 ```
 
-| Parameter | Description |
-|-----------|-------------|
+| Parameter | Description                                                        |
+| --------- | ------------------------------------------------------------------ |
 | `server`  | The OpenPrinter server base URL, encoded as Base64URL (no padding) |
-| `key`     | The one-time pairing code created by the server administrator |
+| `key`     | The one-time pairing code created by the server administrator      |
 
 ### Encoding the server URL
 
@@ -41,7 +42,10 @@ oppa://pair?server=aHR0cHM6Ly9wcmludC5leGFtcGxlLmNvbS8&key=ABCD-EFGH
 ### Node.js / TypeScript
 
 ```ts
-function oppaPairLink(serverUrl: string, pairingCode: string): string {
+function oppaPairLink(
+  serverUrl: string,
+  pairingCode: string,
+): string {
   const encoded = Buffer.from(serverUrl).toString('base64url');
   return `oppa://pair?server=${encoded}&key=${pairingCode}`;
 }
@@ -94,8 +98,8 @@ flowchart TD
 
 ### Unpaired state
 
-When OPPA has no active server, the dialog appears immediately and
-the user can review the server URL, set their agent name, and pair.
+When OPPA has no active server, the dialog appears immediately and the
+user can review the server URL, set their agent name, and pair.
 
 ### Already-paired state
 

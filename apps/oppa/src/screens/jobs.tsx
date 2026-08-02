@@ -66,7 +66,10 @@ export function JobsScreen({
       {/* Toolbar */}
       <div className="border-border bg-card/30 flex shrink-0 items-center gap-3 border-b px-4 py-2.5">
         <div className="relative max-w-xs flex-1">
-          <Search className="text-muted-foreground/50 absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2" aria-hidden />
+          <Search
+            className="text-muted-foreground/50 absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2"
+            aria-hidden
+          />
           <input
             className="border-border bg-secondary text-foreground placeholder:text-muted-foreground/50 focus:border-primary/50 focus:ring-primary/20 h-8 w-full rounded border pr-7 pl-8 text-sm transition outline-none focus:ring-1"
             placeholder="Search by job ID, printer, or key…"
@@ -128,8 +131,12 @@ export function JobsScreen({
                   <tr className="border-border border-b text-left">
                     <th className="text-muted-foreground px-5 py-2.5 text-xs font-medium">State</th>
                     <th className="text-muted-foreground px-3 py-2.5 text-xs font-medium">Job ID</th>
-                    <th className="text-muted-foreground hidden px-3 py-2.5 text-xs font-medium lg:table-cell">Printer</th>
-                    <th className="text-muted-foreground hidden px-3 py-2.5 text-xs font-medium xl:table-cell">Attempts</th>
+                    <th className="text-muted-foreground hidden px-3 py-2.5 text-xs font-medium lg:table-cell">
+                      Printer
+                    </th>
+                    <th className="text-muted-foreground hidden px-3 py-2.5 text-xs font-medium xl:table-cell">
+                      Attempts
+                    </th>
                     <th className="text-muted-foreground px-3 py-2.5 text-right text-xs font-medium">Updated</th>
                   </tr>
                 </thead>

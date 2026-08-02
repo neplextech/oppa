@@ -184,9 +184,7 @@ export function OverviewScreen({
 
             {/* Printer health */}
             <div>
-              <p className="text-muted-foreground/60 mb-2 text-xs font-semibold tracking-wider uppercase">
-                Printers
-              </p>
+              <p className="text-muted-foreground/60 mb-2 text-xs font-semibold tracking-wider uppercase">Printers</p>
               {enabled.length === 0 ? (
                 <p className="text-muted-foreground/60 text-xs">No printers enabled.</p>
               ) : (
@@ -200,9 +198,7 @@ export function OverviewScreen({
                       </span>
                     </div>
                   ))}
-                  {enabled.length > 6 && (
-                    <p className="text-muted-foreground/50 text-xs">+{enabled.length - 6} more</p>
-                  )}
+                  {enabled.length > 6 && <p className="text-muted-foreground/50 text-xs">+{enabled.length - 6} more</p>}
                 </div>
               )}
             </div>

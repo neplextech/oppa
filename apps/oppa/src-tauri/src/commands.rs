@@ -138,16 +138,12 @@ pub async fn list_recent_jobs(
 }
 
 #[tauri::command]
-pub async fn clear_jobs(
-    service: State<'_, Arc<DesktopService>>,
-) -> Result<(), CommandError> {
+pub async fn clear_jobs(service: State<'_, Arc<DesktopService>>) -> Result<(), CommandError> {
     service.clear_jobs().await
 }
 
 #[tauri::command]
-pub async fn clear_logs(
-    service: State<'_, Arc<DesktopService>>,
-) -> Result<(), CommandError> {
+pub async fn clear_logs(service: State<'_, Arc<DesktopService>>) -> Result<(), CommandError> {
     service.clear_logs();
     Ok(())
 }
@@ -250,8 +246,6 @@ pub async fn apply_recent_server(
 /// Returns and clears any deep-link pair request that arrived before the frontend was ready.
 #[tauri::command]
 #[allow(clippy::needless_pass_by_value)]
-pub fn get_pending_deep_link(
-    state: State<'_, Arc<PendingDeepLink>>,
-) -> Option<DeepLinkPayload> {
+pub fn get_pending_deep_link(state: State<'_, Arc<PendingDeepLink>>) -> Option<DeepLinkPayload> {
     state.0.lock().ok()?.take()
 }

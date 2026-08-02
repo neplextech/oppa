@@ -35,11 +35,16 @@ export function DeepLinkDialog({
   if (!pairing) return null;
 
   return (
-    <Dialog open={open} onOpenChange={(isOpen) => { if (!isOpen) onCancel(); }}>
+    <Dialog
+      open={open}
+      onOpenChange={(isOpen) => {
+        if (!isOpen) onCancel();
+      }}
+    >
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <div className="mb-3 flex size-10 items-center justify-center rounded-full bg-primary/10">
-            <Link2 className="size-5 text-primary" aria-hidden />
+          <div className="bg-primary/10 mb-3 flex size-10 items-center justify-center rounded-full">
+            <Link2 className="text-primary size-5" aria-hidden />
           </div>
           <DialogTitle>Pair from link</DialogTitle>
           <DialogDescription>
@@ -66,9 +71,7 @@ export function DeepLinkDialog({
             onChange={(e) => setAgentName(e.target.value)}
             disabled={isPairing}
           />
-          <p className="text-muted-foreground/60 text-xs">
-            How this computer will be identified on the print server.
-          </p>
+          <p className="text-muted-foreground/60 text-xs">How this computer will be identified on the print server.</p>
         </div>
 
         <DialogFooter>

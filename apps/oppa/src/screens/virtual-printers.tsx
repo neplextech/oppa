@@ -185,9 +185,7 @@ export function VirtualPrintersScreen({
           {/* Sidebar list */}
           <div className="border-border bg-card/30 w-48 shrink-0 overflow-y-auto border-r xl:w-56">
             <div className="px-3 pt-3 pb-1">
-              <p className="text-muted-foreground/50 text-xs font-semibold tracking-wider uppercase">
-                Virtual targets
-              </p>
+              <p className="text-muted-foreground/50 text-xs font-semibold tracking-wider uppercase">Virtual targets</p>
             </div>
             <div className="space-y-0.5 p-1.5">
               {virtualPrinters.map((printer) => (
@@ -345,9 +343,7 @@ export function VirtualPrintersScreen({
 
               {/* Captured output */}
               <div className="border-border flex shrink-0 items-center justify-between border-b px-5 py-3">
-                <p className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">
-                  Captured output
-                </p>
+                <p className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">Captured output</p>
                 <Button
                   variant="ghost"
                   size="sm"

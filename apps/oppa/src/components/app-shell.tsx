@@ -90,15 +90,20 @@ function TitleBar({ status }: { status: AgentStatus }) {
 
       {/* Product identity */}
       <div data-tauri-drag-region className="flex items-center gap-2 px-2">
-        <img src="/oppa-icon.png" alt="" className="size-5 shrink-0 rounded-md pointer-events-none" draggable={false} />
-        <span data-tauri-drag-region className="text-foreground/90 text-sm font-semibold pointer-events-none">{status.product.name}</span>
+        <img src="/oppa-icon.png" alt="" className="pointer-events-none size-5 shrink-0 rounded-md" draggable={false} />
+        <span data-tauri-drag-region className="text-foreground/90 pointer-events-none text-sm font-semibold">
+          {status.product.name}
+        </span>
       </div>
 
-      <div data-tauri-drag-region className="bg-border mx-3 h-3.5 w-px pointer-events-none" />
+      <div data-tauri-drag-region className="bg-border pointer-events-none mx-3 h-3.5 w-px" />
 
       {/* Connection state — non-interactive, all pointer-events-none so drag passes through */}
       <div data-tauri-drag-region className="text-muted-foreground pointer-events-none flex items-center gap-2 text-sm">
-        <span className={cn('status-dot', `status-dot--${tone}`)} aria-label={`State: ${titleCase(status.connectionState)}`} />
+        <span
+          className={cn('status-dot', `status-dot--${tone}`)}
+          aria-label={`State: ${titleCase(status.connectionState)}`}
+        />
         <span className={cn(connected ? 'text-foreground/70' : 'text-muted-foreground')}>
           {titleCase(status.connectionState)}
         </span>

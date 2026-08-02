@@ -785,9 +785,10 @@ impl DesktopService {
 
     /// Forgets the current connection and sets a different server URL, ready for pairing.
     pub async fn apply_recent_server(&self, server_url: String) -> Result<(), CommandError> {
-        let configuration = OpenPrinterServerConfiguration::from_input(
-            &OpenPrinterServerConfigurationInput { server_url },
-        )?;
+        let configuration =
+            OpenPrinterServerConfiguration::from_input(&OpenPrinterServerConfigurationInput {
+                server_url,
+            })?;
         self.apply_server_configuration(configuration).await?;
         Ok(())
     }
@@ -817,7 +818,10 @@ impl DesktopService {
         servers.truncate(10);
 
         if let Ok(value) = serde_json::to_value(&servers) {
-            let _ = self.storage.set_setting(RECENT_SERVERS_SETTING, &value).await;
+            let _ = self
+                .storage
+                .set_setting(RECENT_SERVERS_SETTING, &value)
+                .await;
         }
     }
 
