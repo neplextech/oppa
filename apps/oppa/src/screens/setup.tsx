@@ -87,7 +87,7 @@ export function SetupScreen({
           </div>
 
           {/* Right panel */}
-          <div className="bg-background p-8">
+          <div className="bg-background min-w-0 p-8">
             <p className="text-muted-foreground/60 text-xs font-semibold tracking-widest uppercase">Initial setup</p>
             <h2 className="text-foreground mt-4 text-lg font-semibold">Discover and pair</h2>
             <p className="text-muted-foreground mt-1.5 text-sm leading-6">
