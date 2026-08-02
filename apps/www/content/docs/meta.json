@@ -9,6 +9,7 @@
     "build-oppa",
     "product-configuration",
     "authentication-flow",
+    "deep-link-pairing",
     "protocol",
     "print-documents",
     "printer-discovery",
