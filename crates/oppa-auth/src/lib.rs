@@ -488,9 +488,8 @@ mod tests {
     fn discovery_url_preserves_server_url_path_prefix() {
         // Servers mounted under a sub-path (e.g. /api/v1/openprinter/{id}) must have
         // the discovery path appended to that prefix, not resolved from the host root.
-        let path_url =
-            normalize_server_url("https://api.example.com/api/v1/openprinter/71217dfb")
-                .expect("path URL");
+        let path_url = normalize_server_url("https://api.example.com/api/v1/openprinter/71217dfb")
+            .expect("path URL");
         let mut discovery = path_url.clone();
         let base_path = path_url.path().trim_end_matches('/');
         discovery.set_path(&format!("{base_path}{DISCOVERY_PATH}"));
@@ -500,8 +499,7 @@ mod tests {
         );
 
         // Root-only URLs should still resolve to /.well-known/openprinter.
-        let root_url =
-            normalize_server_url("https://print.example.com/").expect("root URL");
+        let root_url = normalize_server_url("https://print.example.com/").expect("root URL");
         let mut discovery_root = root_url.clone();
         let base_path_root = root_url.path().trim_end_matches('/');
         discovery_root.set_path(&format!("{base_path_root}{DISCOVERY_PATH}"));
