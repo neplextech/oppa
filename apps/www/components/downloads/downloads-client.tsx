@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import type { ComponentType, SVGProps } from 'react';
+import { useMemo } from 'react';
 
 import { SiteHeader } from '@/components/site-header';
 import {
@@ -30,6 +31,29 @@ import {
 } from '@/lib/github-releases';
 
 import { useOppaRelease } from './use-oppa-release';
+
+function detectPlatform(): DownloadPlatform | null {
+  if (typeof navigator === 'undefined') return null;
+  const ua = navigator.userAgent;
+  if (/Mac/i.test(ua)) return 'macOS';
+  if (/Win/i.test(ua)) return 'Windows';
+  if (/Linux/i.test(ua)) return 'Linux';
+  return null;
+}
+
+function pickBestAsset(assets: DownloadAsset[], platform: DownloadPlatform): DownloadAsset | null {
+  const platformAssets = assets.filter((a) => a.platform === platform);
+  if (platformAssets.length === 0) return null;
+  // Prefer arm64 on macOS (Apple Silicon), x64 everywhere else
+  const preferred = platform === 'macOS' ? 'arm64' : 'x64';
+  return platformAssets.find((a) => a.architecture === preferred) ?? platformAssets[0];
+}
+
+function platformLabel(platform: DownloadPlatform): string {
+  if (platform === 'macOS') return 'Download for Mac';
+  if (platform === 'Windows') return 'Download for Windows';
+  return 'Download for Linux';
+}
 
 interface PlatformDetails {
   icon: ComponentType<SVGProps<SVGSVGElement>>;
@@ -69,6 +93,12 @@ export function DownloadsClient() {
     : null;
   const releaseNotes = formatReleaseNotes(latestRelease?.body ?? null);
 
+  const detectedPlatform = useMemo(() => detectPlatform(), []);
+  const allAssets = downloadRelease
+    ? (['macOS', 'Windows', 'Linux'] as DownloadPlatform[]).flatMap((p) => downloadRelease.assetsByPlatform[p])
+    : [];
+  const suggestedAsset = detectedPlatform && !loading ? pickBestAsset(allAssets, detectedPlatform) : null;
+
   return (
     <main className="relative min-h-screen overflow-hidden bg-[#0a0a09] text-stone-100">
       <SiteHeader />
@@ -92,13 +122,24 @@ export function DownloadsClient() {
                 protocol.
               </p>
               <div className="mt-8 flex flex-wrap items-center gap-3">
-                <a
-                  className="inline-flex h-9 items-center gap-1.5 rounded bg-stone-100 px-4 text-[13px] font-medium text-stone-900 transition hover:bg-white"
-                  href="#downloads"
-                >
-                  Choose a download
-                  <ArrowDownToLine className="size-3.5" aria-hidden />
-                </a>
+                {suggestedAsset ? (
+                  <a
+                    className="inline-flex h-9 items-center gap-1.5 rounded bg-stone-100 px-4 text-[13px] font-medium text-stone-900 transition hover:bg-white"
+                    href={suggestedAsset.browserDownloadUrl}
+                    title={`${suggestedAsset.format} · ${suggestedAsset.architectureLabel}`}
+                  >
+                    {platformLabel(detectedPlatform!)}
+                    <ArrowDownToLine className="size-3.5" aria-hidden />
+                  </a>
+                ) : (
+                  <a
+                    className="inline-flex h-9 items-center gap-1.5 rounded bg-stone-100 px-4 text-[13px] font-medium text-stone-900 transition hover:bg-white"
+                    href="#downloads"
+                  >
+                    {loading ? 'Loading…' : 'Choose a download'}
+                    <ArrowDownToLine className="size-3.5" aria-hidden />
+                  </a>
+                )}
                 <Link
                   className="inline-flex h-9 items-center gap-1.5 rounded border border-white/10 px-4 text-[13px] font-medium text-stone-300 transition hover:border-white/20 hover:text-stone-100"
                   href="/docs/getting-started"

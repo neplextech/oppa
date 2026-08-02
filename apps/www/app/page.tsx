@@ -97,9 +97,9 @@ export default function HomePage() {
                 </Link>
                 <Link
                   className="inline-flex h-9 items-center gap-1.5 rounded border border-white/10 px-4 text-[13px] font-medium text-stone-300 transition hover:border-white/20 hover:text-stone-100"
-                  href="/docs/architecture"
+                  href="/downloads"
                 >
-                  Architecture
+                  Download OPPA
                 </Link>
               </div>
             </div>
