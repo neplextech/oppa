@@ -245,6 +245,12 @@ export default function App() {
           busy={busy}
           onConfirm={async (agentName) => {
             if (!pendingDeepLink) return;
+            // Forget first so pair_server can proceed even when the deep-link
+            // URL matches the already-configured URL (apply_server_configuration
+            // short-circuits on same-URL and would leave the connection intact).
+            if (status.agentId !== null) {
+              await actions.forgetServer();
+            }
             await actions.setServerConfiguration({ serverUrl: pendingDeepLink.serverUrl });
             await actions.pairServer(pendingDeepLink.pairKey, agentName);
             setPendingDeepLink(null);
@@ -359,6 +365,9 @@ export default function App() {
         busy={busy}
         onConfirm={async (agentName) => {
           if (!pendingDeepLink) return;
+          if (status.agentId !== null) {
+            await actions.forgetServer();
+          }
           await actions.setServerConfiguration({ serverUrl: pendingDeepLink.serverUrl });
           await actions.pairServer(pendingDeepLink.pairKey, agentName);
           setPendingDeepLink(null);

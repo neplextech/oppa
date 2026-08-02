@@ -1,5 +1,5 @@
-import { AlertTriangle, Link2, RefreshCw } from 'lucide-react';
-import { useState } from 'react';
+import { AlertTriangle, Link2, RefreshCw, XCircle } from 'lucide-react';
+import { useEffect, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -29,8 +29,14 @@ export function DeepLinkDialog({
   onCancel: () => void;
 }) {
   const [agentName, setAgentName] = useState('My Computer');
+  const [pairingError, setPairingError] = useState<string | null>(null);
   const isCurrentlyPaired = status?.agentId !== null && status?.agentId !== undefined;
-  const isPairing = busy === 'pair-server' || busy === 'server-configuration';
+  const isPairing = busy === 'pair-server' || busy === 'server-configuration' || busy === 'forget-server';
+
+  // Clear error when the dialog opens with a new pairing request.
+  useEffect(() => {
+    if (open) setPairingError(null);
+  }, [open]);
 
   if (!pairing) return null;
 
@@ -62,6 +68,13 @@ export function DeepLinkDialog({
           </div>
         )}
 
+        {pairingError && (
+          <div className="flex items-start gap-3 rounded-lg border border-[var(--color-error)]/20 bg-[var(--color-error)]/5 p-3">
+            <XCircle className="mt-0.5 size-4 shrink-0 text-[var(--color-error)]" aria-hidden />
+            <p className="text-sm text-[var(--color-error)]/80">{pairingError}</p>
+          </div>
+        )}
+
         <div className="space-y-1.5">
           <label className="text-muted-foreground text-xs font-medium">Agent name</label>
           <Input
@@ -81,7 +94,12 @@ export function DeepLinkDialog({
           <Button
             type="button"
             disabled={isPairing || agentName.trim().length === 0}
-            onClick={() => void onConfirm(agentName.trim())}
+            onClick={() => {
+              setPairingError(null);
+              onConfirm(agentName.trim()).catch((cause: unknown) => {
+                setPairingError(cause instanceof Error ? cause.message : 'Pairing failed. Please try again.');
+              });
+            }}
           >
             {isPairing ? (
               <>
