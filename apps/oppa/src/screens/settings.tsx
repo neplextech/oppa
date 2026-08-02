@@ -198,6 +198,18 @@ export function SettingsScreen({
             />
           </Section>
 
+          {/* Developer */}
+          <Section title="Developer" description="Tools for integration testing and diagnostics">
+            <SettingRow
+              icon={<Code2 className="size-4" aria-hidden />}
+              title="Developer Mode"
+              description="Reveals virtual printer controls and enables Copy ID in context menus."
+              control={
+                <Toggle checked={developerMode} label="Enable developer mode" onChange={onDeveloperModeChange} />
+              }
+            />
+          </Section>
+
           {/* Product */}
           <Section title="Product" description="Application identity and compiled capabilities">
             <div className="bg-card/50 p-5">
@@ -232,18 +244,6 @@ export function SettingsScreen({
               {status.agentId && <AboutRow label="Agent ID" value={status.agentId} mono />}
               <AboutRow label="Build" value={import.meta.env.DEV ? 'Development' : 'Release'} />
             </div>
-          </Section>
-
-          {/* Developer */}
-          <Section title="Developer" description="Tools for integration testing and diagnostics">
-            <SettingRow
-              icon={<Code2 className="size-4" aria-hidden />}
-              title="Developer Mode"
-              description="Reveals virtual printer controls and enables Copy ID in context menus."
-              control={
-                <Toggle checked={developerMode} label="Enable developer mode" onChange={onDeveloperModeChange} />
-              }
-            />
           </Section>
         </div>
       </div>
