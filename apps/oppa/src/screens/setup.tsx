@@ -1,10 +1,19 @@
-import { KeyRound, RefreshCw, RotateCcw, Search, Settings2, ShieldCheck } from 'lucide-react';
-import { useState } from 'react';
+import { Clock, KeyRound, RefreshCw, RotateCcw, Search, Settings2 } from 'lucide-react';
+import { useEffect, useState } from 'react';
 
 import { ServerConfigurationForm } from '@/components/server-configuration-form';
 import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
-import type { AgentStatus, DiscoveredServiceSummary, OpenPrinterServerConfiguration } from '@/lib/types';
+import { agentClient } from '@/lib/agent-client';
+import type { AgentStatus, DiscoveredServiceSummary, OpenPrinterServerConfiguration, RecentServer } from '@/lib/types';
 
 export function SetupScreen({
   status,
@@ -32,13 +41,25 @@ export function SetupScreen({
   const [showServerConfiguration, setShowServerConfiguration] = useState(false);
   const [pairingCode, setPairingCode] = useState('');
   const [agentName, setAgentName] = useState('Front Counter');
+  const [recentServers, setRecentServers] = useState<RecentServer[]>([]);
+  const [pendingSwitch, setPendingSwitch] = useState<RecentServer | null>(null);
+  const [switching, setSwitching] = useState(false);
   const pairing = status.connectionState === 'pairing' || busy === 'pair-server';
+
+  useEffect(() => {
+    void agentClient.listRecentServers().then(setRecentServers).catch(() => undefined);
+  }, []);
 
   const canReconnect =
     status.connectionState === 'authentication_failed' || status.connectionState === 'credential_revoked';
 
   return (
-    <main className="bg-background flex min-h-dvh items-center justify-center p-6">
+    <>
+    <main className="bg-background flex min-h-dvh flex-col">
+      {/* Draggable titlebar area for custom window chrome */}
+      <div data-tauri-drag-region className="h-11 w-full shrink-0" />
+
+      <div className="flex flex-1 items-center justify-center p-6">
       <div className="border-border w-full max-w-3xl overflow-hidden rounded-lg border shadow-lg">
         <div className="grid md:grid-cols-[0.85fr_1.15fr]">
           {/* Left panel */}
@@ -49,31 +70,13 @@ export function SetupScreen({
                 {status.product.name}
               </p>
               <h1 className="text-foreground mt-3 text-xl leading-7 font-semibold tracking-tight">
-                Pair this computer with an OpenPrinter server.
+                Connect to your print server.
               </h1>
               <p className="text-muted-foreground mt-3 text-sm leading-6">
-                The private Ed25519 key stays in operating-system secure storage. Only its public key is sent to the
-                server.
+                Pair this computer with an OpenPrinter server to start receiving and processing print jobs locally.
               </p>
-              <div className="mt-8 space-y-3">
-                {[
-                  'One server base URL with automatic discovery',
-                  'Short-lived, single-use pairing code',
-                  'Private key never enters the web interface',
-                  'Challenge authentication on every gateway connection',
-                ].map((point) => (
-                  <div key={point} className="text-muted-foreground flex items-start gap-2.5 text-sm">
-                    <span className="mt-2 size-1.5 shrink-0 rounded-full bg-[var(--color-connected)]" />
-                    {point}
-                  </div>
-                ))}
-              </div>
             </div>
-            <div className="mt-8 flex items-center justify-between">
-              <div className="text-muted-foreground/50 flex items-center gap-2 text-xs">
-                <ShieldCheck className="size-3.5 text-[var(--color-connected)]" aria-hidden />
-                Ed25519 authentication
-              </div>
+            <div className="mt-8 flex items-center justify-end">
               <button
                 type="button"
                 onClick={onOpenSettings}
@@ -212,9 +215,69 @@ export function SetupScreen({
                 Forget server and pair again
               </Button>
             ) : null}
+
+            {recentServers.length > 0 ? (
+              <div className="border-border mt-5 border-t pt-4">
+                <p className="text-muted-foreground/60 flex items-center gap-1.5 text-xs font-semibold tracking-widest uppercase">
+                  <Clock className="size-3" aria-hidden />
+                  Recent servers
+                </p>
+                <div className="mt-2 space-y-1">
+                  {recentServers.map((server) => (
+                    <button
+                      key={server.serverUrl}
+                      type="button"
+                      className="hover:bg-accent flex w-full items-center gap-3 rounded-md px-2 py-2 text-left transition-colors"
+                      onClick={() => setPendingSwitch(server)}
+                    >
+                      <div className="min-w-0 flex-1">
+                        {server.name ? (
+                          <p className="text-foreground/80 truncate text-sm font-medium">{server.name}</p>
+                        ) : null}
+                        <p className="text-muted-foreground truncate font-mono text-xs">{server.serverUrl}</p>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
           </div>
         </div>
       </div>
+      </div>
     </main>
+
+    <Dialog open={pendingSwitch !== null} onOpenChange={(open) => { if (!open) setPendingSwitch(null); }}>
+      <DialogContent className="sm:max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Switch server?</DialogTitle>
+          <DialogDescription>
+            {pendingSwitch?.name ? (
+              <>Connect to <strong>{pendingSwitch.name}</strong> ({pendingSwitch?.serverUrl})?</>
+            ) : (
+              <>Connect to <span className="font-mono text-xs">{pendingSwitch?.serverUrl}</span>?</>
+            )}
+            {' '}Your current configuration will be cleared and you will need to pair again.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button variant="outline" disabled={switching} onClick={() => setPendingSwitch(null)}>Cancel</Button>
+          <Button
+            disabled={switching}
+            onClick={() => {
+              if (!pendingSwitch) return;
+              setSwitching(true);
+              void agentClient.applyRecentServer(pendingSwitch.serverUrl)
+                .then(() => setPendingSwitch(null))
+                .finally(() => setSwitching(false));
+            }}
+          >
+            {switching ? <RefreshCw className="size-3.5 animate-spin" aria-hidden /> : null}
+            Switch
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+    </>
   );
 }
