@@ -35,8 +35,19 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_single_instance::init(
-            |app, _arguments, _cwd| {
+            |app, arguments, _cwd| {
                 desktop::show_main_window(app);
+
+                for raw_url in arguments {
+                    if let Some(payload) = parse_deep_link_pair(raw_url.as_str()) {
+                        if let Some(state) = app.try_state::<Arc<PendingDeepLink>>() {
+                            if let Ok(mut guard) = state.0.lock() {
+                                *guard = Some(payload.clone());
+                            }
+                        }
+                        let _ = app.emit("oppa://deep-link", payload);
+                    }
+                }
             },
         ))
         .plugin(tauri_plugin_autostart::init(
