@@ -1,15 +1,22 @@
 ---
 title: Getting Started
 description:
-  Pair OPPA with the local example and deliver a virtual print job.
+  Pair the published OPPA app with a custom OpenPrinter server and
+  deliver a virtual print job.
 ---
 
-## Install and run
+## Open OPPA
 
-From the repository root:
+First, download the OPPA desktop app from the
+[downloads page](/downloads), then open the published release build.
+
+In OPPA, open **Settings** and set the **OpenPrinter server** URL to
+your custom server base URL. Changing the server URL will unpair the
+computer and require pairing again.
+
+## Run the example server
 
 ```bash
-pnpm install
 pnpm --filter openprinter-node-example dev
 ```
 
@@ -17,15 +24,10 @@ The example listens on `http://127.0.0.1:8787`, exposes the standard
 discovery/pairing/gateway paths, and logs a short-lived development
 pairing code.
 
-In another terminal:
-
-```bash
-OPPA_PRODUCT_DIR=products/default pnpm oppa:dev
-```
-
 ## Pair
 
-1. Enter `http://127.0.0.1:8787` as the Server URL.
+1. Enter the example server URL, such as `http://127.0.0.1:8787`, in
+   OPPA.
 2. Select **Discover server** and confirm the returned service
    identity.
 3. Enter the logged pairing code and an agent name.
