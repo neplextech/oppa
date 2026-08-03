@@ -793,6 +793,33 @@ impl DesktopService {
         Ok(())
     }
 
+    /// Removes a server URL from the persisted recent-server list.
+    pub async fn delete_recent_server(&self, server_url: String) -> Result<(), CommandError> {
+        let mut servers: Vec<RecentServer> = self
+            .storage
+            .setting(RECENT_SERVERS_SETTING)
+            .await
+            .map_err(|error| CommandError::internal(error.to_string()))?
+            .and_then(|v| serde_json::from_value(v).ok())
+            .unwrap_or_default();
+
+        let initial_len = servers.len();
+        servers.retain(|server| server.server_url != server_url);
+
+        if servers.len() == initial_len {
+            return Ok(());
+        }
+
+        let value = serde_json::to_value(&servers)
+            .map_err(|error| CommandError::internal(error.to_string()))?;
+        self.storage
+            .set_setting(RECENT_SERVERS_SETTING, &value)
+            .await
+            .map_err(|error| CommandError::internal(error.to_string()))?;
+
+        Ok(())
+    }
+
     /// Prepends `server_url` to the persisted recent-server list (best-effort, silently ignored on failure).
     async fn save_recent_server(&self, server_url: &str, name: Option<String>) {
         use chrono::Utc;

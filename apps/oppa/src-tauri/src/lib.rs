@@ -129,6 +129,7 @@ pub fn run() {
             commands::open_product_link,
             commands::list_recent_servers,
             commands::apply_recent_server,
+            commands::delete_recent_server,
             commands::get_pending_deep_link,
         ])
         .run(tauri::generate_context!())

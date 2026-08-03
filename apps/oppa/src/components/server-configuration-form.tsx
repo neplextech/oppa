@@ -71,7 +71,7 @@ export function ServerConfigurationForm({
           <FieldLabel htmlFor="server-url">Server URL</FieldLabel>
           <Input
             id="server-url"
-            type="password"
+            type="url"
             inputMode="url"
             autoCapitalize="none"
             autoCorrect="off"

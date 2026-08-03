@@ -1,4 +1,4 @@
-import { Clock, KeyRound, RefreshCw, RotateCcw, Search, Settings2 } from 'lucide-react';
+import { Clock, KeyRound, RefreshCw, RotateCcw, Search, Settings2, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
 import { ServerConfigurationForm } from '@/components/server-configuration-form';
@@ -44,6 +44,7 @@ export function SetupScreen({
   const [recentServers, setRecentServers] = useState<RecentServer[]>([]);
   const [pendingSwitch, setPendingSwitch] = useState<RecentServer | null>(null);
   const [switching, setSwitching] = useState(false);
+  const [deletingServerUrl, setDeletingServerUrl] = useState<string | null>(null);
   const pairing = status.connectionState === 'pairing' || busy === 'pair-server';
 
   useEffect(() => {
@@ -55,6 +56,17 @@ export function SetupScreen({
 
   const canReconnect =
     status.connectionState === 'authentication_failed' || status.connectionState === 'credential_revoked';
+
+  const handleDeleteRecentServer = async (serverUrl: string) => {
+    const deleteRecentServer = agentClient.deleteRecentServer as (serverUrl: string) => Promise<void>;
+    setDeletingServerUrl(serverUrl);
+    try {
+      await deleteRecentServer(serverUrl);
+      setRecentServers((current) => current.filter((server) => server.serverUrl !== serverUrl));
+    } finally {
+      setDeletingServerUrl((current) => (current === serverUrl ? null : current));
+    }
+  };
 
   return (
     <>
@@ -202,10 +214,10 @@ export function SetupScreen({
                 </div>
 
                 {status.activeErrors.length > 0 ? (
-                  <div className="mt-4 rounded-lg border border-[var(--color-error)]/20 bg-[var(--color-error)]/5 p-4">
-                    <p className="text-sm font-semibold text-[var(--color-error)]">Pairing needs attention</p>
+                  <div className="border-error/20 bg-error/5 mt-4 rounded-lg border p-4">
+                    <p className="text-error text-sm font-semibold">Pairing needs attention</p>
                     {status.activeErrors.map((message) => (
-                      <p key={message} className="mt-1.5 text-sm text-[var(--color-error)]/70">
+                      <p key={message} className="text-error/70 mt-1.5 text-sm">
                         {message}
                       </p>
                     ))}
@@ -233,19 +245,36 @@ export function SetupScreen({
                     </p>
                     <div className="mt-2 space-y-1">
                       {recentServers.map((server) => (
-                        <button
+                        <div
                           key={server.serverUrl}
-                          type="button"
-                          className="hover:bg-accent flex w-full items-center gap-3 rounded-md px-2 py-2 text-left transition-colors"
-                          onClick={() => setPendingSwitch(server)}
+                          className="hover:bg-accent flex items-center gap-2 rounded-md px-2 py-2 transition-colors"
                         >
-                          <div className="min-w-0 flex-1">
-                            {server.name ? (
-                              <p className="text-foreground/80 truncate text-sm font-medium">{server.name}</p>
-                            ) : null}
-                            <p className="text-muted-foreground truncate font-mono text-xs">{server.serverUrl}</p>
-                          </div>
-                        </button>
+                          <button
+                            type="button"
+                            className="min-w-0 flex-1 text-left"
+                            onClick={() => setPendingSwitch(server)}
+                          >
+                            <div className="min-w-0">
+                              {server.name ? (
+                                <p className="text-foreground/80 truncate text-sm font-medium">{server.name}</p>
+                              ) : null}
+                              <p className="text-muted-foreground truncate font-mono text-xs">{server.serverUrl}</p>
+                            </div>
+                          </button>
+                          <button
+                            type="button"
+                            className="text-muted-foreground hover:text-foreground disabled:opacity-40"
+                            aria-label={`Delete recent server ${server.name ?? server.serverUrl}`}
+                            disabled={deletingServerUrl === server.serverUrl}
+                            onClick={() => void handleDeleteRecentServer(server.serverUrl)}
+                          >
+                            {deletingServerUrl === server.serverUrl ? (
+                              <RefreshCw className="size-3.5 animate-spin" aria-hidden />
+                            ) : (
+                              <Trash2 className="size-3.5" aria-hidden />
+                            )}
+                          </button>
+                        </div>
                       ))}
                     </div>
                   </div>

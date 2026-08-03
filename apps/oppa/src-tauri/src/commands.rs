@@ -245,6 +245,14 @@ pub async fn apply_recent_server(
     service.apply_recent_server(server_url).await
 }
 
+#[tauri::command]
+pub async fn delete_recent_server(
+    service: State<'_, Arc<DesktopService>>,
+    server_url: String,
+) -> Result<(), CommandError> {
+    service.delete_recent_server(server_url).await
+}
+
 /// Returns and clears any deep-link pair request that arrived before the frontend was ready.
 #[tauri::command]
 #[allow(clippy::needless_pass_by_value)]

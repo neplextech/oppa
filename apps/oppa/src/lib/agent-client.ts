@@ -354,7 +354,12 @@ export const agentClient = {
     if (isTauri()) {
       return command('update_virtual_printer', { printerId, mode, delayMs });
     }
-    return { ...structuredClone(demoVirtualPrinter), id: printerId, mode, delayMs };
+    return {
+      ...structuredClone(demoVirtualPrinter),
+      id: printerId,
+      mode,
+      delayMs,
+    };
   },
 
   async clearVirtualHistory(printerId: string): Promise<void> {
@@ -469,6 +474,12 @@ export const agentClient = {
   async applyRecentServer(serverUrl: string): Promise<void> {
     if (isTauri()) {
       await command('apply_recent_server', { serverUrl });
+    }
+  },
+
+  async deleteRecentServer(serverUrl: string): Promise<void> {
+    if (isTauri()) {
+      await command('delete_recent_server', { serverUrl });
     }
   },
 
