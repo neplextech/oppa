@@ -28,6 +28,7 @@ use tauri_plugin_autostart::MacosLauncher;
 /// # Panics
 ///
 /// Panics when Tauri cannot start the application process.
+#[allow(clippy::too_many_lines)]
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
