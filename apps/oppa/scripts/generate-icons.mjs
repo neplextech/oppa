@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 const scriptDirectory = dirname(fileURLToPath(import.meta.url));
 const appDirectory = resolve(scriptDirectory, '..');
 const iconsDirectory = join(appDirectory, 'src-tauri', 'icons');
-const sourceIconPath = join(iconsDirectory, 'icon.png');
+const sourceIconPath = join(appDirectory, 'public', 'oppa-icon.png');
 const iconIcoPath = join(iconsDirectory, 'icon.ico');
 const iconIcnsPath = join(iconsDirectory, 'icon.icns');
 
