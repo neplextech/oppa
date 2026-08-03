@@ -1,7 +1,6 @@
 'use client';
 
 import {
-  Apple,
   ArrowDownToLine,
   ArrowUpRight,
   Box,
@@ -10,11 +9,9 @@ import {
   Github,
   HardDriveDownload,
   LoaderCircle,
-  Monitor,
   PackageOpen,
   RefreshCw,
   ShieldCheck,
-  Terminal,
 } from 'lucide-react';
 import Link from 'next/link';
 import type { ComponentType, SVGProps } from 'react';
@@ -30,6 +27,7 @@ import {
   type DownloadPlatform,
 } from '@/lib/github-releases';
 
+import { LinuxPlatformIcon, MacPlatformIcon, WindowsPlatformIcon } from './platform-icons';
 import { useOppaRelease } from './use-oppa-release';
 
 function detectPlatform(): DownloadPlatform | null {
@@ -64,19 +62,19 @@ interface PlatformDetails {
 
 const PLATFORM_DETAILS: Record<DownloadPlatform, PlatformDetails> = {
   macOS: {
-    icon: Apple,
+    icon: MacPlatformIcon,
     eyebrow: 'Apple silicon and Intel',
     description: 'Install with a disk image for Apple silicon or Intel.',
     accent: 'text-orange-300 bg-orange-400/10 border-orange-400/20',
   },
   Windows: {
-    icon: Monitor,
+    icon: WindowsPlatformIcon,
     eyebrow: 'x64 and ARM64 builds',
     description: 'Choose the standard installer or an MSI package for managed systems.',
     accent: 'text-sky-300 bg-sky-400/10 border-sky-400/20',
   },
   Linux: {
-    icon: Terminal,
+    icon: LinuxPlatformIcon,
     eyebrow: 'Desktop Linux',
     description: 'Use AppImage or your distribution’s native package format.',
     accent: 'text-emerald-300 bg-emerald-400/10 border-emerald-400/20',
@@ -98,6 +96,9 @@ export function DownloadsClient() {
     ? (['macOS', 'Windows', 'Linux'] as DownloadPlatform[]).flatMap((p) => downloadRelease.assetsByPlatform[p])
     : [];
   const suggestedAsset = detectedPlatform && !loading ? pickBestAsset(allAssets, detectedPlatform) : null;
+  const suggestedPlatformDetails = detectedPlatform ? PLATFORM_DETAILS[detectedPlatform] : null;
+  const SuggestedPlatformIcon = suggestedPlatformDetails?.icon ?? ArrowDownToLine;
+  const suggestedPlatformLabel = detectedPlatform ? platformLabel(detectedPlatform) : 'Download';
 
   return (
     <main className="relative min-h-screen overflow-hidden bg-[#0a0a09] text-stone-100">
@@ -121,19 +122,33 @@ export function DownloadsClient() {
                 keeps credentials in operating-system secure storage, and accepts only the documented OpenPrinter
                 protocol.
               </p>
-              <div className="mt-8 flex flex-wrap items-center gap-3">
+              <div className="mt-8 flex w-full max-w-sm flex-col gap-3">
                 {suggestedAsset ? (
                   <a
-                    className="inline-flex h-9 items-center gap-1.5 rounded bg-stone-100 px-4 text-[13px] font-medium text-stone-900 transition hover:bg-white"
+                    className="group inline-flex min-h-12 w-full items-center gap-3 rounded border border-orange-400/30 bg-stone-950 px-4 py-2 text-left text-[13px] font-medium text-stone-50 shadow-[inset_0_0_0_1px_rgba(249,115,22,0.08)] transition hover:border-orange-400/45 hover:bg-stone-900"
                     href={suggestedAsset.browserDownloadUrl}
                     title={`${suggestedAsset.format} · ${suggestedAsset.architectureLabel}`}
                   >
-                    {platformLabel(detectedPlatform!)}
-                    <ArrowDownToLine className="size-3.5" aria-hidden />
+                    <div
+                      className={`flex size-8 shrink-0 items-center justify-center rounded-md border ${suggestedPlatformDetails?.accent ?? 'border-white/10 bg-white/5 text-stone-200'}`}
+                    >
+                      <SuggestedPlatformIcon className="size-4" aria-hidden />
+                    </div>
+                    <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                      <span className="truncate">{suggestedPlatformLabel}</span>
+                      <span className="truncate font-mono text-[10px] tracking-[0.06em] text-stone-300 uppercase">
+                        {suggestedAsset.architectureLabel} · {formatFileSize(suggestedAsset.size)} ·{' '}
+                        {suggestedAsset.format}
+                      </span>
+                    </span>
+                    <ArrowDownToLine
+                      className="size-3.5 shrink-0 text-stone-400 transition group-hover:text-stone-100"
+                      aria-hidden
+                    />
                   </a>
                 ) : (
                   <a
-                    className="inline-flex h-9 items-center gap-1.5 rounded bg-stone-100 px-4 text-[13px] font-medium text-stone-900 transition hover:bg-white"
+                    className="inline-flex min-h-12 w-full items-center gap-1.5 rounded bg-stone-100 px-4 py-2 text-[13px] font-medium text-stone-900 transition hover:bg-white"
                     href="#downloads"
                   >
                     {loading ? 'Loading…' : 'Choose a download'}
@@ -141,7 +156,7 @@ export function DownloadsClient() {
                   </a>
                 )}
                 <Link
-                  className="inline-flex h-9 items-center gap-1.5 rounded border border-white/10 px-4 text-[13px] font-medium text-stone-300 transition hover:border-white/20 hover:text-stone-100"
+                  className="inline-flex min-h-12 w-full items-center justify-center gap-1.5 rounded border border-white/10 px-4 py-2 text-[13px] font-medium text-stone-300 transition hover:border-white/20 hover:text-stone-100"
                   href="/docs/getting-started"
                 >
                   Setup guide

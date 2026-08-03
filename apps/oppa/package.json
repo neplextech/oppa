@@ -8,6 +8,7 @@
     "build": "pnpm run typecheck && vite build",
     "typecheck": "tsc --noEmit --pretty false -p tsconfig.json && tsc --noEmit --pretty false -p tsconfig.node.json",
     "lint": "eslint src vite.config.ts --max-warnings=0",
+    "generate-icons": "node scripts/generate-icons.mjs",
     "preview": "vite preview",
     "tauri": "tauri"
   },

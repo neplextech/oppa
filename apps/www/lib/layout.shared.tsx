@@ -1,5 +1,7 @@
 import type { BaseLayoutProps } from 'fumadocs-ui/layouts/shared';
-import { BookOpen, Download, Github } from 'lucide-react';
+import { BookOpen, Download } from 'lucide-react';
+
+import { GithubIcon } from '@/components/site-icons';
 
 export function baseOptions(): BaseLayoutProps {
   return {
@@ -28,7 +30,7 @@ export function baseOptions(): BaseLayoutProps {
         url: '/downloads',
       },
       {
-        icon: <Github />,
+        icon: <GithubIcon />,
         text: 'GitHub',
         url: 'https://github.com/neplextech/oppa',
         external: true,

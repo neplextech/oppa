@@ -1,9 +1,11 @@
 'use client';
 
-import { ArrowRight, Github, Menu, X } from 'lucide-react';
+import { ArrowRight, Menu, X } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
+
+import { GithubIcon } from './site-icons';
 
 const navItems = [
   { label: 'Protocol', href: '/#trace', sectionId: 'trace' },
@@ -100,7 +102,7 @@ export function SiteHeader() {
             rel="noreferrer"
             target="_blank"
           >
-            <Github className="size-[15px]" aria-hidden />
+            <GithubIcon className="size-[15px]" aria-hidden />
           </a>
           <Link
             className="hidden h-8 items-center gap-1.5 rounded border border-white/10 bg-white/[0.04] px-3 text-[12.5px] font-medium text-stone-200 transition hover:border-white/20 hover:bg-white/[0.08] sm:inline-flex"
