@@ -1,3 +1,5 @@
+import { SITE_BRAND_ICON_OG_SRC } from '@/components/site-brand-icon';
+
 const IMAGE_BACKGROUND = '#0a0a09';
 const PANEL_BACKGROUND = '#10100f';
 const BORDER = 'rgba(255, 255, 255, 0.1)';
@@ -10,16 +12,6 @@ export const OPEN_GRAPH_IMAGE_SIZE = {
   width: 1200,
   height: 630,
 };
-
-export function OpenPrinterMark({ color = ORANGE }: { color?: string }) {
-  return (
-    <svg fill="none" height="38" viewBox="0 0 38 38" width="38" xmlns="http://www.w3.org/2000/svg">
-      <rect height="23" rx="5" stroke={color} strokeWidth="2" width="30" x="4" y="9" />
-      <path d="M10 9V4h18v5M11 25h16v9H11z" stroke={color} strokeLinejoin="round" strokeWidth="2" />
-      <circle cx="28" cy="16" fill={EMERALD} r="2" />
-    </svg>
-  );
-}
 
 export function MarketingOpenGraphImage({ variant }: { variant: 'home' | 'downloads' }) {
   const isDownloads = variant === 'downloads';
@@ -77,7 +69,13 @@ export function MarketingOpenGraphImage({ variant }: { variant: 'home' | 'downlo
           top: '50px',
         }}
       >
-        <div style={{ alignItems: 'center', display: 'flex', flexDirection: 'row' }}>
+        <div
+          style={{
+            alignItems: 'center',
+            display: 'flex',
+            flexDirection: 'row',
+          }}
+        >
           <div
             style={{
               alignItems: 'center',
@@ -90,11 +88,34 @@ export function MarketingOpenGraphImage({ variant }: { variant: 'home' | 'downlo
               width: '54px',
             }}
           >
-            <OpenPrinterMark />
+            <img alt="OpenPrinter" height={38} src={SITE_BRAND_ICON_OG_SRC} width={38} />
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', marginLeft: '15px' }}>
-            <span style={{ fontSize: '24px', fontWeight: 700, letterSpacing: '-0.5px' }}>OpenPrinter</span>
-            <span style={{ color: MUTED, fontSize: '13px', letterSpacing: '2px', marginTop: '2px' }}>BY NEPLEX</span>
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              marginLeft: '15px',
+            }}
+          >
+            <span
+              style={{
+                fontSize: '24px',
+                fontWeight: 700,
+                letterSpacing: '-0.5px',
+              }}
+            >
+              OpenPrinter
+            </span>
+            <span
+              style={{
+                color: MUTED,
+                fontSize: '13px',
+                letterSpacing: '2px',
+                marginTop: '2px',
+              }}
+            >
+              BY NEPLEX
+            </span>
           </div>
         </div>
         <div
@@ -137,8 +158,21 @@ export function MarketingOpenGraphImage({ variant }: { variant: 'home' | 'downlo
           top: '130px',
         }}
       >
-        <div style={{ display: 'flex', flexDirection: 'column', maxWidth: '660px' }}>
-          <div style={{ color: MUTED, display: 'flex', fontSize: '14px', letterSpacing: '2.1px' }}>
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            maxWidth: '660px',
+          }}
+        >
+          <div
+            style={{
+              color: MUTED,
+              display: 'flex',
+              fontSize: '14px',
+              letterSpacing: '2.1px',
+            }}
+          >
             {isDownloads ? 'NATIVE INSTALLERS / STABLE CHANNEL' : 'VERSIONED PROTOCOL / LOCAL AGENT'}
           </div>
           {isDownloads ? (
@@ -256,7 +290,13 @@ function TracePanel() {
         <span>protocol trace</span>
         <span style={{ color: EMERALD }}>● live</span>
       </div>
-      <div style={{ display: 'flex', flexDirection: 'column', padding: '7px 18px' }}>
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          padding: '7px 18px',
+        }}
+      >
         {rows.map(([hop, event, color], index) => (
           <div
             key={event}
@@ -268,7 +308,14 @@ function TracePanel() {
               padding: '13px 0',
             }}
           >
-            <span style={{ backgroundColor: color, borderRadius: '99px', height: '7px', width: '7px' }} />
+            <span
+              style={{
+                backgroundColor: color,
+                borderRadius: '99px',
+                height: '7px',
+                width: '7px',
+              }}
+            />
             <span style={{ color: '#d6d3d1', marginLeft: '12px', width: '92px' }}>{hop}</span>
             <span style={{ color: MUTED }}>{event}</span>
           </div>
@@ -311,7 +358,13 @@ function DownloadPanel() {
         <span>choose a platform</span>
         <span style={{ color: EMERALD }}>stable</span>
       </div>
-      <div style={{ display: 'flex', flexDirection: 'column', padding: '6px 18px' }}>
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          padding: '6px 18px',
+        }}
+      >
         {platforms.map(([platform, format, color], index) => (
           <div
             key={platform}
@@ -323,7 +376,13 @@ function DownloadPanel() {
               padding: '14px 0',
             }}
           >
-            <div style={{ alignItems: 'center', display: 'flex', flexDirection: 'row' }}>
+            <div
+              style={{
+                alignItems: 'center',
+                display: 'flex',
+                flexDirection: 'row',
+              }}
+            >
               <span
                 style={{
                   alignItems: 'center',
@@ -339,7 +398,15 @@ function DownloadPanel() {
               >
                 ↓
               </span>
-              <span style={{ color: '#d6d3d1', fontSize: '15px', marginLeft: '12px' }}>{platform}</span>
+              <span
+                style={{
+                  color: '#d6d3d1',
+                  fontSize: '15px',
+                  marginLeft: '12px',
+                }}
+              >
+                {platform}
+              </span>
             </div>
             <span style={{ color: MUTED, fontSize: '11px', letterSpacing: '0.6px' }}>{format}</span>
           </div>

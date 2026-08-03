@@ -17,6 +17,11 @@ const mono = Geist_Mono({
 
 export const metadata: Metadata = {
   metadataBase: new URL('https://oppa.neplex.dev'),
+  icons: {
+    apple: '/icon.png',
+    icon: '/icon.png',
+    shortcut: '/icon.png',
+  },
   title: {
     default: 'OpenPrinter — local printing for cloud applications',
     template: '%s · OpenPrinter',

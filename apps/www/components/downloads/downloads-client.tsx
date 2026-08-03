@@ -110,7 +110,7 @@ export function DownloadsClient() {
             <div>
               <div className="flex items-center gap-2 font-mono text-[11px] tracking-[0.14em] text-stone-500 uppercase">
                 <span className="size-1.5 rounded-full bg-emerald-400" />
-                OPPA desktop / stable channel
+                OPPA desktop
               </div>
               <h1 className="mt-5 max-w-2xl text-[2.65rem] leading-[1.03] font-semibold tracking-[-0.035em] text-balance sm:text-[3.4rem]">
                 Your local printers,

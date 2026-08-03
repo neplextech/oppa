@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
+import { SiteBrandIcon } from './site-brand-icon';
 import { GithubIcon } from './site-icons';
 
 const navItems = [
@@ -64,13 +65,7 @@ export function SiteHeader() {
     >
       <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-6 lg:px-8">
         <Link className="flex items-center gap-2.5" href="/">
-          <img
-            alt="Neplex"
-            className="h-9 w-auto invert"
-            height={36}
-            src="https://neplextech.com/neplex-transparent-200.webp"
-            width={36}
-          />
+          <SiteBrandIcon className="size-9 shrink-0" />
           <span className="leading-[1.15]">
             <span className="block text-[13.5px] font-semibold tracking-tight text-stone-100">OpenPrinter</span>
             <span className="block font-mono text-[9.5px] tracking-wide text-stone-500">by Neplex</span>
@@ -102,10 +97,10 @@ export function SiteHeader() {
             rel="noreferrer"
             target="_blank"
           >
-            <GithubIcon className="size-[15px]" aria-hidden />
+            <GithubIcon className="size-3.75" aria-hidden />
           </a>
           <Link
-            className="hidden h-8 items-center gap-1.5 rounded border border-white/10 bg-white/[0.04] px-3 text-[12.5px] font-medium text-stone-200 transition hover:border-white/20 hover:bg-white/[0.08] sm:inline-flex"
+            className="hidden h-8 items-center gap-1.5 rounded border border-white/10 bg-white/4 px-3 text-[12.5px] font-medium text-stone-200 transition hover:border-white/20 hover:bg-white/8 sm:inline-flex"
             href="/docs"
           >
             Read the docs

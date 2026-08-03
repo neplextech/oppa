@@ -1,6 +1,7 @@
 import type { BaseLayoutProps } from 'fumadocs-ui/layouts/shared';
 import { BookOpen, Download } from 'lucide-react';
 
+import { SiteBrandIcon } from '@/components/site-brand-icon';
 import { GithubIcon } from '@/components/site-icons';
 
 export function baseOptions(): BaseLayoutProps {
@@ -9,9 +10,7 @@ export function baseOptions(): BaseLayoutProps {
     nav: {
       title: (
         <span className="flex items-center gap-2 font-semibold">
-          <span className="bg-fd-primary text-fd-primary-foreground flex size-7 items-center justify-center rounded-lg">
-            <BookOpen className="size-3.5" aria-hidden />
-          </span>
+          <SiteBrandIcon className="size-7 shrink-0" height={28} width={28} />
           OpenPrinter
         </span>
       ),
