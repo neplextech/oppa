@@ -1,3 +1,4 @@
+import { invoke } from '@tauri-apps/api/core';
 import { Clock, KeyRound, RefreshCw, RotateCcw, Search, Settings2, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
@@ -58,10 +59,9 @@ export function SetupScreen({
     status.connectionState === 'authentication_failed' || status.connectionState === 'credential_revoked';
 
   const handleDeleteRecentServer = async (serverUrl: string) => {
-    const deleteRecentServer = agentClient.deleteRecentServer as (serverUrl: string) => Promise<void>;
     setDeletingServerUrl(serverUrl);
     try {
-      await deleteRecentServer(serverUrl);
+      await invoke<void>('delete_recent_server', { serverUrl });
       setRecentServers((current) => current.filter((server) => server.serverUrl !== serverUrl));
     } finally {
       setDeletingServerUrl((current) => (current === serverUrl ? null : current));

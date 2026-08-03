@@ -494,3 +494,9 @@ export const agentClient = {
     });
   },
 };
+
+export async function deleteRecentServer(serverUrl: string): Promise<void> {
+  if (isTauri()) {
+    await command('delete_recent_server', { serverUrl });
+  }
+}
