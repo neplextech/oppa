@@ -5,7 +5,8 @@ import { MAX_WIRE_MESSAGE_BYTES, parsePrintJob } from '@openprinter/protocol';
 import { createOpenPrinterServer, type OpenPrinterSession } from '@openprinter/server';
 import { WebSocketServer } from 'ws';
 
-import { HttpError, readJson, sendJson } from './http.js';
+import { DEV_UI_HTML } from './dev-ui.js';
+import { HttpError, readJson, sendHtml, sendJson } from './http.js';
 
 const HOST = '127.0.0.1';
 const PORT = parsePort(process.env.PORT);
@@ -57,14 +58,8 @@ const http = createServer((request, response) => {
 http.on('upgrade', (request, socket, head) => handleUpgrade(request, socket, head));
 
 http.listen(PORT, HOST, () => {
+  logBanner();
   void createDevelopmentPairingCode();
-  log('server.listening', {
-    baseUrl: `http://${HOST}:${PORT}`,
-    discoveryPath: openprinter.paths.discovery,
-    pairingPath: openprinter.paths.pairing,
-    gatewayPath: openprinter.paths.gateway,
-    warning: 'The example uses volatile in-memory stores. Production applications need durable stores.',
-  });
 });
 
 async function route(request: IncomingMessage, response: ServerResponse): Promise<void> {
@@ -87,6 +82,25 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
     sendJson(response, 201, { code: pairing.code, expiresAt: pairing.expiresAt.toISOString() });
     return;
   }
+  if (method === 'GET' && url.pathname === '/agents') {
+    const agents = [...sessions.values()].flatMap((s) => {
+      const agent = s.getAgent();
+      return agent ? [{ agentId: agent.agentId, productId: agent.hello.productId, agentVersion: agent.hello.agentVersion, connectedAt: agent.connectedAt, lastSeenAt: agent.lastSeenAt }] : [];
+    });
+    sendJson(response, 200, agents);
+    return;
+  }
+  const agentPrintersMatch = /^\/agents\/([^/]+)\/printers$/.exec(url.pathname);
+  if (method === 'GET' && agentPrintersMatch) {
+    const agentId = decodeURIComponent(agentPrintersMatch[1]!);
+    const session = sessions.get(agentId);
+    if (session === undefined) {
+      sendJson(response, 409, { error: { code: 'agent_offline', message: 'The agent is not connected.' } });
+      return;
+    }
+    sendJson(response, 200, session.getPrinters());
+    return;
+  }
   const jobMatch = /^\/agents\/([^/]+)\/jobs$/.exec(url.pathname);
   if (method === 'POST' && jobMatch) {
     const agentId = decodeURIComponent(jobMatch[1]!);
@@ -100,13 +114,56 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
     sendJson(response, result.ok ? 202 : 409, result);
     return;
   }
+  const testPrintMatch = /^\/development\/test-print\/([^/]+)\/([^/]+)$/.exec(url.pathname);
+  if (method === 'POST' && testPrintMatch) {
+    const agentId = decodeURIComponent(testPrintMatch[1]!);
+    const printerId = decodeURIComponent(testPrintMatch[2]!);
+    const session = sessions.get(agentId);
+    if (session === undefined) {
+      sendJson(response, 409, { error: { code: 'agent_offline', message: 'The agent is not connected.' } });
+      return;
+    }
+    const printers = session.getPrinters();
+    const printer = printers.find((p) => p.fingerprint === printerId);
+    const widths = printer?.capabilities?.mediaWidths;
+    const width: 58 | 80 = widths?.includes(80) ? 80 : 58;
+    const now = new Date();
+    const job = parsePrintJob({
+      jobId: `job_test_${Date.now()}`,
+      idempotencyKey: `test_${Math.random().toString(36).slice(2)}`,
+      printerId,
+      createdAt: now.toISOString(),
+      document: {
+        width,
+        sections: [
+          { type: 'text', value: 'OpenPrinter Test', bold: true, align: 'center' },
+          { type: 'divider' },
+          { type: 'text', value: `Agent: ${agentId}`, align: 'center' },
+          { type: 'text', value: now.toLocaleString(), align: 'center' },
+          { type: 'feed', lines: 3 },
+          { type: 'cut' },
+        ],
+      },
+    });
+    const result = await session.sendJob(job);
+    sendJson(response, result.ok ? 202 : 409, result);
+    return;
+  }
+  if (method === 'GET' && url.pathname === '/dev') {
+    sendHtml(response, 200, DEV_UI_HTML);
+    return;
+  }
   if (method === 'GET' && url.pathname === '/') {
     sendJson(response, 200, {
       name: 'OpenPrinter Node.js example',
+      devUi: `http://${HOST}:${PORT}/dev`,
       routes: {
         discovery: `GET ${openprinter.paths.discovery}`,
         pairing: `POST ${openprinter.paths.pairing}`,
         createDevelopmentPairingCode: 'POST /development/pairing-code',
+        testPrint: 'POST /development/test-print/:agentId/:printerId',
+        agents: 'GET /agents',
+        agentPrinters: 'GET /agents/:agentId/printers',
         sendJob: 'POST /agents/:agentId/jobs',
       },
       connectedAgents: [...sessions.keys()],
@@ -129,11 +186,15 @@ function handleUpgrade(request: IncomingMessage, socket: Duplex, head: Buffer): 
 
 async function createDevelopmentPairingCode(): Promise<void> {
   const pairing = await openprinter.createPairingCode({ metadata: { tenantId: 'local-development' } });
-  log('development.pairing_code', {
-    code: pairing.code,
-    expiresAt: pairing.expiresAt.toISOString(),
-    note: 'Shown only because this is a local disposable example.',
-  });
+  const serverUrl = `http://${HOST}:${PORT}/`;
+  const encoded = Buffer.from(serverUrl).toString('base64url');
+  const deepLink = `oppa://pair?server=${encoded}&key=${pairing.code}`;
+  const c = ansi;
+  process.stdout.write(
+    `\n  ${c.bold}${c.yellow}Pairing code${c.reset}  ${c.bold}${pairing.code}${c.reset}` +
+    `  ${c.dim}(expires ${pairing.expiresAt.toLocaleTimeString()})${c.reset}\n` +
+    `  ${c.dim}Deep link${c.reset}     ${c.green}${deepLink}${c.reset}\n\n`,
+  );
 }
 
 function pairingStatus(code: string): number {
@@ -155,6 +216,33 @@ function parsePort(value: string | undefined): number {
   const port = value === undefined ? 8787 : Number(value);
   if (!Number.isInteger(port) || port < 1 || port > 65_535) throw new Error('PORT must be between 1 and 65535.');
   return port;
+}
+
+const ansi = {
+  reset: '\x1b[0m',
+  bold: '\x1b[1m',
+  dim: '\x1b[2m',
+  cyan: '\x1b[36m',
+  green: '\x1b[32m',
+  yellow: '\x1b[33m',
+  blue: '\x1b[34m',
+};
+
+function logBanner(): void {
+  const base = `http://${HOST}:${PORT}`;
+  const c = ansi;
+  const row = (label: string, value: string): string =>
+    `  ${c.dim}${label.padEnd(12)}${c.reset}${c.cyan}${value}${c.reset}\n`;
+  process.stdout.write(
+    `\n${c.bold}  OpenPrinter Node.js Example${c.reset}\n` +
+    `  ${'─'.repeat(44)}\n` +
+    row('Server', base) +
+    row('Dev UI', `${base}/dev`) +
+    row('Discovery', `${base}${openprinter.paths.discovery}`) +
+    row('Pairing', `${base}${openprinter.paths.pairing}`) +
+    row('Gateway', `${base.replace('http', 'ws')}${openprinter.paths.gateway}`) +
+    `\n  ${c.dim}⚠  Volatile in-memory stores. Development only.${c.reset}\n`,
+  );
 }
 
 function log(event: string, details: Record<string, unknown>): void {

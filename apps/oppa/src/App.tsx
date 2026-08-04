@@ -180,6 +180,14 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  async function handleDeepLinkConfirm(agentName: string): Promise<void> {
+    if (!pendingDeepLink || !status) return;
+    if (status.agentId !== null) await actions.forgetServer();
+    await actions.setServerConfiguration({ serverUrl: pendingDeepLink.serverUrl });
+    await actions.pairServer(pendingDeepLink.pairKey, agentName);
+    setPendingDeepLink(null);
+  }
+
   if (!loading && error && (!status || !diagnostics)) {
     return (
       <main className="bg-background flex min-h-dvh items-center justify-center p-6">
@@ -220,6 +228,18 @@ export default function App() {
     status.connectionState === 'authentication_failed' ||
     status.connectionState === 'credential_revoked';
 
+  // Defined once here; status is non-null past the loading guard above.
+  const deepLinkDialog = (
+    <DeepLinkDialog
+      open={pendingDeepLink !== null}
+      pairing={pendingDeepLink}
+      status={status}
+      busy={busy}
+      onConfirm={handleDeepLinkConfirm}
+      onCancel={() => setPendingDeepLink(null)}
+    />
+  );
+
   if (isSetupState && !settingsFromSetup) {
     return (
       <>
@@ -238,25 +258,7 @@ export default function App() {
             void navigate('/settings');
           }}
         />
-        <DeepLinkDialog
-          open={pendingDeepLink !== null}
-          pairing={pendingDeepLink}
-          status={status}
-          busy={busy}
-          onConfirm={async (agentName) => {
-            if (!pendingDeepLink) return;
-            // Forget first so pair_server can proceed even when the deep-link
-            // URL matches the already-configured URL (apply_server_configuration
-            // short-circuits on same-URL and would leave the connection intact).
-            if (status.agentId !== null) {
-              await actions.forgetServer();
-            }
-            await actions.setServerConfiguration({ serverUrl: pendingDeepLink.serverUrl });
-            await actions.pairServer(pendingDeepLink.pairKey, agentName);
-            setPendingDeepLink(null);
-          }}
-          onCancel={() => setPendingDeepLink(null)}
-        />
+        {deepLinkDialog}
       </>
     );
   }
@@ -358,22 +360,7 @@ export default function App() {
         {error ? <ErrorBanner message={error} onRetry={() => void actions.reload()} /> : null}
         {content}
       </AppShell>
-      <DeepLinkDialog
-        open={pendingDeepLink !== null}
-        pairing={pendingDeepLink}
-        status={status}
-        busy={busy}
-        onConfirm={async (agentName) => {
-          if (!pendingDeepLink) return;
-          if (status.agentId !== null) {
-            await actions.forgetServer();
-          }
-          await actions.setServerConfiguration({ serverUrl: pendingDeepLink.serverUrl });
-          await actions.pairServer(pendingDeepLink.pairKey, agentName);
-          setPendingDeepLink(null);
-        }}
-        onCancel={() => setPendingDeepLink(null)}
-      />
+      {deepLinkDialog}
     </>
   );
 }

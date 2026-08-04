@@ -19,3 +19,17 @@
 - Preserve host ownership of live-session routing and durable jobs.
 - Tests must use virtual printers and in-memory stores; no physical
   printer or external service is required.
+
+## Dev routes (development only, not for production)
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET` | `/dev` | Browser UI: pairing deep link generator + agent/printer view |
+| `GET` | `/agents` | JSON list of connected agents |
+| `GET` | `/agents/:agentId/printers` | Printer inventory for one agent |
+| `POST` | `/development/pairing-code` | Create a one-time pairing code |
+| `POST` | `/development/test-print/:agentId/:printerId` | Send a test job to a printer |
+
+The deep link shown in the `/dev` UI follows the format documented in
+`apps/www/content/docs/deep-link-pairing.mdx` and in the root
+`AGENTS.md` deep link pairing section.

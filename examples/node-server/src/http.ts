@@ -69,6 +69,18 @@ export function sendJson(
   response.end(body);
 }
 
+/** Send an HTML response. */
+export function sendHtml(response: ServerResponse, status: number, html: string): void {
+  const body = Buffer.from(html, 'utf8');
+  response.writeHead(status, {
+    'cache-control': 'no-store',
+    'content-length': String(body.byteLength),
+    'content-type': 'text/html; charset=utf-8',
+    'x-content-type-options': 'nosniff',
+  });
+  response.end(body);
+}
+
 function requireContentType(request: IncomingMessage, expected: string): void {
   const contentType = request.headers['content-type']?.split(';', 1)[0]?.trim().toLowerCase();
 
