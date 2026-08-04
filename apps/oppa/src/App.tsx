@@ -1,3 +1,4 @@
+import { invoke } from '@tauri-apps/api/core';
 import { LoaderCircle } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useEffect, useState } from 'react';
@@ -180,10 +181,23 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Expose globalThis.handleDeeplink(url) in dev builds for console testing.
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    (globalThis as Record<string, unknown>).handleDeeplink = (url: string) => {
+      invoke('simulate_deep_link', { url }).catch(console.error);
+    };
+    return () => {
+      delete (globalThis as Record<string, unknown>).handleDeeplink;
+    };
+  }, []);
+
   async function handleDeepLinkConfirm(agentName: string): Promise<void> {
     if (!pendingDeepLink || !status) return;
     if (status.agentId !== null) await actions.forgetServer();
-    await actions.setServerConfiguration({ serverUrl: pendingDeepLink.serverUrl });
+    await actions.setServerConfiguration({
+      serverUrl: pendingDeepLink.serverUrl,
+    });
     await actions.pairServer(pendingDeepLink.pairKey, agentName);
     setPendingDeepLink(null);
   }

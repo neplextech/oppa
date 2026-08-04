@@ -253,9 +253,34 @@ pub async fn delete_recent_server(
     service.delete_recent_server(server_url).await
 }
 
+/// Fetches the server brand name from its discovery document without changing agent state.
+///
+/// Used by the deep-link dialog to show a human-readable name before the user confirms pairing.
+/// Returns `None` on any network or parse failure so the UI can fall back to displaying the URL.
+#[tauri::command]
+pub async fn fetch_server_name(
+    service: State<'_, Arc<DesktopService>>,
+    server_url: String,
+) -> Result<Option<String>, ()> {
+    Ok(service.fetch_server_name(server_url).await)
+}
+
 /// Returns and clears any deep-link pair request that arrived before the frontend was ready.
 #[tauri::command]
 #[allow(clippy::needless_pass_by_value)]
 pub fn get_pending_deep_link(state: State<'_, Arc<PendingDeepLink>>) -> Option<DeepLinkPayload> {
     state.0.lock().ok()?.take()
+}
+
+/// Simulates a deep-link URL arriving from the OS.
+///
+/// Active only in debug builds. In the webview console, call:
+/// `globalThis.handleDeeplink("oppa-dev://pair?server=...&key=...")`
+/// to exercise the full pairing flow without the OS URL handler.
+#[tauri::command]
+pub fn simulate_deep_link(app: AppHandle, url: String) {
+    #[cfg(debug_assertions)]
+    crate::dispatch_deep_link(&app, &url);
+    #[cfg(not(debug_assertions))]
+    let _ = (app, url);
 }

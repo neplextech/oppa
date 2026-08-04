@@ -38,16 +38,8 @@ pub fn run() {
         .plugin(tauri_plugin_single_instance::init(
             |app, arguments, _cwd| {
                 desktop::show_main_window(app);
-
                 for raw_url in arguments {
-                    if let Some(payload) = parse_deep_link_pair(raw_url.as_str()) {
-                        if let Some(state) = app.try_state::<Arc<PendingDeepLink>>() {
-                            if let Ok(mut guard) = state.0.lock() {
-                                *guard = Some(payload.clone());
-                            }
-                        }
-                        let _ = app.emit("oppa://deep-link", payload);
-                    }
+                    dispatch_deep_link(app, raw_url.as_str());
                 }
             },
         ))
@@ -108,14 +100,7 @@ pub fn run() {
                     Err(_) => return,
                 };
                 for raw_url in urls {
-                    if let Some(payload) = parse_deep_link_pair(&raw_url) {
-                        if let Some(state) = dl_handle.try_state::<Arc<PendingDeepLink>>() {
-                            if let Ok(mut guard) = state.0.lock() {
-                                *guard = Some(payload.clone());
-                            }
-                        }
-                        let _ = dl_handle.emit("oppa://deep-link", payload);
-                    }
+                    dispatch_deep_link(&dl_handle, &raw_url);
                 }
             });
 
@@ -124,6 +109,7 @@ pub fn run() {
         .on_menu_event(|app, event| desktop::handle_app_menu_event(app, &event))
         .on_window_event(desktop::handle_close_request)
         .invoke_handler(tauri::generate_handler![
+            commands::simulate_deep_link,
             commands::get_agent_status,
             commands::discover_server,
             commands::pair_server,
@@ -152,9 +138,25 @@ pub fn run() {
             commands::apply_recent_server,
             commands::delete_recent_server,
             commands::get_pending_deep_link,
+            commands::fetch_server_name,
         ])
         .run(tauri::generate_context!())
         .expect("unrecoverable Tauri application failure");
+}
+
+/// Parses and dispatches a deep link URL through the normal pair flow.
+///
+/// Updates `PendingDeepLink` state and emits `oppa://deep-link` when the URL
+/// matches the embedded scheme and the `pair` path. No-ops on any other URL.
+pub(crate) fn dispatch_deep_link(app: &tauri::AppHandle, raw_url: &str) {
+    if let Some(payload) = parse_deep_link_pair(raw_url) {
+        if let Some(state) = app.try_state::<Arc<PendingDeepLink>>() {
+            if let Ok(mut guard) = state.0.lock() {
+                *guard = Some(payload.clone());
+            }
+        }
+        let _ = app.emit("oppa://deep-link", payload);
+    }
 }
 
 /// Parses an `<scheme>://pair?server=<base64url>&key=<code>` deep link.
@@ -163,7 +165,8 @@ fn parse_deep_link_pair(raw_url: &str) -> Option<DeepLinkPayload> {
     if parsed.scheme() != oppa_product::DEEP_LINK_SCHEME {
         return None;
     }
-    if parsed.path().trim_matches('/') != "pair" {
+    // In oppa-dev://pair?..., "pair" is the URL host (authority), not the path.
+    if parsed.host_str() != Some("pair") {
         return None;
     }
     let params: std::collections::HashMap<_, _> = parsed.query_pairs().into_owned().collect();

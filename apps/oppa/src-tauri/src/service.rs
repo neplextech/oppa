@@ -820,6 +820,16 @@ impl DesktopService {
         Ok(())
     }
 
+    /// Fetches the server brand name from its discovery document without changing any state.
+    ///
+    /// Used by the deep-link dialog to show a human-readable name before the user confirms pairing.
+    /// Returns `None` on any network, parse, or timeout failure so the caller can fall back to the URL.
+    pub async fn fetch_server_name(&self, server_url: String) -> Option<String> {
+        let url = server_url.parse::<url::Url>().ok()?;
+        let discovered = self.pairing_client.discover(&url).await.ok()?;
+        Some(discovered.document.server.name)
+    }
+
     /// Prepends `server_url` to the persisted recent-server list (best-effort, silently ignored on failure).
     async fn save_recent_server(&self, server_url: &str, name: Option<String>) {
         use chrono::Utc;

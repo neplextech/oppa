@@ -1,3 +1,4 @@
+import { invoke } from '@tauri-apps/api/core';
 import { AlertTriangle, Link2, RefreshCw, XCircle } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
@@ -12,6 +13,20 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import type { AgentStatus, DeepLinkPairing } from '@/lib/types';
+
+function truncateUrl(raw: string, max = 52): string {
+  if (raw.length <= max) return raw;
+  try {
+    const url = new URL(raw);
+    const origin = url.origin;
+    if (origin.length >= max) return origin.slice(0, max - 1) + '…';
+    const remaining = max - origin.length - 1;
+    const path = url.pathname + (url.search || '');
+    return origin + '/' + path.slice(1, remaining) + '…';
+  } catch {
+    return raw.slice(0, max - 1) + '…';
+  }
+}
 
 export function DeepLinkDialog({
   open,
@@ -30,15 +45,24 @@ export function DeepLinkDialog({
 }) {
   const [agentName, setAgentName] = useState('My Computer');
   const [pairingError, setPairingError] = useState<string | null>(null);
+  const [serverName, setServerName] = useState<string | null>(null);
+
   const isCurrentlyPaired = status?.agentId !== null && status?.agentId !== undefined;
   const isPairing = busy === 'pair-server' || busy === 'server-configuration' || busy === 'forget-server';
 
-  // Clear error when the dialog opens with a new pairing request.
+  // Clear error and fetch server brand name when dialog opens with a new pairing request.
   useEffect(() => {
-    if (open) setPairingError(null);
-  }, [open]);
+    if (!open || !pairing) return;
+    setPairingError(null);
+    setServerName(null);
+    invoke<string | null>('fetch_server_name', { serverUrl: pairing.serverUrl })
+      .then((name) => setServerName(name ?? null))
+      .catch(() => setServerName(null));
+  }, [open, pairing?.serverUrl]);
 
   if (!pairing) return null;
+
+  const displayUrl = truncateUrl(pairing.serverUrl);
 
   return (
     <Dialog
@@ -54,8 +78,17 @@ export function DeepLinkDialog({
           </div>
           <DialogTitle>Pair from link</DialogTitle>
           <DialogDescription>
-            Connect this computer to the OpenPrinter server at{' '}
-            <span className="text-foreground font-mono text-xs">{pairing.serverUrl}</span>.
+            {serverName ? (
+              <>
+                Connect this computer to <span className="text-foreground font-medium">{serverName}</span>{' '}
+                <span className="font-mono text-xs">({displayUrl})</span>.
+              </>
+            ) : (
+              <>
+                Connect this computer to the OpenPrinter server at{' '}
+                <span className="text-foreground font-mono text-xs">{displayUrl}</span>.
+              </>
+            )}
           </DialogDescription>
         </DialogHeader>
 
