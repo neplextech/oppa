@@ -77,6 +77,11 @@ pub fn run() {
 
             win_builder.build()?;
 
+            #[cfg(debug_assertions)]
+            if let Some(window) = app.get_webview_window("main") {
+                window.open_devtools();
+            }
+
             let service =
                 tauri::async_runtime::block_on(DesktopService::initialize(app.handle().clone()))?;
             app.manage(Arc::clone(&service));
