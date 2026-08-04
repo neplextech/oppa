@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "productId": "oppa",
+  "productName": "OPPA DEV",
+  "applicationId": "com.neplextech.oppa.dev",
+  "deepLinkScheme": "oppa-dev",
+  "description": "Open Printer Proxy Agent (development build)",
+  "updates": {
+    "endpoint": null
+  },
+  "branding": {
+    "supportUrl": "https://github.com/neplextech/oppa/issues",
+    "documentationUrl": "https://oppa.neplex.dev"
+  },
+  "features": {
+    "virtualPrinter": true,
+    "systemPrinterDiscovery": true,
+    "networkPrinterDiscovery": true,
+    "usbPrinterDiscovery": false,
+    "remoteDiagnostics": false,
+    "managedHardware": false
+  },
+  "legal": {
+    "privacyUrl": null,
+    "termsUrl": null
+  }
+}

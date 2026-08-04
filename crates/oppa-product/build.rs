@@ -44,11 +44,12 @@ fn build_product() -> Result<(), String> {
         return Err(issues.join("\n- "));
     }
 
+    let scheme = product.deep_link_scheme.as_deref().unwrap_or("oppa");
     let assets = collect_assets(&product_dir.join("assets"))?;
     let output_dir = PathBuf::from(
         env::var_os("OUT_DIR").ok_or_else(|| "Cargo did not set OUT_DIR".to_owned())?,
     );
-    let generated = generate_source(&source, &assets);
+    let generated = generate_source(&source, &assets, scheme);
     fs::write(output_dir.join("embedded_product.rs"), generated)
         .map_err(|error| format!("cannot write generated product source: {error}"))
 }
@@ -152,7 +153,7 @@ fn visit_assets(
     Ok(())
 }
 
-fn generate_source(source: &str, assets: &[(String, PathBuf)]) -> String {
+fn generate_source(source: &str, assets: &[(String, PathBuf)], scheme: &str) -> String {
     let entries = assets
         .iter()
         .map(|(name, path)| {
@@ -165,6 +166,8 @@ fn generate_source(source: &str, assets: &[(String, PathBuf)]) -> String {
         .collect::<String>();
     format!(
         "pub(crate) const EMBEDDED_PRODUCT_JSON: &str = {source:?};\n\
-         pub(crate) static EMBEDDED_ASSETS: &[EmbeddedAsset] = &[\n{entries}];\n"
+         pub(crate) static EMBEDDED_ASSETS: &[EmbeddedAsset] = &[\n{entries}];\n\
+         /// Deep link URL scheme accepted by this binary (e.g. `\"oppa\"` or `\"oppa-dev\"`).\n\
+         pub const DEEP_LINK_SCHEME: &str = {scheme:?};\n"
     )
 }

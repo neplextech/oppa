@@ -29,6 +29,14 @@ pub struct ProductConfig {
     /// Optional product-specific legal links and text.
     #[serde(default)]
     pub legal: ProductLegal,
+    /// Custom URL scheme used for deep link pairing (e.g. `"oppa-dev"`).
+    ///
+    /// Overrides the default `oppa` scheme. Must be a valid URL scheme: starts
+    /// with an ASCII letter, followed by letters, digits, `+`, `-`, or `.`.
+    /// Must not shadow a standard scheme (`http`, `https`, `file`, `ftp`).
+    /// When absent, the scheme defaults to `"oppa"` at compile time.
+    #[serde(default)]
+    pub deep_link_scheme: Option<String>,
 }
 
 /// Product update configuration.
@@ -119,6 +127,9 @@ impl ProductConfig {
         if let Some(legal_text) = &self.legal.text {
             validate_required("legal.text", legal_text, 20_000, &mut issues);
         }
+        if let Some(scheme) = &self.deep_link_scheme {
+            validate_deep_link_scheme("deepLinkScheme", scheme, &mut issues);
+        }
 
         issues
     }
@@ -158,6 +169,24 @@ fn validate_application_id(value: &str, issues: &mut Vec<String>) {
 
 fn is_loopback(url: &Url) -> bool {
     matches!(url.host_str(), Some("127.0.0.1" | "localhost" | "::1"))
+}
+
+fn validate_deep_link_scheme(field: &str, value: &str, issues: &mut Vec<String>) {
+    if value.is_empty() {
+        issues.push(format!("{field} must not be empty"));
+        return;
+    }
+    let mut chars = value.chars();
+    let first_ok = chars.next().is_some_and(|c| c.is_ascii_alphabetic());
+    let rest_ok = chars.all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.'));
+    if !first_ok || !rest_ok {
+        issues.push(format!(
+            "{field} must be a valid URL scheme: letter start, then letters/digits/+/-/."
+        ));
+    }
+    if matches!(value, "http" | "https" | "file" | "ftp") {
+        issues.push(format!("{field} must not shadow a standard URL scheme"));
+    }
 }
 
 fn validate_http_url(field: &str, value: &Url, issues: &mut Vec<String>) {

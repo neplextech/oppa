@@ -61,8 +61,12 @@ pub fn run() {
             // Create the main window in Rust so that platform-specific title bar
             // configuration is applied before the webview loads, which is required
             // for data-tauri-drag-region to work correctly on macOS.
+            let product_name = oppa_product::embedded_product()
+                .ok()
+                .map(|p| p.product_name.clone())
+                .unwrap_or_else(|| "OPPA".to_owned());
             let win_builder = WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
-                .title("OPPA")
+                .title(product_name.as_str())
                 .inner_size(1120.0, 760.0)
                 .min_inner_size(840.0, 600.0)
                 .center();
@@ -153,10 +157,10 @@ pub fn run() {
         .expect("unrecoverable Tauri application failure");
 }
 
-/// Parses an `oppa://pair?server=<base64url>&key=<code>` deep link.
+/// Parses an `<scheme>://pair?server=<base64url>&key=<code>` deep link.
 fn parse_deep_link_pair(raw_url: &str) -> Option<DeepLinkPayload> {
     let parsed = raw_url.parse::<url::Url>().ok()?;
-    if parsed.scheme() != "oppa" {
+    if parsed.scheme() != oppa_product::DEEP_LINK_SCHEME {
         return None;
     }
     if parsed.path().trim_matches('/') != "pair" {

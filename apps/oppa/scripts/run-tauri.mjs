@@ -9,6 +9,7 @@ const appDirectory = resolve(scriptDirectory, '..');
 const repositoryRoot = resolve(appDirectory, '../..');
 const tauriDirectory = join(appDirectory, 'src-tauri');
 const baseConfigPath = join(tauriDirectory, 'tauri.conf.json');
+const devConfigPath = join(tauriDirectory, 'tauri.conf.dev.json');
 const generatedConfigPath = join(tauriDirectory, '.product-tauri.conf.json');
 
 const mode = process.argv[2];
@@ -26,18 +27,20 @@ async function exists(path) {
 }
 
 async function resolveProductDirectory() {
-  const configured = process.env.OPPA_PRODUCT_DIR ?? 'products/default';
-  if (isAbsolute(configured)) {
-    return configured;
+  const configured = process.env.OPPA_PRODUCT_DIR;
+  if (configured) {
+    const dir = isAbsolute(configured) ? configured : resolve(process.cwd(), configured);
+    return dir;
   }
-
-  const candidates = [resolve(process.cwd(), configured), resolve(repositoryRoot, configured)];
-  for (const candidate of candidates) {
-    if (await exists(join(candidate, 'product.json'))) {
-      return candidate;
+  // Auto-select: in dev mode prefer products/oppa-dev for full isolation from the release build.
+  const preferences = mode === 'dev' ? ['products/oppa-dev', 'products/default'] : ['products/default'];
+  for (const relative of preferences) {
+    const dir = resolve(repositoryRoot, relative);
+    if (await exists(join(dir, 'product.json'))) {
+      return dir;
     }
   }
-  return candidates[0];
+  return resolve(repositoryRoot, 'products/default');
 }
 
 function requireProductString(product, key) {
@@ -48,6 +51,24 @@ function requireProductString(product, key) {
   return value;
 }
 
+function deepMerge(target, source) {
+  for (const [key, value] of Object.entries(source)) {
+    if (
+      value !== null &&
+      typeof value === 'object' &&
+      !Array.isArray(value) &&
+      target[key] !== null &&
+      typeof target[key] === 'object' &&
+      !Array.isArray(target[key])
+    ) {
+      deepMerge(target[key], value);
+    } else {
+      target[key] = value;
+    }
+  }
+}
+
+const defaultProductDir = resolve(repositoryRoot, 'products/default');
 const productDirectory = await resolveProductDirectory();
 const productPath = join(productDirectory, 'product.json');
 const product = JSON.parse(await readFile(productPath, 'utf8'));
@@ -56,8 +77,10 @@ const productName = requireProductString(product, 'productName');
 const applicationId = requireProductString(product, 'applicationId');
 
 config.productName = productName;
-// Use a distinct identifier in dev so tauri dev data is isolated from the release build.
-const resolvedIdentifier = mode === 'dev' ? `${applicationId}.dev` : applicationId;
+// Use a distinct identifier in dev when the default product is active; the dev product already
+// carries a dev-specific applicationId so no suffix is needed.
+const usingDefaultProduct = productDirectory === defaultProductDir;
+const resolvedIdentifier = (mode === 'dev' && usingDefaultProduct) ? `${applicationId}.dev` : applicationId;
 config.identifier = resolvedIdentifier;
 // Expose the effective app identifier to Vite so the frontend can display it.
 process.env.VITE_APP_IDENTIFIER = resolvedIdentifier;
@@ -72,6 +95,23 @@ if (Array.isArray(config.bundle?.icon)) {
       return (await exists(productIcon)) ? productIcon : defaultIcon;
     }),
   );
+}
+
+// Apply deepLinkScheme from product config so the OS registers the correct URL scheme.
+// This is the single source of truth for the scheme; tauri.conf.json's scheme is the fallback.
+const deepLinkScheme = typeof product.deepLinkScheme === 'string' && product.deepLinkScheme.trim() !== ''
+  ? product.deepLinkScheme.trim()
+  : null;
+if (deepLinkScheme !== null) {
+  config.plugins ??= {};
+  config.plugins['deep-link'] ??= {};
+  config.plugins['deep-link'].desktop = [{ schemes: [deepLinkScheme] }];
+}
+
+// Merge dev-only Tauri overrides (updater endpoints, bundle settings) on top of the product config.
+if (mode === 'dev' && (await exists(devConfigPath))) {
+  const devConfig = JSON.parse(await readFile(devConfigPath, 'utf8'));
+  deepMerge(config, devConfig);
 }
 
 await writeFile(generatedConfigPath, `${JSON.stringify(config, null, 2)}\n`, 'utf8');
