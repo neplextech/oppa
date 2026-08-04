@@ -108,7 +108,7 @@ export const DEV_UI_HTML = /* html */ `<!DOCTYPE html>
 
     function pairLink(code) {
       const enc = btoa(BASE + '/').replace(/\\+/g,'-').replace(/\\//g,'_').replace(/=+$/,'');
-      return 'oppa://pair?server=' + enc + '&key=' + encodeURIComponent(code);
+      return 'oppa-dev://pair?server=' + enc + '&key=' + encodeURIComponent(code);
     }
 
     async function init() {

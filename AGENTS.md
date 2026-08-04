@@ -135,20 +135,25 @@ custom URL. The full spec lives at
 oppa://pair?server=<base64url-server-url>&key=<pairing-code>
 ```
 
-`server` is the server base URL encoded as Base64URL **without padding**.
-`key` is a one-time pairing code created by the server.
+`server` is the server base URL encoded as Base64URL **without
+padding**. `key` is a one-time pairing code created by the server.
 
 **Node.js**: `Buffer.from(serverUrl).toString('base64url')`
 
 **Browser**:
+
 ```js
-btoa(serverUrl).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+btoa(serverUrl)
+  .replace(/\+/g, '-')
+  .replace(/\//g, '_')
+  .replace(/=+$/, '');
 ```
 
 Use `POST /development/pairing-code` on the example server to generate
 a code for testing. The dev UI at `/dev` builds and shows the link
 automatically. Pairing codes may be logged in development but must
-never be placed in a URL query parameter or stored in a log aggregator.
+never be placed in a URL query parameter or stored in a log
+aggregator.
 
 ## Non-goals
 

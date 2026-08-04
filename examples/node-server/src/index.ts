@@ -85,7 +85,17 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
   if (method === 'GET' && url.pathname === '/agents') {
     const agents = [...sessions.values()].flatMap((s) => {
       const agent = s.getAgent();
-      return agent ? [{ agentId: agent.agentId, productId: agent.hello.productId, agentVersion: agent.hello.agentVersion, connectedAt: agent.connectedAt, lastSeenAt: agent.lastSeenAt }] : [];
+      return agent
+        ? [
+            {
+              agentId: agent.agentId,
+              productId: agent.hello.productId,
+              agentVersion: agent.hello.agentVersion,
+              connectedAt: agent.connectedAt,
+              lastSeenAt: agent.lastSeenAt,
+            },
+          ]
+        : [];
     });
     sendJson(response, 200, agents);
     return;
@@ -188,12 +198,12 @@ async function createDevelopmentPairingCode(): Promise<void> {
   const pairing = await openprinter.createPairingCode({ metadata: { tenantId: 'local-development' } });
   const serverUrl = `http://${HOST}:${PORT}/`;
   const encoded = Buffer.from(serverUrl).toString('base64url');
-  const deepLink = `oppa://pair?server=${encoded}&key=${pairing.code}`;
+  const deepLink = `oppa-dev://pair?server=${encoded}&key=${pairing.code}`;
   const c = ansi;
   process.stdout.write(
     `\n  ${c.bold}${c.yellow}Pairing code${c.reset}  ${c.bold}${pairing.code}${c.reset}` +
-    `  ${c.dim}(expires ${pairing.expiresAt.toLocaleTimeString()})${c.reset}\n` +
-    `  ${c.dim}Deep link${c.reset}     ${c.green}${deepLink}${c.reset}\n\n`,
+      `  ${c.dim}(expires ${pairing.expiresAt.toLocaleTimeString()})${c.reset}\n` +
+      `  ${c.dim}Deep link${c.reset}     ${c.green}${deepLink}${c.reset}\n\n`,
   );
 }
 
@@ -235,13 +245,13 @@ function logBanner(): void {
     `  ${c.dim}${label.padEnd(12)}${c.reset}${c.cyan}${value}${c.reset}\n`;
   process.stdout.write(
     `\n${c.bold}  OpenPrinter Node.js Example${c.reset}\n` +
-    `  ${'─'.repeat(44)}\n` +
-    row('Server', base) +
-    row('Dev UI', `${base}/dev`) +
-    row('Discovery', `${base}${openprinter.paths.discovery}`) +
-    row('Pairing', `${base}${openprinter.paths.pairing}`) +
-    row('Gateway', `${base.replace('http', 'ws')}${openprinter.paths.gateway}`) +
-    `\n  ${c.dim}⚠  Volatile in-memory stores. Development only.${c.reset}\n`,
+      `  ${'─'.repeat(44)}\n` +
+      row('Server', base) +
+      row('Dev UI', `${base}/dev`) +
+      row('Discovery', `${base}${openprinter.paths.discovery}`) +
+      row('Pairing', `${base}${openprinter.paths.pairing}`) +
+      row('Gateway', `${base.replace('http', 'ws')}${openprinter.paths.gateway}`) +
+      `\n  ${c.dim}⚠  Volatile in-memory stores. Development only.${c.reset}\n`,
   );
 }
 

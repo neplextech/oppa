@@ -80,7 +80,7 @@ config.productName = productName;
 // Use a distinct identifier in dev when the default product is active; the dev product already
 // carries a dev-specific applicationId so no suffix is needed.
 const usingDefaultProduct = productDirectory === defaultProductDir;
-const resolvedIdentifier = (mode === 'dev' && usingDefaultProduct) ? `${applicationId}.dev` : applicationId;
+const resolvedIdentifier = mode === 'dev' && usingDefaultProduct ? `${applicationId}.dev` : applicationId;
 config.identifier = resolvedIdentifier;
 // Expose the effective app identifier to Vite so the frontend can display it.
 process.env.VITE_APP_IDENTIFIER = resolvedIdentifier;
@@ -99,9 +99,10 @@ if (Array.isArray(config.bundle?.icon)) {
 
 // Apply deepLinkScheme from product config so the OS registers the correct URL scheme.
 // This is the single source of truth for the scheme; tauri.conf.json's scheme is the fallback.
-const deepLinkScheme = typeof product.deepLinkScheme === 'string' && product.deepLinkScheme.trim() !== ''
-  ? product.deepLinkScheme.trim()
-  : null;
+const deepLinkScheme =
+  typeof product.deepLinkScheme === 'string' && product.deepLinkScheme.trim() !== ''
+    ? product.deepLinkScheme.trim()
+    : null;
 if (deepLinkScheme !== null) {
   config.plugins ??= {};
   config.plugins['deep-link'] ??= {};
