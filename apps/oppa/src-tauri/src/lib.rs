@@ -55,8 +55,7 @@ pub fn run() {
             // for data-tauri-drag-region to work correctly on macOS.
             let product_name = oppa_product::embedded_product()
                 .ok()
-                .map(|p| p.product_name.clone())
-                .unwrap_or_else(|| "OPPA".to_owned());
+                .map_or_else(|| "OPPA".to_owned(), |p| p.product_name.clone());
             let win_builder = WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
                 .title(product_name.as_str())
                 .inner_size(1120.0, 760.0)

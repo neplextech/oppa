@@ -278,6 +278,7 @@ pub fn get_pending_deep_link(state: State<'_, Arc<PendingDeepLink>>) -> Option<D
 /// `globalThis.handleDeeplink("oppa-dev://pair?server=...&key=...")`
 /// to exercise the full pairing flow without the OS URL handler.
 #[tauri::command]
+#[allow(clippy::needless_pass_by_value)]
 pub fn simulate_deep_link(app: AppHandle, url: String) {
     #[cfg(debug_assertions)]
     crate::dispatch_deep_link(&app, &url);

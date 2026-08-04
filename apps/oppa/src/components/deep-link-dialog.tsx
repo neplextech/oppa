@@ -51,14 +51,15 @@ export function DeepLinkDialog({
   const isPairing = busy === 'pair-server' || busy === 'server-configuration' || busy === 'forget-server';
 
   // Clear error and fetch server brand name when dialog opens with a new pairing request.
+  const serverUrl = pairing?.serverUrl;
   useEffect(() => {
-    if (!open || !pairing) return;
+    if (!open || !serverUrl) return;
     setPairingError(null);
     setServerName(null);
-    invoke<string | null>('fetch_server_name', { serverUrl: pairing.serverUrl })
+    invoke<string | null>('fetch_server_name', { serverUrl })
       .then((name) => setServerName(name ?? null))
       .catch(() => setServerName(null));
-  }, [open, pairing?.serverUrl]);
+  }, [open, serverUrl]);
 
   if (!pairing) return null;
 
