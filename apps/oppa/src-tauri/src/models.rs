@@ -3,6 +3,7 @@ use oppa_printer::{
     PrinterFingerprint, PrinterRef, ProviderMetadata,
 };
 use oppa_product::ProductConfig;
+use oppa_protocol::PrintDocument;
 use serde::{Deserialize, Serialize};
 
 use crate::server_configuration::OpenPrinterServerConfiguration;
@@ -164,6 +165,8 @@ pub struct VirtualOutput {
     pub format: VirtualOutputFormat,
     pub preview: String,
     pub byte_length: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub document: Option<PrintDocument>,
 }
 
 /// Rendered virtual output family.

@@ -11,12 +11,42 @@ import type {
   OpenPrinterServerConfiguration,
   PrinterSummary,
   RecentServer,
+  PrintDocument,
   VirtualPrinterInput,
   VirtualPrinterMode,
   VirtualPrinterSummary,
 } from './types';
 
 const now = new Date();
+
+const demoPrintDocument: PrintDocument = {
+  width: 80,
+  sections: [
+    {
+      type: 'text',
+      value: 'OPENPRINTER TEST',
+      align: 'center',
+      bold: true,
+    },
+    {
+      type: 'text',
+      value: 'Connection verified',
+      align: 'center',
+    },
+    { type: 'divider' },
+    { type: 'row', left: 'Test print', right: 'NPR 1,250.00' },
+    { type: 'row', left: 'Output', right: 'Virtual' },
+    { type: 'divider' },
+    {
+      type: 'text',
+      value: 'Submitted by the local desktop agent.',
+      align: 'center',
+    },
+    { type: 'qr', value: 'https://openprinter.dev/test/job_demo_1042' },
+    { type: 'feed', lines: 2 },
+    { type: 'cut' },
+  ],
+};
 
 const demoVirtualPrinter: VirtualPrinterSummary = {
   id: 'printer_virtual_receipts',
@@ -43,6 +73,7 @@ const demoVirtualPrinter: VirtualPrinterSummary = {
       format: 'structured',
       preview: 'OPENPRINTER TEST\nConnection verified\n\n        NPR 1,250.00\n------------------------',
       byteLength: 384,
+      document: demoPrintDocument,
     },
   ],
 };

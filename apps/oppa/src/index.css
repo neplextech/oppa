@@ -212,6 +212,72 @@
   background: oklch(1 0 0 / 18%);
 }
 
+/* Structured receipt preview */
+.receipt-preview {
+  background: oklch(0.9 0 0 / 55%);
+}
+
+.receipt-paper {
+  --receipt-paper-background: oklch(0.985 0.012 88);
+  --receipt-ink: oklch(0.18 0.018 75);
+  position: relative;
+  isolation: isolate;
+  background: var(--receipt-paper-background);
+  color: var(--receipt-ink);
+  box-shadow:
+    0 16px 28px oklch(0.12 0.01 75 / 18%),
+    0 2px 5px oklch(0.12 0.01 75 / 12%);
+}
+
+.receipt-paper::before,
+.receipt-paper::after {
+  position: absolute;
+  z-index: 0;
+  left: 0;
+  width: 100%;
+  height: 9px;
+  background: var(--receipt-paper-background);
+  content: '';
+  clip-path: polygon(
+    0 0,
+    5% 100%,
+    10% 0,
+    15% 100%,
+    20% 0,
+    25% 100%,
+    30% 0,
+    35% 100%,
+    40% 0,
+    45% 100%,
+    50% 0,
+    55% 100%,
+    60% 0,
+    65% 100%,
+    70% 0,
+    75% 100%,
+    80% 0,
+    85% 100%,
+    90% 0,
+    95% 100%,
+    100% 0
+  );
+}
+
+.receipt-paper::before {
+  top: -8px;
+  transform: rotate(180deg);
+}
+
+.receipt-paper::after {
+  bottom: -8px;
+}
+
+.receipt-paper__content {
+  position: relative;
+  z-index: 1;
+  min-height: 12rem;
+}
+
 /* Monospace data layer */
 .font-mono {
   font-family: var(--font-mono);

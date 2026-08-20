@@ -1,6 +1,7 @@
 import { ClipboardCopy, MonitorCog, Plus, RefreshCw, Send, Trash2, Volume2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
+import { ReceiptPreview } from '@/components/receipt-preview';
 import { EmptyState, FieldLabel, ScreenContainer, ScreenHeader, Toggle, inputClass } from '@/components/ui';
 import { Button } from '@/components/ui/button';
 import {
@@ -13,7 +14,7 @@ import {
 } from '@/components/ui/context-menu';
 import { playPrinterSound } from '@/lib/printer-sound';
 import { isVirtualPrinter } from '@/lib/types';
-import type { PrinterSummary, VirtualPrinterInput, VirtualPrinterMode } from '@/lib/types';
+import type { PrinterSummary, VirtualOutput, VirtualPrinterInput, VirtualPrinterMode } from '@/lib/types';
 import { cn, formatRelativeTime } from '@/lib/utils';
 
 const MODES: Array<{
@@ -366,10 +367,10 @@ export function VirtualPrintersScreen({
                     {selected.history.map((output) => (
                       <div
                         key={output.id}
-                        className="border-border/50 grid gap-4 border-b px-5 py-4 lg:grid-cols-[1fr_auto]"
+                        className="border-border/50 grid gap-4 border-b px-5 py-5 xl:grid-cols-[minmax(0,1fr)_minmax(280px,390px)] xl:items-start"
                       >
-                        <div>
-                          <div className="flex items-center gap-2">
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
                             <span className="text-foreground/80 font-mono text-xs">{output.jobId}</span>
                             <span className="border-border bg-secondary text-muted-foreground rounded border px-1.5 py-0.5 font-mono text-xs tracking-wide uppercase">
                               {output.format}
@@ -378,10 +379,13 @@ export function VirtualPrintersScreen({
                           <p className="text-muted-foreground/60 mt-0.5 text-xs">
                             {formatRelativeTime(output.createdAt)} · {output.byteLength} bytes
                           </p>
+                          {output.format === 'structured' && output.document && (
+                            <p className="text-muted-foreground/60 mt-4 max-w-xs text-xs leading-5">
+                              Structured output rendered as a receipt. Physical output may vary by printer.
+                            </p>
+                          )}
                         </div>
-                        <pre className="border-border text-muted-foreground max-h-36 w-full overflow-auto rounded border bg-[oklch(0.07_0_0)] p-3 font-mono text-xs leading-4 lg:w-64">
-                          {output.preview}
-                        </pre>
+                        <CapturedOutputPreview output={output} />
                       </div>
                     ))}
                   </div>
@@ -392,5 +396,17 @@ export function VirtualPrintersScreen({
         </div>
       )}
     </ScreenContainer>
+  );
+}
+
+function CapturedOutputPreview({ output }: { output: VirtualOutput }) {
+  if (output.format === 'structured' && output.document) {
+    return <ReceiptPreview document={output.document} />;
+  }
+
+  return (
+    <pre className="border-border text-muted-foreground max-h-36 w-full overflow-auto rounded border bg-[oklch(0.07_0_0)] p-3 font-mono text-xs leading-4">
+      {output.preview}
+    </pre>
   );
 }

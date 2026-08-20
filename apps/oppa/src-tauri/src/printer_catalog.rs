@@ -678,21 +678,24 @@ impl PrinterCatalog {
                 .into_iter()
                 .enumerate()
                 .map(|(index, submission)| {
-                    let (format, preview) = match &submission.document {
+                    let (format, preview, document) = match &submission.document {
                         RenderedDocument::Virtual(document) => (
                             VirtualOutputFormat::Structured,
                             document.preview_lines.join("\n"),
+                            Some(document.document.clone()),
                         ),
                         RenderedDocument::EscPos(bytes) => {
-                            (VirtualOutputFormat::EscPos, esc_pos_preview(bytes))
+                            (VirtualOutputFormat::EscPos, esc_pos_preview(bytes), None)
                         }
                         RenderedDocument::Raster(document) => (
                             VirtualOutputFormat::Raster,
                             format!("{} raster page(s)", document.pages.len()),
+                            None,
                         ),
                         RenderedDocument::Native(document) => (
                             VirtualOutputFormat::Structured,
                             format!("Native document ({})", document.media_type),
+                            None,
                         ),
                     };
                     VirtualOutput {
@@ -702,6 +705,7 @@ impl PrinterCatalog {
                         format,
                         preview,
                         byte_length: submission.document.byte_len(),
+                        document,
                     }
                 })
                 .collect();

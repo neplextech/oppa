@@ -78,6 +78,68 @@ export interface PrinterSummary {
 
 export type VirtualPrinterMode = 'always_succeed' | 'fail_next' | 'always_fail' | 'delay' | 'offline';
 
+export type ReceiptWidth = 58 | 80;
+
+export type TextAlignment = 'left' | 'center' | 'right';
+
+export interface PrintTextSection {
+  type: 'text';
+  value: string;
+  align?: TextAlignment;
+  bold?: boolean;
+}
+
+export interface PrintRowSection {
+  type: 'row';
+  left: string;
+  right: string;
+}
+
+export interface PrintDividerSection {
+  type: 'divider';
+}
+
+export interface PrintImageSection {
+  type: 'image';
+  mediaType: 'image/png' | 'image/jpeg';
+  data: string;
+}
+
+export interface PrintQrSection {
+  type: 'qr';
+  value: string;
+}
+
+export interface PrintBarcodeSection {
+  type: 'barcode';
+  format: 'code128' | 'code39' | 'ean13' | 'upca';
+  value: string;
+}
+
+export interface PrintFeedSection {
+  type: 'feed';
+  lines: number;
+}
+
+export interface PrintCutSection {
+  type: 'cut';
+}
+
+export type PrintSection =
+  | PrintTextSection
+  | PrintRowSection
+  | PrintDividerSection
+  | PrintImageSection
+  | PrintQrSection
+  | PrintBarcodeSection
+  | PrintFeedSection
+  | PrintCutSection;
+
+export interface PrintDocument {
+  width: ReceiptWidth;
+  sections: PrintSection[];
+}
+
 export interface VirtualOutput {
   id: string;
   jobId: string;
@@ -85,6 +147,8 @@ export interface VirtualOutput {
   format: 'structured' | 'esc_pos' | 'raster';
   preview: string;
   byteLength: number;
+  /** Original structured document, when the virtual printer captured one. */
+  document?: PrintDocument;
 }
 
 export interface VirtualPrinterSummary extends PrinterSummary {
