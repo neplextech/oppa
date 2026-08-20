@@ -25,6 +25,7 @@ use oppa_protocol::{
     ReceiptWidth,
 };
 use oppa_renderer::RenderedDocument;
+use oppa_spooler::VirtualSubmission;
 use oppa_storage::SqliteStorage;
 use tokio::sync::{Mutex, RwLock};
 use uuid::Uuid;
@@ -677,37 +678,7 @@ impl PrinterCatalog {
                 .map_err(|error| CommandError::internal(error.to_string()))?
                 .into_iter()
                 .enumerate()
-                .map(|(index, submission)| {
-                    let (format, preview, document) = match &submission.document {
-                        RenderedDocument::Virtual(document) => (
-                            VirtualOutputFormat::Structured,
-                            document.preview_lines.join("\n"),
-                            Some(document.document.clone()),
-                        ),
-                        RenderedDocument::EscPos(bytes) => {
-                            (VirtualOutputFormat::EscPos, esc_pos_preview(bytes), None)
-                        }
-                        RenderedDocument::Raster(document) => (
-                            VirtualOutputFormat::Raster,
-                            format!("{} raster page(s)", document.pages.len()),
-                            None,
-                        ),
-                        RenderedDocument::Native(document) => (
-                            VirtualOutputFormat::Structured,
-                            format!("Native document ({})", document.media_type),
-                            None,
-                        ),
-                    };
-                    VirtualOutput {
-                        id: format!("output_{}_{}", submission.job_id, index),
-                        job_id: submission.job_id.to_string(),
-                        created_at: submission.recorded_at.to_string(),
-                        format,
-                        preview,
-                        byte_length: submission.document.byte_len(),
-                        document,
-                    }
-                })
+                .map(virtual_output)
                 .collect();
             (Some(mode), Some(delay_ms), Some(history))
         } else {
@@ -728,6 +699,38 @@ impl PrinterCatalog {
             delay_ms,
             history,
         })
+    }
+}
+
+fn virtual_output((index, submission): (usize, VirtualSubmission)) -> VirtualOutput {
+    let (format, preview, document) = match &submission.document {
+        RenderedDocument::Virtual(document) => (
+            VirtualOutputFormat::Structured,
+            document.preview_lines.join("\n"),
+            Some(document.document.clone()),
+        ),
+        RenderedDocument::EscPos(bytes) => {
+            (VirtualOutputFormat::EscPos, esc_pos_preview(bytes), None)
+        }
+        RenderedDocument::Raster(document) => (
+            VirtualOutputFormat::Raster,
+            format!("{} raster page(s)", document.pages.len()),
+            None,
+        ),
+        RenderedDocument::Native(document) => (
+            VirtualOutputFormat::Structured,
+            format!("Native document ({})", document.media_type),
+            None,
+        ),
+    };
+    VirtualOutput {
+        id: format!("output_{}_{}", submission.job_id, index),
+        job_id: submission.job_id.to_string(),
+        created_at: submission.recorded_at.to_string(),
+        format,
+        preview,
+        byte_length: submission.document.byte_len(),
+        document,
     }
 }
 
