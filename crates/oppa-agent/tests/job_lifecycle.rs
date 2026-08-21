@@ -515,16 +515,10 @@ async fn reconnect_resends_a_lost_receipt_before_processing_pending_work() {
             ))
             .await
             .unwrap_err();
-        assert!(matches!(
-            error,
-            AgentRuntimeError::Reporting {
-                message: AgentMessage {
-                    kind: AgentMessageKind::JobReceived(_),
-                    ..
-                },
-                ..
-            }
-        ));
+        let AgentRuntimeError::Reporting { message, .. } = error else {
+            panic!("expected a reporting failure");
+        };
+        assert!(matches!(message.kind, AgentMessageKind::JobReceived(_)));
         assert!(spooler.history().await.is_empty());
         assert_eq!(storage.pending().await.unwrap().len(), 1);
     }
@@ -578,16 +572,10 @@ async fn restart_replays_each_terminal_outbox_status_once_then_acknowledges_it()
             ))
             .await
             .unwrap_err();
-        assert!(matches!(
-            error,
-            AgentRuntimeError::Reporting {
-                message: AgentMessage {
-                    kind: AgentMessageKind::JobSubmitted(_),
-                    ..
-                },
-                ..
-            }
-        ));
+        let AgentRuntimeError::Reporting { message, .. } = error else {
+            panic!("expected a reporting failure");
+        };
+        assert!(matches!(message.kind, AgentMessageKind::JobSubmitted(_)));
         assert_eq!(recorder.message_types().await, ["agent.job_received"]);
         assert_eq!(spooler.history().await.len(), 1);
         assert_eq!(

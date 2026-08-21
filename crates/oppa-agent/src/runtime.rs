@@ -89,10 +89,12 @@ pub enum AgentRuntimeError {
     /// A durable acknowledgement or result could not be sent.
     ///
     /// The validated message is retained so a transport adapter can retry it.
+    /// It is boxed to keep [`AgentRuntimeError`] small enough to return by
+    /// value (`clippy::result_large_err`).
     #[error("could not report durable agent status: {source}")]
     Reporting {
         /// Validated message whose durable transition already occurred.
-        message: AgentMessage,
+        message: Box<AgentMessage>,
         /// Sanitized transport failure.
         #[source]
         source: OutboundReportError,
@@ -429,7 +431,7 @@ impl Agent {
             .report(message)
             .await
             .map_err(|source| AgentRuntimeError::Reporting {
-                message: message.clone(),
+                message: Box::new(message.clone()),
                 source,
             })
     }
@@ -464,4 +466,14 @@ fn validate_outbound_status(
         return Err("job identity does not match its outbox row");
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::AgentRuntimeError;
+
+    #[test]
+    fn runtime_error_stays_small_enough_to_return_by_value() {
+        assert!(std::mem::size_of::<AgentRuntimeError>() <= 128);
+    }
 }
