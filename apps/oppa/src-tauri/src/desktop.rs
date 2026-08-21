@@ -6,7 +6,7 @@ use std::sync::{
 use tauri::{
     App, AppHandle, Emitter, Manager,
     menu::{Menu, MenuItem, PredefinedMenuItem, Submenu},
-    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
+    tray::TrayIconBuilder,
 };
 
 use crate::service::DesktopService;
@@ -19,6 +19,8 @@ const QUIT_ID: &str = "quit";
 const NAVIGATE_EVENT: &str = "oppa://navigate";
 
 // App menu item IDs (prefixed to avoid collision with tray IDs)
+const APP_HIDE_TO_TRAY: &str = "app-hide-to-tray";
+const APP_QUIT: &str = "app-quit";
 const APP_ADD_PRINTER: &str = "app-add-printer";
 const APP_CLOSE_WINDOW: &str = "app-close-window";
 const APP_NAV_OVERVIEW: &str = "app-nav-overview";
@@ -69,23 +71,10 @@ pub fn setup_tray(app: &App) -> tauri::Result<()> {
     let mut tray = TrayIconBuilder::with_id(tray_id)
         .menu(&menu)
         .tooltip(product_name)
-        .show_menu_on_left_click(false)
-        .on_menu_event(|app, event| handle_tray_menu(app, &event))
-        .on_tray_icon_event(|tray, event| {
-            if matches!(
-                event,
-                TrayIconEvent::Click {
-                    button: MouseButton::Left,
-                    button_state: MouseButtonState::Up,
-                    ..
-                } | TrayIconEvent::DoubleClick {
-                    button: MouseButton::Left,
-                    ..
-                }
-            ) {
-                show_main_window(tray.app_handle());
-            }
-        });
+        // Both left and right click open the tray menu; the main window is
+        // reached through the "Open" item.
+        .show_menu_on_left_click(true)
+        .on_menu_event(|app, event| handle_tray_menu(app, &event));
     if let Some(icon) = app.default_window_icon().cloned() {
         tray = tray.icon(icon);
     }
@@ -99,6 +88,24 @@ pub fn show_main_window(app: &AppHandle) {
         let _ = window.unminimize();
         let _ = window.set_focus();
     }
+}
+
+/// Hides the main window while the tray agent keeps running.
+fn hide_main_window(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.hide();
+    }
+}
+
+/// Shuts the agent down gracefully and exits the process.
+fn quit_application(app: &AppHandle) {
+    app.state::<QuitState>().0.store(true, Ordering::Release);
+    let service = Arc::clone(app.state::<Arc<DesktopService>>().inner());
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        service.shutdown().await;
+        app.exit(0);
+    });
 }
 
 pub fn handle_close_request(window: &tauri::Window, event: &tauri::WindowEvent) {
@@ -135,15 +142,7 @@ fn handle_tray_menu(app: &AppHandle, event: &tauri::menu::MenuEvent) {
                 }
             });
         }
-        QUIT_ID => {
-            app.state::<QuitState>().0.store(true, Ordering::Release);
-            let service = Arc::clone(app.state::<Arc<DesktopService>>().inner());
-            let app = app.clone();
-            tauri::async_runtime::spawn(async move {
-                service.shutdown().await;
-                app.exit(0);
-            });
-        }
+        QUIT_ID => quit_application(app),
         _ => {}
     }
 }
@@ -154,9 +153,36 @@ pub fn setup_app_menu(app: &App) -> tauri::Result<()> {
     Ok(())
 }
 
+/// Builds the first submenu, which macOS renders as the application menu.
+/// Cmd+Q hides to the tray instead of terminating so the background agent
+/// keeps running; only the explicit Quit item stops the process.
+fn build_application_submenu(app: &App, product_name: &str) -> tauri::Result<Submenu<tauri::Wry>> {
+    let hide_to_tray = MenuItem::with_id(
+        app,
+        APP_HIDE_TO_TRAY,
+        "Hide to Tray",
+        true,
+        Some("CmdOrCtrl+Q"),
+    )?;
+    let separator = PredefinedMenuItem::separator(app)?;
+    let quit = MenuItem::with_id(
+        app,
+        APP_QUIT,
+        format!("Quit {product_name}"),
+        true,
+        None::<&str>,
+    )?;
+    Submenu::with_items(app, product_name, true, &[&hide_to_tray, &separator, &quit])
+}
+
 fn build_app_menu(app: &App) -> tauri::Result<Menu<tauri::Wry>> {
+    let product_name = app.try_state::<Arc<DesktopService>>().map_or_else(
+        || "OPPA".to_owned(),
+        |service| service.product.product_name.clone(),
+    );
     let menu = Menu::new(app)?;
 
+    menu.append(&build_application_submenu(app, &product_name)?)?;
     // File
     let add_printer = MenuItem::with_id(
         app,
@@ -262,11 +288,8 @@ fn build_app_menu(app: &App) -> tauri::Result<Menu<tauri::Wry>> {
 
 pub fn handle_app_menu_event(app: &AppHandle, event: &tauri::menu::MenuEvent) {
     match event.id().as_ref() {
-        APP_CLOSE_WINDOW => {
-            if let Some(window) = app.get_webview_window("main") {
-                let _ = window.hide();
-            }
-        }
+        APP_CLOSE_WINDOW | APP_HIDE_TO_TRAY => hide_main_window(app),
+        APP_QUIT => quit_application(app),
         APP_NAV_OVERVIEW => {
             show_main_window(app);
             let _ = app.emit(NAVIGATE_EVENT, "overview");
