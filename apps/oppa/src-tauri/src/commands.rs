@@ -209,6 +209,7 @@ pub async fn reconnect(
 
 /// Quits the desktop process instead of hiding the window to the tray.
 #[tauri::command]
+#[allow(clippy::needless_pass_by_value)]
 pub fn quit_application(app: AppHandle) {
     desktop::quit_application(&app);
 }
