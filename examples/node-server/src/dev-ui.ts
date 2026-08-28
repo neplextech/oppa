@@ -213,7 +213,7 @@ export const DEV_UI_HTML = /* html */ `<!DOCTYPE html>
             </div>
             <button class="btn btn-green btn-sm"
               data-agent="\${escHtml(agentId)}"
-              data-printer="\${escHtml(p.fingerprint)}"
+              data-printer="\${escHtml(p.id)}"
               onclick="handleTestPrint(this)">Test print</button>
           </div>
         \`).join('');

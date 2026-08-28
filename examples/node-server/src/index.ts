@@ -134,7 +134,7 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
       return;
     }
     const printers = session.getPrinters();
-    const printer = printers.find((p) => p.fingerprint === printerId);
+    const printer = printers.find((p) => p.id === printerId);
     const widths = printer?.capabilities?.mediaWidths;
     const width: 58 | 80 = widths?.includes(80) ? 80 : 58;
     const now = new Date();
