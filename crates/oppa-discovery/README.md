@@ -6,8 +6,11 @@ inventory changes.
 
 ## Included providers
 
-- Operating-system queues (`lpstat` on Unix and `Get-Printer` on Windows)
-- Manually configured raw TCP printers
+- Operating-system queues (`lpstat` on Unix and `Get-Printer` on Windows),
+  reporting online/offline/degraded availability from the queue state
+  (`enabled`/`disabled` on Unix, `PrinterStatus` and `WorkOffline` on Windows)
+- Manually configured raw TCP printers, with a bounded TCP reachability probe
+  that reports online/offline (no bytes are written)
 - Mutable in-process virtual printers
 
 Every platform command and provider call has a deadline. An unavailable

@@ -8,10 +8,12 @@
 
 use std::{
     collections::{BTreeMap, HashMap, VecDeque},
-    process::Stdio,
     sync::Arc,
     time::Duration,
 };
+
+#[cfg(unix)]
+use std::process::Stdio;
 
 use async_trait::async_trait;
 use oppa_core::{PrintJobId, PrinterId, Timestamp};
@@ -272,7 +274,57 @@ async fn submit_system_queue(
     }
 }
 
-#[cfg(not(unix))]
+#[cfg(windows)]
+async fn submit_system_queue(
+    queue_name: &str,
+    bytes: &[u8],
+    deadline: Duration,
+    cancellation: &CancellationToken,
+) -> SpoolerResult<SubmissionReceipt> {
+    let queue_name = queue_name.to_owned();
+    let payload = bytes.to_vec();
+    let worker = tokio::task::spawn_blocking(move || windows_print_raw(&queue_name, &payload));
+    tokio::select! {
+        () = cancellation.cancelled() => Err(SpoolerError::Cancelled),
+        result = timeout(deadline, worker) => {
+            result
+                .map_err(|_| SpoolerError::Timeout {
+                    stage: "system queue submission",
+                    duration: deadline,
+                })?
+                .map_err(|error| {
+                    SpoolerError::BackendUnavailable(format!("print worker did not finish: {error}"))
+                })?
+        }
+    }
+}
+
+/// Sends raw bytes to a Windows print queue as a `RAW` datatype job through the
+/// Win32 spooler (`OpenPrinter`/`StartDocPrinter`/`WritePrinter`).
+///
+/// This is a blocking call and must run on a blocking-safe task.
+#[cfg(windows)]
+fn windows_print_raw(queue_name: &str, bytes: &[u8]) -> SpoolerResult<SubmissionReceipt> {
+    use printers::common::base::job::PrinterJobOptions;
+
+    let printer = printers::get_printer_by_name(queue_name).ok_or_else(|| {
+        SpoolerError::Connectivity(format!(
+            "the Windows print spooler has no queue named {queue_name}"
+        ))
+    })?;
+    let backend_job_id = printer
+        .print(bytes, PrinterJobOptions::none())
+        .map_err(|error| {
+            SpoolerError::Rejected(error.message.chars().take(1_000).collect::<String>())
+        })?;
+    Ok(receipt(
+        "system-queue",
+        Some(backend_job_id.to_string()),
+        BTreeMap::from([("queue".to_owned(), queue_name.to_owned())]),
+    ))
+}
+
+#[cfg(not(any(unix, windows)))]
 async fn submit_system_queue(
     _queue_name: &str,
     _bytes: &[u8],
@@ -284,6 +336,7 @@ async fn submit_system_queue(
     ))
 }
 
+#[cfg(unix)]
 fn parse_lp_job_id(output: &str) -> Option<String> {
     // Common CUPS output: "request id is queue-123 (1 file(s))".
     output

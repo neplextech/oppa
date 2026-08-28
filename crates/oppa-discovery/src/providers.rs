@@ -6,9 +6,12 @@ use oppa_printer::{
     DiscoveredPrinter, PrinterAvailability, PrinterCapabilities, PrinterConnection,
     PrinterFingerprint, PrinterKind, ProviderMetadata,
 };
-use tokio::{process::Command, sync::RwLock};
+use tokio::{net::TcpStream, process::Command, sync::RwLock};
 
 use crate::{DiscoveryError, DiscoveryProvider, DiscoveryResult};
+
+/// Upper bound for one manual network-printer reachability probe.
+const NETWORK_PROBE_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// One manually configured raw TCP printer.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -44,36 +47,52 @@ impl DiscoveryProvider for ManualNetworkProvider {
     }
 
     async fn discover(&self) -> DiscoveryResult<Vec<DiscoveredPrinter>> {
-        self.printers
-            .iter()
-            .map(|printer| {
-                let observation = DiscoveredPrinter {
-                    id: Some(printer.id.clone()),
-                    name: printer.name.clone(),
-                    kind: PrinterKind::Receipt,
-                    connection: PrinterConnection::Network {
-                        host: printer.host.clone(),
-                        port: printer.port,
-                    },
-                    fingerprint: PrinterFingerprint {
-                        host: Some(printer.host.clone()),
-                        port: Some(printer.port),
-                        ..PrinterFingerprint::default()
-                    },
-                    availability: PrinterAvailability::Unknown,
-                    capabilities: Some(receipt_capabilities()),
-                    providers: vec![ProviderMetadata {
-                        provider: self.name().to_owned(),
-                        provider_id: Some(printer.id.to_string()),
-                        attributes: BTreeMap::new(),
-                    }],
-                };
-                observation
-                    .validate()
-                    .map_err(|error| DiscoveryError::InvalidData(error.to_string()))?;
-                Ok(observation)
-            })
+        let probes = self.printers.iter().map(|printer| async move {
+            let availability =
+                probe_network_printer(&printer.host, printer.port, NETWORK_PROBE_TIMEOUT).await;
+            let observation = DiscoveredPrinter {
+                id: Some(printer.id.clone()),
+                name: printer.name.clone(),
+                kind: PrinterKind::Receipt,
+                connection: PrinterConnection::Network {
+                    host: printer.host.clone(),
+                    port: printer.port,
+                },
+                fingerprint: PrinterFingerprint {
+                    host: Some(printer.host.clone()),
+                    port: Some(printer.port),
+                    ..PrinterFingerprint::default()
+                },
+                availability,
+                capabilities: Some(receipt_capabilities()),
+                providers: vec![ProviderMetadata {
+                    provider: self.name().to_owned(),
+                    provider_id: Some(printer.id.to_string()),
+                    attributes: BTreeMap::new(),
+                }],
+            };
+            observation
+                .validate()
+                .map_err(|error| DiscoveryError::InvalidData(error.to_string()))?;
+            Ok(observation)
+        });
+        futures_util::future::join_all(probes)
+            .await
+            .into_iter()
             .collect()
+    }
+}
+
+/// Best-effort TCP reachability probe for a raw network printer endpoint.
+///
+/// A completed connection reports [`PrinterAvailability::Online`]; a refused
+/// connection, unresolved host, or timeout reports
+/// [`PrinterAvailability::Offline`]. The socket is closed immediately; no bytes
+/// are written.
+async fn probe_network_printer(host: &str, port: u16, timeout: Duration) -> PrinterAvailability {
+    match tokio::time::timeout(timeout, TcpStream::connect((host, port))).await {
+        Ok(Ok(_stream)) => PrinterAvailability::Online,
+        Ok(Err(_)) | Err(_) => PrinterAvailability::Offline,
     }
 }
 
@@ -219,7 +238,7 @@ fn platform_queue_command() -> Command {
         "-NoProfile",
         "-NonInteractive",
         "-Command",
-        "Get-Printer | ForEach-Object { \"$($_.Name)`t$($_.DriverName)`t$($_.PortName)\" }",
+        "Get-Printer | ForEach-Object { \"$($_.Name)`t$($_.DriverName)`t$($_.PortName)`t$($_.PrinterStatus)`t$($_.WorkOffline)\" }",
     ]);
     command
 }
@@ -256,6 +275,7 @@ pub fn parse_lpstat(output: &str) -> Vec<DiscoveredPrinter> {
     struct Queue {
         seen: bool,
         offline: bool,
+        ready: bool,
         uri: Option<String>,
     }
     let mut queues: BTreeMap<String, Queue> = BTreeMap::new();
@@ -268,6 +288,11 @@ pub fn parse_lpstat(output: &str) -> Vec<DiscoveredPrinter> {
             queue.seen = true;
             let status = status.to_ascii_lowercase();
             queue.offline = status.contains("disabled") || status.contains("offline");
+            queue.ready = !queue.offline
+                && (status.contains("idle")
+                    || status.contains("printing")
+                    || status.contains("processing")
+                    || status.contains("enabled"));
         } else if let Some(rest) = line.strip_prefix("device for ")
             && let Some((name, uri)) = rest.split_once(':')
         {
@@ -299,6 +324,8 @@ pub fn parse_lpstat(output: &str) -> Vec<DiscoveredPrinter> {
                 },
                 availability: if queue.offline {
                     PrinterAvailability::Offline
+                } else if queue.ready {
+                    PrinterAvailability::Online
                 } else {
                     PrinterAvailability::Unknown
                 },
@@ -318,7 +345,7 @@ fn parse_windows_printers(output: &str) -> DiscoveryResult<Vec<DiscoveredPrinter
     let mut printers = Vec::new();
     for (index, line) in output.lines().enumerate() {
         let fields = line.split('\t').map(str::trim).collect::<Vec<_>>();
-        if fields.len() != 3 || fields[0].is_empty() {
+        if fields.len() != 5 || fields[0].is_empty() {
             return Err(DiscoveryError::InvalidData(format!(
                 "malformed Windows printer record on line {}",
                 index + 1
@@ -327,6 +354,7 @@ fn parse_windows_printers(output: &str) -> DiscoveryResult<Vec<DiscoveredPrinter
         let mut attributes = BTreeMap::new();
         attributes.insert("driverName".to_owned(), fields[1].to_owned());
         attributes.insert("portName".to_owned(), fields[2].to_owned());
+        attributes.insert("printerStatus".to_owned(), fields[3].to_owned());
         printers.push(DiscoveredPrinter {
             id: None,
             name: fields[0].to_owned(),
@@ -340,7 +368,7 @@ fn parse_windows_printers(output: &str) -> DiscoveryResult<Vec<DiscoveredPrinter
                 device_uri: Some(fields[2].to_owned()),
                 ..PrinterFingerprint::default()
             },
-            availability: PrinterAvailability::Unknown,
+            availability: windows_availability(fields[3], fields[4]),
             capabilities: None,
             providers: vec![ProviderMetadata {
                 provider: "system-queue".to_owned(),
@@ -350,6 +378,28 @@ fn parse_windows_printers(output: &str) -> DiscoveryResult<Vec<DiscoveredPrinter
         });
     }
     Ok(printers)
+}
+
+/// Maps a Windows `PrinterStatus` and `WorkOffline` pair to an availability.
+///
+/// `PrinterStatus` stringifies to values such as `Normal`, `Offline`, `Paused`,
+/// `Error`, or a comma-joined combination. `WorkOffline` is `True` when the user
+/// or the spooler has parked the queue.
+#[cfg(windows)]
+fn windows_availability(status: &str, work_offline: &str) -> PrinterAvailability {
+    if work_offline.eq_ignore_ascii_case("true") {
+        return PrinterAvailability::Offline;
+    }
+    let status = status.to_ascii_lowercase();
+    if status.contains("offline") || status.contains("not available") {
+        PrinterAvailability::Offline
+    } else if status.is_empty() || status == "unknown" {
+        PrinterAvailability::Unknown
+    } else if status.contains("normal") || status.contains("idle") || status.contains("printing") {
+        PrinterAvailability::Online
+    } else {
+        PrinterAvailability::Degraded
+    }
 }
 
 #[cfg(test)]
@@ -378,5 +428,80 @@ mod tests {
             .find(|printer| printer.name == "Offline")
             .expect("offline queue");
         assert_eq!(offline.availability, PrinterAvailability::Offline);
+        assert_eq!(receipt.availability, PrinterAvailability::Online);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_parser_reads_status_and_offline_columns() {
+        let printers = parse_windows_printers(
+            "Front desk\tEPSON TM-T82III\tUSB001\tNormal\tFalse\r\n\
+             Back office\tGeneric / Text Only\t192.168.1.9\tOffline\tFalse\r\n\
+             Parked\tGeneric / Text Only\tUSB002\tNormal\tTrue\r\n\
+             Attention\tGeneric / Text Only\tUSB003\tPaused\tFalse\r\n",
+        )
+        .expect("valid records");
+        assert_eq!(printers.len(), 4);
+        let by_name = |name: &str| {
+            printers
+                .iter()
+                .find(|printer| printer.name == name)
+                .expect("printer present")
+                .availability
+        };
+        assert_eq!(by_name("Front desk"), PrinterAvailability::Online);
+        assert_eq!(by_name("Back office"), PrinterAvailability::Offline);
+        assert_eq!(by_name("Parked"), PrinterAvailability::Offline);
+        assert_eq!(by_name("Attention"), PrinterAvailability::Degraded);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_parser_rejects_records_without_the_status_columns() {
+        assert!(parse_windows_printers("Front desk\tEPSON\tUSB001\n").is_err());
+    }
+
+    #[tokio::test]
+    async fn network_probe_reports_online_for_a_listening_socket() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("listener");
+        let port = listener.local_addr().expect("addr").port();
+        assert_eq!(
+            probe_network_printer("127.0.0.1", port, NETWORK_PROBE_TIMEOUT).await,
+            PrinterAvailability::Online
+        );
+    }
+
+    #[tokio::test]
+    async fn network_probe_reports_offline_for_a_closed_port() {
+        // Bind then drop to obtain a port nothing is listening on.
+        let port = {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+                .await
+                .expect("listener");
+            listener.local_addr().expect("addr").port()
+        };
+        assert_eq!(
+            probe_network_printer("127.0.0.1", port, std::time::Duration::from_millis(200)).await,
+            PrinterAvailability::Offline
+        );
+    }
+
+    #[tokio::test]
+    async fn manual_network_provider_marks_reachability() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("listener");
+        let port = listener.local_addr().expect("addr").port();
+        let provider = ManualNetworkProvider::new(vec![ManualNetworkPrinter {
+            id: PrinterId::new("printer_network_probe").expect("id"),
+            name: "Counter".to_owned(),
+            host: "127.0.0.1".to_owned(),
+            port,
+        }]);
+        let discovered = provider.discover().await.expect("discovery");
+        assert_eq!(discovered.len(), 1);
+        assert_eq!(discovered[0].availability, PrinterAvailability::Online);
     }
 }

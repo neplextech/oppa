@@ -12,7 +12,7 @@ futures-util = "0.3.31"
 oppa-core = { path = "../oppa-core" }
 oppa-printer = { path = "../oppa-printer" }
 thiserror = "2.0.19"
-tokio = { version = "1.53.1", features = ["process", "sync", "time"] }
+tokio = { version = "1.53.1", features = ["net", "process", "sync", "time"] }
 
 [dev-dependencies]
 tokio = { version = "1.53.1", features = ["macros", "rt-multi-thread"] }
