@@ -35,6 +35,14 @@ pub fn run() {
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .plugin(
+            tauri_plugin_frame::FramePluginBuilder::new()
+                .titlebar_height(44)
+                .button_width(46)
+                .auto_titlebar(true)
+                .snap_overlay(true)
+                .build(),
+        )
         .plugin(tauri_plugin_single_instance::init(
             |app, arguments, _cwd| {
                 desktop::show_main_window(app);
@@ -50,9 +58,10 @@ pub fn run() {
         .manage(QuitState::default())
         .manage(Arc::new(PendingDeepLink::default()))
         .setup(|app| {
-            // Create the main window in Rust so that platform-specific title bar
-            // configuration is applied before the webview loads, which is required
-            // for data-tauri-drag-region to work correctly on macOS.
+            // Create the main window in Rust so platform-specific title bar
+            // configuration is applied before the webview loads. macOS uses its
+            // native overlay title bar; Windows uses the frame plugin over an
+            // undecorated window; Linux uses the custom webview title bar.
             let product_name = oppa_product::embedded_product()
                 .ok()
                 .map_or_else(|| "OPPA".to_owned(), |p| p.product_name.clone());
@@ -85,6 +94,7 @@ pub fn run() {
                     .log
                     .warn("desktop", format!("System tray is unavailable: {error}"));
             }
+            #[cfg(target_os = "macos")]
             if let Err(error) = desktop::setup_app_menu(app) {
                 service
                     .log
@@ -130,6 +140,7 @@ pub fn run() {
             commands::export_diagnostics,
             commands::set_start_on_login,
             commands::reconnect,
+            commands::quit_application,
             commands::set_server_configuration,
             commands::reset_server_configuration,
             commands::open_product_link,

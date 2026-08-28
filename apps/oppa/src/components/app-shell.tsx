@@ -1,9 +1,25 @@
-import { Activity, Command, FileClock, Globe2, MonitorCog, Printer, ScrollText, Settings2 } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { getCurrentWindow } from '@tauri-apps/api/window';
+import {
+  Activity,
+  Command,
+  Copy,
+  FileClock,
+  Globe2,
+  Maximize2,
+  Minus,
+  MonitorCog,
+  Printer,
+  ScrollText,
+  Settings2,
+  X,
+} from 'lucide-react';
+import { useEffect, useState, type ReactNode } from 'react';
 
 import { CommandMenu } from '@/components/command-menu';
+import { WindowMenu } from '@/components/window-menu';
 import type { AgentStatus } from '@/lib/types';
 import { cn, titleCase } from '@/lib/utils';
+import { isMacOSPlatform, isWindowsTauri } from '@/lib/window-platform';
 
 export type ScreenId = 'overview' | 'printers' | 'virtual' | 'jobs' | 'diagnostics' | 'settings';
 
@@ -41,7 +57,14 @@ export function AppShell({
   return (
     <div className="bg-background text-foreground flex h-dvh flex-col overflow-hidden">
       {/* Title bar */}
-      <TitleBar status={status} />
+      <TitleBar
+        status={status}
+        paired={paired}
+        developerMode={developerMode}
+        onNavigate={onNavigate}
+        onOpenCommand={onOpenCommand}
+        onReconnect={onReconnect}
+      />
 
       <div className="flex flex-1 overflow-hidden">
         {/* Sidebar navigation — hidden until server is paired */}
@@ -65,9 +88,25 @@ export function AppShell({
   );
 }
 
-function TitleBar({ status }: { status: AgentStatus }) {
+export function TitleBar({
+  status,
+  paired,
+  developerMode,
+  onNavigate,
+  onOpenCommand,
+  onReconnect,
+}: {
+  status: AgentStatus;
+  paired: boolean;
+  developerMode: boolean;
+  onNavigate?: (screen: ScreenId) => void;
+  onOpenCommand?: () => void;
+  onReconnect?: () => Promise<void>;
+}) {
   const agentId = status.agentId;
   const connected = status.connectionState === 'connected';
+  const macOS = isMacOSPlatform();
+  const windows = isWindowsTauri();
   const tone =
     status.connectionState === 'connected'
       ? 'connected'
@@ -83,10 +122,13 @@ function TitleBar({ status }: { status: AgentStatus }) {
   return (
     <header
       data-tauri-drag-region
-      className="border-sidebar-border bg-sidebar flex h-11 shrink-0 items-center border-b select-none"
+      className={cn(
+        'border-sidebar-border bg-sidebar flex h-11 shrink-0 items-center border-b select-none',
+        windows && 'oppa-titlebar--windows',
+      )}
     >
-      {/* Space reserved for macOS traffic lights — no drag region here */}
-      <div className="w-[72px] shrink-0" />
+      {/* Tauri places the macOS traffic lights over the title bar. */}
+      {macOS && <div className="w-[72px] shrink-0" />}
 
       {/* Product identity */}
       <div data-tauri-drag-region className="flex items-center gap-2 px-2">
@@ -95,6 +137,16 @@ function TitleBar({ status }: { status: AgentStatus }) {
           {status.product.name}
         </span>
       </div>
+
+      {!macOS && (
+        <WindowMenu
+          paired={paired}
+          developerMode={developerMode}
+          onNavigate={onNavigate}
+          onOpenCommand={onOpenCommand}
+          onReconnect={onReconnect}
+        />
+      )}
 
       <div data-tauri-drag-region className="bg-border pointer-events-none mx-3 h-3.5 w-px" />
 
@@ -138,7 +190,88 @@ function TitleBar({ status }: { status: AgentStatus }) {
         )}
         <span className="text-muted-foreground/50 pointer-events-none font-mono text-xs">v{status.version}</span>
       </div>
+
+      {!macOS && !windows && <WindowControls />}
     </header>
+  );
+}
+
+function WindowControls() {
+  const [maximized, setMaximized] = useState(false);
+  const tauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+
+  useEffect(() => {
+    if (!tauri) return;
+
+    const appWindow = getCurrentWindow();
+    let disposed = false;
+
+    const syncMaximized = () => {
+      void appWindow
+        .isMaximized()
+        .then((value) => {
+          if (!disposed) setMaximized(value);
+        })
+        .catch(() => undefined);
+    };
+
+    syncMaximized();
+    const unlisten = appWindow.onResized(syncMaximized);
+
+    return () => {
+      disposed = true;
+      void unlisten.then((stopListening) => stopListening());
+    };
+  }, [tauri]);
+
+  if (!tauri) return null;
+
+  const runWindowAction = (action: () => Promise<void>) => {
+    void action().catch(() => undefined);
+  };
+
+  return (
+    <div className="flex h-full shrink-0 items-stretch" role="group" aria-label="Window controls">
+      <button
+        type="button"
+        data-no-drag
+        onClick={() => runWindowAction(() => getCurrentWindow().minimize())}
+        className="text-muted-foreground hover:bg-foreground/10 hover:text-foreground focus-visible:ring-ring flex h-full w-11 items-center justify-center transition-colors focus-visible:z-10 focus-visible:ring-2 focus-visible:outline-none"
+        aria-label="Minimize window"
+        title="Minimize"
+      >
+        <Minus className="size-4" strokeWidth={1.75} aria-hidden />
+      </button>
+      <button
+        type="button"
+        data-no-drag
+        onClick={() =>
+          runWindowAction(async () => {
+            await getCurrentWindow().toggleMaximize();
+            setMaximized(await getCurrentWindow().isMaximized());
+          })
+        }
+        className="text-muted-foreground hover:bg-foreground/10 hover:text-foreground focus-visible:ring-ring flex h-full w-11 items-center justify-center transition-colors focus-visible:z-10 focus-visible:ring-2 focus-visible:outline-none"
+        aria-label={maximized ? 'Restore window' : 'Maximize window'}
+        title={maximized ? 'Restore' : 'Maximize'}
+      >
+        {maximized ? (
+          <Copy className="size-3.5" strokeWidth={1.75} aria-hidden />
+        ) : (
+          <Maximize2 className="size-3.5" strokeWidth={1.75} aria-hidden />
+        )}
+      </button>
+      <button
+        type="button"
+        data-no-drag
+        onClick={() => runWindowAction(() => getCurrentWindow().close())}
+        className="text-muted-foreground hover:bg-destructive hover:text-destructive-foreground focus-visible:ring-ring flex h-full w-11 items-center justify-center transition-colors focus-visible:z-10 focus-visible:ring-2 focus-visible:outline-none"
+        aria-label="Close window"
+        title="Close"
+      >
+        <X className="size-4" strokeWidth={1.75} aria-hidden />
+      </button>
+    </div>
   );
 }
 

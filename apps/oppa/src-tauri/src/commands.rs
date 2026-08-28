@@ -4,6 +4,7 @@ use tauri::{AppHandle, State};
 use tauri_plugin_autostart::ManagerExt;
 
 use crate::{
+    desktop,
     error::CommandError,
     models::{
         AgentStatus, ConfigurePrinterChanges, DeepLinkPayload, Diagnostics,
@@ -204,6 +205,12 @@ pub async fn reconnect(
     let start_on_login = app.autolaunch().is_enabled().unwrap_or(false);
     let version = app.package_info().version.to_string();
     Ok(service.status(start_on_login, version).await)
+}
+
+/// Quits the desktop process instead of hiding the window to the tray.
+#[tauri::command]
+pub fn quit_application(app: AppHandle) {
+    desktop::quit_application(&app);
 }
 
 #[tauri::command]

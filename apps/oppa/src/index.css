@@ -190,6 +190,30 @@
   app-region: no-drag;
 }
 
+/* The Windows frame plugin mounts its controls into this stable host. */
+[data-tauri-frame-tb] {
+  position: fixed;
+  z-index: 100;
+  top: 0;
+  right: 0;
+  display: flex;
+  width: var(--tauri-frame-controls-width, 138px);
+  height: 44px;
+  align-items: stretch;
+  justify-content: flex-end;
+  pointer-events: none;
+}
+[data-tauri-frame-tb] button {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+  pointer-events: auto;
+  color: var(--foreground);
+  font-family: inherit;
+}
+.oppa-titlebar--windows {
+  padding-right: var(--tauri-frame-controls-width, 138px);
+}
+
 /* Scrollbar styling */
 ::-webkit-scrollbar {
   width: 6px;

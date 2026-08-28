@@ -5,9 +5,12 @@ use std::sync::{
 
 use tauri::{
     App, AppHandle, Emitter, Manager,
-    menu::{Menu, MenuItem, PredefinedMenuItem, Submenu},
+    menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::TrayIconBuilder,
 };
+
+#[cfg(target_os = "macos")]
+use tauri::menu::Submenu;
 
 use crate::service::DesktopService;
 
@@ -98,7 +101,7 @@ fn hide_main_window(app: &AppHandle) {
 }
 
 /// Shuts the agent down gracefully and exits the process.
-fn quit_application(app: &AppHandle) {
+pub(crate) fn quit_application(app: &AppHandle) {
     app.state::<QuitState>().0.store(true, Ordering::Release);
     let service = Arc::clone(app.state::<Arc<DesktopService>>().inner());
     let app = app.clone();
@@ -147,6 +150,7 @@ fn handle_tray_menu(app: &AppHandle, event: &tauri::menu::MenuEvent) {
     }
 }
 
+#[cfg(target_os = "macos")]
 pub fn setup_app_menu(app: &App) -> tauri::Result<()> {
     let menu = build_app_menu(app)?;
     app.set_menu(menu)?;
@@ -156,6 +160,7 @@ pub fn setup_app_menu(app: &App) -> tauri::Result<()> {
 /// Builds the first submenu, which macOS renders as the application menu.
 /// Cmd+Q hides to the tray instead of terminating so the background agent
 /// keeps running; only the explicit Quit item stops the process.
+#[cfg(target_os = "macos")]
 fn build_application_submenu(app: &App, product_name: &str) -> tauri::Result<Submenu<tauri::Wry>> {
     let hide_to_tray = MenuItem::with_id(
         app,
@@ -175,6 +180,7 @@ fn build_application_submenu(app: &App, product_name: &str) -> tauri::Result<Sub
     Submenu::with_items(app, product_name, true, &[&hide_to_tray, &separator, &quit])
 }
 
+#[cfg(target_os = "macos")]
 fn build_app_menu(app: &App) -> tauri::Result<Menu<tauri::Wry>> {
     let product_name = app.try_state::<Arc<DesktopService>>().map_or_else(
         || "OPPA".to_owned(),
