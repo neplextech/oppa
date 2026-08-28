@@ -234,7 +234,7 @@ export function SettingsScreen({
                 </div>
               </div>
             </div>
-            <div className="bg-card/30 border-border/50 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 border-t px-5 py-4">
+            <div className="bg-card/30 border-border/50 mb-8 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 border-t px-5 py-4">
               <AboutRow label="App version" value={`v${status.version}`} mono />
               {tauriVersion && <AboutRow label="Tauri" value={`v${tauriVersion}`} mono />}
               <AboutRow label="Platform" value={status.platform} />
