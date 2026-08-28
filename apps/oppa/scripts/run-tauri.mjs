@@ -117,7 +117,8 @@ if (mode === 'dev' && (await exists(devConfigPath))) {
 
 await writeFile(generatedConfigPath, `${JSON.stringify(config, null, 2)}\n`, 'utf8');
 
-const pnpm = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm';
+// const pnpm = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm';
+const pnpm = 'pnpm';
 const child = spawn(
   pnpm,
   ['--filter', 'oppa', 'exec', 'tauri', mode, '--config', generatedConfigPath, ...process.argv.slice(3)],
