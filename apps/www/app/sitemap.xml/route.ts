@@ -33,6 +33,8 @@ export function GET(): Response {
   const entries: SitemapEntry[] = [
     { url: BASE_URL, changeFrequency: 'monthly', priority: 1 },
     { url: `${BASE_URL}/docs`, changeFrequency: 'monthly', priority: 0.8 },
+    { url: `${BASE_URL}/cloud`, changeFrequency: 'weekly', priority: 0.9 },
+    { url: `${BASE_URL}/pricing`, changeFrequency: 'weekly', priority: 0.8 },
     { url: `${BASE_URL}/downloads`, changeFrequency: 'weekly', priority: 0.7 },
     ...pages.map((page) => ({
       url: `${BASE_URL}${page.url}`,

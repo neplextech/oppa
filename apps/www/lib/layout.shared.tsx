@@ -1,5 +1,5 @@
 import type { BaseLayoutProps } from 'fumadocs-ui/layouts/shared';
-import { BookOpen, Download } from 'lucide-react';
+import { BookOpen, Cloud, Code2, Download, WalletCards } from 'lucide-react';
 
 import { SiteBrandIcon } from '@/components/site-brand-icon';
 import { GithubIcon } from '@/components/site-icons';
@@ -27,6 +27,29 @@ export function baseOptions(): BaseLayoutProps {
         icon: <Download />,
         text: 'Download OPPA',
         url: '/downloads',
+      },
+      {
+        icon: <Cloud />,
+        text: 'Neplex OpenPrinter Cloud',
+        url: '/cloud',
+        active: 'nested-url',
+      },
+      {
+        icon: <Cloud />,
+        text: 'OpenPrinter Agent Gateway',
+        url: '/docs/agent-gateway',
+        active: 'nested-url',
+      },
+      {
+        icon: <Code2 />,
+        text: 'OpenPrinter Cloud SDK',
+        url: '/docs/openprinter-cloud/sdk',
+        active: 'nested-url',
+      },
+      {
+        icon: <WalletCards />,
+        text: 'Pricing',
+        url: '/pricing',
       },
       {
         icon: <GithubIcon />,

@@ -1,0 +1,108 @@
+---
+title: Neplex OpenPrinter Cloud REST API
+description:
+  The public REST API for project authentication, durable print jobs,
+  discovery, and OPPA pairing.
+---
+
+Neplex OpenPrinter Cloud exposes a small public REST API for
+applications that need to send durable print jobs to local printers
+through paired OPPA agents.
+
+This section documents the application-facing HTTP API implemented in
+`apps/openprinter`. It is separate from the private WebSocket agent
+gateway:
+
+- **REST API** — your application creates and lists project print jobs
+  with an `opk_` API key.
+- **Agent gateway** — OPPA uses the private WebSocket connection to
+  receive jobs and report delivery state. See the
+  [separate agent gateway reference](/docs/agent-gateway) only when
+  implementing a compatible agent.
+
+OpenPrinter Cloud has a free managed tier for getting started.
+Self-hosting OpenPrinter and running OPPA are completely free; paid
+pricing applies only to the Neplex-managed cloud API. See the
+[dedicated Cloud overview](/cloud),
+[current managed pricing](/pricing), or
+[Get started for free with OpenPrinter Cloud](https://neplextech.com/signup).
+
+## Base URL
+
+The managed service is available at:
+
+```text
+https://openprinter.neplextech.com
+```
+
+Use a different origin when targeting a compatible self-hosted
+service. Every route below is relative to the configured service base
+URL.
+
+## Public REST surface
+
+| Method | Route                          | Authentication       | Purpose                                                  |
+| ------ | ------------------------------ | -------------------- | -------------------------------------------------------- |
+| `GET`  | `/health`                      | None                 | Read service liveness.                                   |
+| `GET`  | `/.well-known/openprinter`     | None                 | Read discovery and advertised agent endpoints.           |
+| `POST` | `/openprinter/pair`            | Pairing request      | Redeem an OPPA pairing code and register its public key. |
+| `POST` | `/v1/projects/:projectId/jobs` | `jobs:write` API key | Create an idempotent durable print job.                  |
+| `GET`  | `/v1/projects/:projectId/jobs` | `jobs:read` API key  | List the latest public job projections.                  |
+
+The `/internal/*` routes used by the Neplex dashboard are not public
+API routes. The `/.well-known/openprinter/gateway` endpoint is a
+private agent WebSocket transport, not a REST endpoint.
+
+## Quick start
+
+Set the service, project, and key in the server environment that owns
+your application integration:
+
+```bash
+export OPENPRINTER_BASE_URL="https://openprinter.neplextech.com"
+export OPENPRINTER_API_KEY="opk_your_project_key"
+export OPENPRINTER_PROJECT_ID="project_01"
+```
+
+Create a durable job:
+
+```bash
+curl -X POST "$OPENPRINTER_BASE_URL/v1/projects/$OPENPRINTER_PROJECT_ID/jobs" \
+  -H "authorization: Bearer $OPENPRINTER_API_KEY" \
+  -H 'content-type: application/json' \
+  -d '{
+    "printerId": "printer_01",
+    "idempotencyKey": "order_123_receipt_v1",
+    "document": {
+      "width": 80,
+      "sections": [
+        { "type": "text", "value": "Order 123", "align": "center", "bold": true },
+        { "type": "divider" },
+        { "type": "row", "left": "Coffee", "right": "$4.00" },
+        { "type": "feed", "lines": 2 },
+        { "type": "cut" }
+      ]
+    }
+  }'
+```
+
+The first accepted submission returns `202 Accepted`. Repeating the
+same `projectId` and `idempotencyKey` returns the existing job with
+`200 OK` and `duplicate: true`. Continue with
+[creating jobs](./create-job) and [listing jobs](./list-jobs), or use
+the [TypeScript SDK guide](./sdk).
+
+## Response and delivery semantics
+
+The public API returns a job projection without the print document on
+list responses. The lifecycle states are `PENDING`, `DISPATCHING`,
+`DELIVERED`, `PRINTING`, `COMPLETED`, `FAILED`, `EXPIRED`, and
+`CANCELLED`.
+
+`receivedAt` means that OPPA durably stored the job locally.
+`submittedAt` means that a local printer backend accepted it. Neither
+state universally proves that paper was physically produced.
+
+See [errors](./errors) for the common failure envelope and
+[authentication](./authentication) for API keys, discovery, and
+pairing.

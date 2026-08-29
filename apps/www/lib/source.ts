@@ -1,8 +1,11 @@
 import { docs } from 'collections/server';
 import { loader } from 'fumadocs-core/source';
 
+import { asyncapi } from './asyncapi';
+
 export const source = loader({
   baseUrl: '/docs',
+  plugins: [asyncapi.loaderPlugin()],
   source: docs.toFumadocsSource(),
 });
 

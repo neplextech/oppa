@@ -1,6 +1,8 @@
 # Website guidance
 
-`apps/www` is the Fumadocs landing and documentation application.
+`apps/www` is the Fumadocs landing and documentation application for
+OPPA, generic OpenPrinter, and the optional Neplex OpenPrinter Cloud
+API.
 
 - Keep OPPA and OpenPrinter definitions visibly distinct.
 - Treat `PLAN.md`, the canonical protocol schema, and public
@@ -14,4 +16,5 @@
 - Run `pnpm --filter @oppa/www typecheck` and
   `pnpm --filter @oppa/www build` after content or route changes.
 - Do not add a hosted product dashboard, gateway, analytics tracker,
-  or authentication service here.
+  or authentication service here. Cloud pages may document the
+  external managed API and link to `https://neplextech.com/signup`.

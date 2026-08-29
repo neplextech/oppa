@@ -2,7 +2,8 @@
 title: Introduction
 description:
   Understand the boundary between the OPPA desktop agent and the
-  OpenPrinter integration ecosystem.
+  OpenPrinter integration ecosystem, including Neplex OpenPrinter
+  Cloud.
 ---
 
 OPPA and OpenPrinter connect a remote application to printers that are
@@ -23,6 +24,15 @@ WebSocket or broker lifecycle, pairing authorization, durable public
 credential storage, and connection routing; the SDK verifies the
 initial gateway challenge. Neither package contains restaurant,
 tenant, station, billing, or application-specific routing concepts.
+
+**Neplex OpenPrinter Cloud** is the optional managed API built on this
+boundary. It provides project API keys, durable cloud jobs,
+paired-agent delivery, and public job projections. Self-hosting
+OpenPrinter and running OPPA are completely free; pricing applies only
+to the managed cloud API. Read the
+[Neplex OpenPrinter Cloud guide](/cloud), [current pricing](/pricing),
+or
+[Get started for free with OpenPrinter Cloud](https://neplextech.com/signup).
 
 ## The important invariant
 
@@ -46,6 +56,8 @@ because most printer interfaces cannot prove that.
 - Use [Server SDK](/docs/server-sdk) and
   [Node.js Integration](/docs/nodejs-integration) when integrating an
   existing application.
+- Use the [`@openprinter/sdk` guide](/docs/openprinter-cloud/sdk) when
+  calling the managed public API.
 - Review [Security](/docs/security) before exposing an agent gateway.
 
 The repository is intentionally conservative: it provides the

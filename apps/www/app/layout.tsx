@@ -27,10 +27,10 @@ export const metadata: Metadata = {
     template: '%s · OpenPrinter',
   },
   description:
-    'OPPA is the local printer agent. OpenPrinter is the versioned protocol and server SDK that connects it to cloud applications.',
+    'OPPA is the local printer agent. OpenPrinter is the versioned protocol, SDK, and optional Neplex OpenPrinter Cloud API that connects cloud applications to local printers.',
   openGraph: {
     description:
-      'OPPA is the local printer agent. OpenPrinter is the versioned protocol and server SDK that connects it to cloud applications.',
+      'OPPA is the local printer agent. OpenPrinter is the versioned protocol, SDK, and optional Neplex OpenPrinter Cloud API that connects cloud applications to local printers.',
     locale: 'en_US',
     siteName: 'OpenPrinter',
     title: 'OpenPrinter — local printing for cloud applications',

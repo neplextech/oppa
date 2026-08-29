@@ -1,0 +1,130 @@
+---
+title: Authentication, discovery, and pairing
+description:
+  Use project API keys for REST jobs and the public discovery and
+  pairing routes for OPPA.
+---
+
+## Project API keys
+
+Create a project API key from the Neplex dashboard. The secret is
+prefixed with `opk_` and must remain in your server-side environment
+or secret store. Do not put it in browser code, a mobile bundle, a
+print document, or an OPPA configuration file.
+
+Send it only as a Bearer token:
+
+```http
+Authorization: Bearer opk_your_project_key
+```
+
+The key is bound to one project. Its project ID must match the
+`:projectId` segment in the REST route. Public routes currently use
+these scopes:
+
+| Scope        | Used by                             |
+| ------------ | ----------------------------------- |
+| `jobs:write` | `POST /v1/projects/:projectId/jobs` |
+| `jobs:read`  | `GET /v1/projects/:projectId/jobs`  |
+
+Missing, malformed, revoked, or project-mismatched keys return `401`.
+A valid key without the required scope returns `403`.
+
+<ScreenshotPlaceholder
+  label="Neplex dashboard — create a project API key"
+  description="Reserved for a dashboard capture showing project selection, key name, jobs:read/jobs:write scopes, and the one-time secret reveal. Never place a real API key in documentation."
+/>
+
+## Health
+
+`GET /health` requires no credentials and returns:
+
+```json
+{
+  "ok": true,
+  "service": "openprinter"
+}
+```
+
+Use it as a liveness check, not as proof that a specific project has
+an online agent or printer.
+
+## Discovery
+
+`GET /.well-known/openprinter` requires no credentials. The response
+is the standard OpenPrinter discovery document:
+
+```json
+{
+  "protocolVersion": "1",
+  "server": {
+    "id": "neplex-openprinter-cloud",
+    "name": "Neplex OpenPrinter Cloud",
+    "version": "0.1.0"
+  },
+  "endpoints": {
+    "pairing": "/openprinter/pair",
+    "gateway": "/.well-known/openprinter/gateway"
+  },
+  "authentication": {
+    "method": "pairing-code-ed25519",
+    "challengeTtlSeconds": 30
+  }
+}
+```
+
+The deployed server may override its ID, version, or challenge TTL.
+Use the returned endpoint values when a client needs to discover them
+dynamically.
+
+## Pair an OPPA agent
+
+`POST /openprinter/pair` is a public REST route used by OPPA after a
+user creates a one-time pairing code in the Neplex dashboard. It does
+not use a project API key. The request contains the agent metadata and
+its newly generated Ed25519 public key:
+
+<ScreenshotPlaceholder
+  label="Neplex dashboard — pair an OPPA agent"
+  description="Reserved for a dashboard capture showing the Pair OPPA action, one-time pairing code, expiry, and the paired-agent confirmation."
+/>
+
+```json
+{
+  "protocolVersion": "1",
+  "code": "ABCD-EFGH",
+  "agent": {
+    "name": "OPPA",
+    "version": "0.1.0",
+    "platform": "macos-arm64",
+    "installationId": "install_01"
+  },
+  "credential": {
+    "algorithm": "Ed25519",
+    "publicKey": {
+      "kty": "OKP",
+      "crv": "Ed25519",
+      "x": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    }
+  }
+}
+```
+
+On success the service returns only non-secret identity metadata:
+
+```json
+{
+  "agentId": "agt_01",
+  "keyId": "key_01",
+  "serverId": "neplex-openprinter-cloud",
+  "pairedAt": "2026-08-21T00:00:00.000Z"
+}
+```
+
+Pairing failures return a `400` response with an `error.code` such as
+`pairing_code_expired`, `pairing_code_consumed`, `invalid_public_key`,
+or `pairing_rate_limited`. The private key never leaves OPPA.
+
+The gateway endpoint advertised by discovery is documented separately
+in the [private agent gateway reference](/docs/agent-gateway). It is
+not part of the public application REST API.

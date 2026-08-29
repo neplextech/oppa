@@ -26,6 +26,10 @@ const typedProjects = [
     project: './packages/server/tsconfig.test.json',
   },
   {
+    files: ['packages/sdk/**/*.{ts,tsx}'],
+    project: './packages/sdk/tsconfig.test.json',
+  },
+  {
     files: ['examples/node-server/**/*.{ts,tsx}'],
     project: './examples/node-server/tsconfig.test.json',
   },

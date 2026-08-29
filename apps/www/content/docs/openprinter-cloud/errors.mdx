@@ -1,0 +1,50 @@
+---
+title: Errors and limits
+description:
+  Understand the public REST error envelope, status codes, and
+  delivery limits.
+---
+
+## Error envelope
+
+OpenPrinter Cloud returns structured JSON errors:
+
+```json
+{
+  "error": {
+    "code": "forbidden",
+    "message": "The project API key lacks the required scope."
+  }
+}
+```
+
+The API lowercases the server error code on the wire. Do not branch on
+the human-readable message; use the HTTP status and `error.code`.
+
+## Common statuses
+
+| Status | Typical codes               | Meaning                                                                        |
+| ------ | --------------------------- | ------------------------------------------------------------------------------ |
+| `400`  | `bad_request`               | Invalid JSON shape, document, numeric field, state filter, or pairing request. |
+| `401`  | `unauthorized`              | Missing, malformed, invalid, or revoked API key.                               |
+| `402`  | `entitlement_limit`         | The managed project has reached a plan limit.                                  |
+| `403`  | `forbidden`                 | The key does not have the route's required scope.                              |
+| `404`  | `not_found`                 | The project printer or requested resource does not exist.                      |
+| `409`  | `conflict`, `agent_offline` | The resource exists but cannot accept the requested transition or delivery.    |
+| `500`  | `internal`                  | The service could not complete the request.                                    |
+| `503`  | `unavailable`               | A temporary service or delivery dependency is unavailable.                     |
+
+The public service intentionally returns bounded, generic messages for
+unexpected failures. Treat unknown statuses as retryable only when
+your application's idempotency strategy makes the operation safe.
+
+## Retry safely
+
+`GET` requests can be retried when the transport fails. `POST` job
+creation can also be retried when the same `projectId` and
+`idempotencyKey` are sent; the service returns the existing job
+instead of creating a duplicate.
+
+Do not retry a pairing request blindly: pairing codes are single-use
+and the response may have succeeded even if the client lost the
+connection.

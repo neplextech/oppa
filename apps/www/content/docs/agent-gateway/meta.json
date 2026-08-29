@@ -1,0 +1,30 @@
+{
+  "title": "OpenPrinter Agent Gateway",
+  "defaultOpen": true,
+  "pages": [
+    "index",
+    "---Authentication---",
+    "serverSendsAuthChallenge",
+    "agentSendsAuthResponse",
+    "serverSendsAuthAccepted",
+    "serverSendsAuthRejected",
+    "---Session---",
+    "agentSendsHello",
+    "serverSendsHello",
+    "agentSendsHeartbeat",
+    "serverSendsHeartbeat",
+    "serverDisconnects",
+    "---Printers and jobs---",
+    "agentSendsPrinterInventory",
+    "agentSendsPrinterInventoryChanged",
+    "serverRequestsPrinterInventory",
+    "serverSendsPrintJob",
+    "agentAcknowledgesJob",
+    "agentReportsSubmission",
+    "agentReportsFailure",
+    "serverCancelsJob",
+    "serverInvalidatesConfiguration",
+    "---Diagnostics---",
+    "agentSendsDiagnostics"
+  ]
+}

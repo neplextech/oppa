@@ -67,13 +67,13 @@ Replace the updater public-key placeholder in
 `apps/oppa/src-tauri/tauri.conf.json` with the matching public key
 before the first release.
 
-`publish-npm.yml` builds and publishes `@openprinter/protocol` before
-`@openprinter/server` using npm OIDC trusted publishing. Register that
-workflow as a trusted publisher for both npm packages. The workflow
-uses npm CLI 11.5.1 or newer for the authenticated publish, uses no
-registry token, and skips a version that already exists. Package
-tarballs are staged through pnpm first so workspace dependency ranges
-are converted to publishable versions.
+`publish-npm.yml` builds and publishes `@openprinter/protocol`,
+`@openprinter/server`, and `@openprinter/sdk` using npm OIDC trusted
+publishing. Register that workflow as a trusted publisher for all
+three npm packages. The workflow uses npm CLI 11.5.1 or newer for the
+authenticated publish, uses no registry token, and skips a version
+that already exists. Package tarballs are staged through pnpm first so
+workspace dependency ranges are converted to publishable versions.
 
 Both release workflows also support a manual dispatch. There is no
 canary channel.

@@ -2,7 +2,9 @@ import { DocsBody, DocsDescription, DocsPage, DocsTitle } from 'fumadocs-ui/layo
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 
+import { AsyncAPIPage } from '@/components/asyncapi-page';
 import { getMDXComponents } from '@/components/mdx';
+import { asyncapi } from '@/lib/asyncapi';
 import { getPageImageUrl, source } from '@/lib/source';
 
 export default async function Page({ params }: { params: Promise<{ slug?: string[] }> }) {
@@ -14,13 +16,31 @@ export default async function Page({ params }: { params: Promise<{ slug?: string
   }
 
   const Content = page.data.body;
+  const asyncApiProps = await asyncapi.preloadAsyncAPIPage(page);
+  const isGeneratedAsyncApiPage = page.slugs[0] === 'agent-gateway' && page.slugs.length > 1;
+  const preloadedAsyncApiProps =
+    isGeneratedAsyncApiPage && asyncApiProps.preloaded.docs['openprinter-cloud'] === undefined
+      ? {
+          preloaded: {
+            ...asyncApiProps.preloaded,
+            docs: {
+              ...asyncApiProps.preloaded.docs,
+              'openprinter-cloud': (await asyncapi.getSchema('openprinter-cloud')).bundled,
+            },
+          },
+        }
+      : asyncApiProps;
 
   return (
     <DocsPage toc={page.data.toc} full={page.data.full}>
       <DocsTitle>{page.data.title}</DocsTitle>
       <DocsDescription>{page.data.description}</DocsDescription>
       <DocsBody>
-        <Content components={getMDXComponents()} />
+        <Content
+          components={getMDXComponents({
+            AsyncAPIPage: (props) => <AsyncAPIPage {...preloadedAsyncApiProps} {...props} />,
+          })}
+        />
       </DocsBody>
     </DocsPage>
   );

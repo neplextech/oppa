@@ -1,0 +1,704 @@
+---
+title: TypeScript SDK
+description:
+  Use @openprinter/sdk to submit and inspect durable OpenPrinter Cloud
+  jobs.
+---
+
+The `@openprinter/sdk` package is a strongly typed client for the
+public Neplex OpenPrinter Cloud API. It validates structured print
+documents before sending them, validates successful responses at
+runtime, retries transient failures with bounded backoff, and
+preserves the server's idempotency model.
+
+## Install
+
+```bash
+pnpm add @openprinter/sdk
+```
+
+## Configure from the environment
+
+```bash
+export OPENPRINTER_API_KEY="opk_your_project_key"
+export OPENPRINTER_PROJECT_ID="project_01"
+```
+
+```ts
+import { createOpenPrinterClient } from '@openprinter/sdk';
+
+const openprinter = createOpenPrinterClient();
+
+const { job, duplicate } = await openprinter.jobs.create({
+  printerId: 'printer_01',
+  idempotencyKey: 'order_123_receipt',
+  document: {
+    width: 80,
+    sections: [
+      {
+        type: 'text',
+        value: 'Order 123',
+        align: 'center',
+        bold: true,
+      },
+      { type: 'divider' },
+      { type: 'row', left: 'Coffee', right: '$4.00' },
+      { type: 'feed', lines: 2 },
+      { type: 'cut' },
+    ],
+  },
+});
+
+console.log(job.id, duplicate ? 'already queued' : 'queued now');
+```
+
+Explicit options override environment defaults:
+
+```ts
+const openprinter = createOpenPrinterClient({
+  apiKey: () => keyStore.getCurrentKey(),
+  projectId: 'project_01',
+  timeoutMs: 10_000,
+  retry: {
+    maxRetries: 3,
+    baseDelayMs: 200,
+    maxDelayMs: 3_000,
+  },
+});
+```
+
+Supported environment defaults include `OPENPRINTER_BASE_URL`,
+`OPENPRINTER_API_BASE_URL`, `OPENPRINTER_PUBLIC_BASE_URL`,
+`OPENPRINTER_API_KEY`, `OPENPRINTER_PROJECT_ID`,
+`OPENPRINTER_TIMEOUT_MS`, and `OPENPRINTER_MAX_RETRIES`.
+
+## List jobs and use project views
+
+```ts
+const failed = await openprinter.jobs.list({ state: 'FAILED' });
+
+const anotherProject = openprinter.project('project_02');
+const recent = await anotherProject.jobs.list();
+```
+
+`client.project()` returns an immutable project-pinned view and does
+not alter the default project on the original client.
+
+## Handle errors
+
+```ts
+import {
+  isOpenPrinterApiError,
+  isOpenPrinterTimeoutError,
+} from '@openprinter/sdk';
+
+try {
+  await openprinter.jobs.list();
+} catch (error) {
+  if (isOpenPrinterApiError(error)) {
+    console.error(error.status, error.code, error.requestId);
+  } else if (isOpenPrinterTimeoutError(error)) {
+    console.error(
+      'OpenPrinter Cloud did not respond before the deadline',
+    );
+  }
+}
+```
+
+The SDK also exports configuration and response-contract errors. See
+the package
+[README](https://github.com/neplextech/oppa/tree/main/packages/sdk)
+for the complete public API and generated JSDoc declarations.
+
+## API-key safety
+
+API keys are sent only as `Bearer opk_…` headers on authenticated
+calls. The SDK does not persist or log them. Keep them in server-side
+environment configuration and grant only `jobs:read` or `jobs:write`
+as required.
+
+For current managed plan limits, visit the
+[Neplex OpenPrinter Cloud pricing](/pricing).
+
+For endpoint-by-endpoint behavior, see the
+[public REST API reference](./).
+
+# API Documentation
+
+This reference covers the complete public surface of
+`@openprinter/sdk`. The SDK is designed for server-side TypeScript
+applications, but accepts a custom `fetch` implementation for
+browsers, tests, and other Fetch-compatible runtimes.
+
+## Exports at a glance
+
+| Export                            | Kind        | Purpose                                                     |
+| --------------------------------- | ----------- | ----------------------------------------------------------- |
+| `createOpenPrinterClient`         | Function    | Create an immutable client for the public Cloud API.        |
+| `OPENPRINTER_API_KEY_SCOPES`      | Constant    | The supported project-key scopes.                           |
+| `OPENPRINTER_PRINT_JOB_STATES`    | Constant    | The states accepted by `jobs.list()`.                       |
+| `OpenPrinterApiError`             | Error class | An HTTP error returned by the API.                          |
+| `OpenPrinterConfigurationError`   | Error class | A configuration error detected before a request.            |
+| `OpenPrinterResponseError`        | Error class | A successful response that violates its contract.           |
+| `OpenPrinterTimeoutError`         | Error class | A request that exceeded its deadline.                       |
+| `isOpenPrinterApiError`           | Type guard  | Narrow an unknown error to `OpenPrinterApiError`.           |
+| `isOpenPrinterConfigurationError` | Type guard  | Narrow an unknown error to `OpenPrinterConfigurationError`. |
+| `isOpenPrinterResponseError`      | Type guard  | Narrow an unknown error to `OpenPrinterResponseError`.      |
+| `isOpenPrinterTimeoutError`       | Type guard  | Narrow an unknown error to `OpenPrinterTimeoutError`.       |
+| `OpenPrinterClientOptions`        | Type        | Client construction options.                                |
+| `OpenPrinterRequestOptions`       | Type        | Per-request cancellation options.                           |
+| `OpenPrinterRetryOptions`         | Type        | Exponential-backoff settings.                               |
+| `OpenPrinterClient`               | Type        | The top-level client interface.                             |
+| `OpenPrinterProjectClient`        | Type        | A client view pinned to one project.                        |
+| `OpenPrinterJobsResource`         | Type        | The `jobs.create()` and `jobs.list()` methods.              |
+| `CreatePrintJobInput`             | Type        | The input accepted by `jobs.create()`.                      |
+| `CreatePrintJobResponse`          | Type        | The result returned by `jobs.create()`.                     |
+| `ListPrintJobsOptions`            | Type        | The filters accepted by `jobs.list()`.                      |
+| `ListPrintJobsResponse`           | Type        | The result returned by `jobs.list()`.                       |
+| `OpenPrinterJob`                  | Type        | A public print-job projection.                              |
+| `OpenPrinterHealth`               | Type        | The result of `client.health()`.                            |
+| `OpenPrinterApiKey`               | Type        | A key string or a synchronous/asynchronous key provider.    |
+| `OpenPrinterApiKeyScope`          | Type        | One supported API-key scope.                                |
+| `OpenPrinterPrintJobState`        | Type        | One public print-job lifecycle state.                       |
+
+## `createOpenPrinterClient()`
+
+```ts
+createOpenPrinterClient(options?: OpenPrinterClientOptions): OpenPrinterClient
+```
+
+Create a client once and reuse it. The returned client and its
+resource views are immutable, so a project view cannot change the
+default project on the original client.
+
+```ts
+import { createOpenPrinterClient } from '@openprinter/sdk';
+
+const openprinter = createOpenPrinterClient({
+  apiKey: () => keyStore.getCurrentKey(),
+  projectId: 'project_01',
+  timeoutMs: 10_000,
+  retry: {
+    maxRetries: 3,
+    baseDelayMs: 200,
+    maxDelayMs: 3_000,
+  },
+  headers: {
+    'x-client-name': 'checkout-service',
+  },
+});
+```
+
+### `OpenPrinterClientOptions`
+
+| Option      | Type                                          | Default and behavior                                                                                               |
+| ----------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `baseUrl`   | `string`                                      | Optional explicit service origin or mounted base path. If omitted, the environment variables below are checked.    |
+| `apiKey`    | `string \| (() => string \| Promise<string>)` | Required only for authenticated methods. A provider is useful for rotation or secret refresh.                      |
+| `projectId` | `string`                                      | The default project used by `client.jobs`. It can be omitted when every job call uses `client.project()`.          |
+| `fetch`     | `typeof globalThis.fetch`                     | The runtime’s global Fetch implementation. Supply a custom implementation for tests or adapters.                   |
+| `timeoutMs` | `number`                                      | `30_000`. Must be an integer from `1` through `86_400_000`.                                                        |
+| `retry`     | `false \| OpenPrinterRetryOptions`            | Bounded retries are enabled by default. Use `false` to disable them.                                               |
+| `headers`   | `HeadersInit`                                 | Additional headers for every request. The SDK manages `accept`, `content-type`, and API-key authorization headers. |
+
+### Environment defaults
+
+Explicit options take precedence over environment variables. The base
+URL is resolved in this order:
+
+1. `options.baseUrl`
+2. `OPENPRINTER_BASE_URL`
+3. `OPENPRINTER_API_BASE_URL`
+4. `OPENPRINTER_PUBLIC_BASE_URL`
+
+| Environment variable          | Used for                              | Default  |
+| ----------------------------- | ------------------------------------- | -------- |
+| `OPENPRINTER_BASE_URL`        | Preferred service base URL            | —        |
+| `OPENPRINTER_API_BASE_URL`    | Alternate API base URL                | —        |
+| `OPENPRINTER_PUBLIC_BASE_URL` | Public API base URL fallback          | —        |
+| `OPENPRINTER_API_KEY`         | Authenticated job calls               | —        |
+| `OPENPRINTER_PROJECT_ID`      | The default `client.jobs` project     | —        |
+| `OPENPRINTER_TIMEOUT_MS`      | Request deadline                      | `30_000` |
+| `OPENPRINTER_MAX_RETRIES`     | Retry count after the initial request | `2`      |
+
+## `OpenPrinterClient`
+
+| Member                  | Type                                              | Description                                        |
+| ----------------------- | ------------------------------------------------- | -------------------------------------------------- |
+| `baseUrl`               | `string`                                          | The normalized base URL used for requests.         |
+| `projectId`             | `string \| undefined`                             | The configured default project, if one exists.     |
+| `jobs`                  | `OpenPrinterJobsResource`                         | Job methods using the default project.             |
+| `project(projectId)`    | `(projectId: string) => OpenPrinterProjectClient` | Create an immutable project-scoped view.           |
+| `health(options?)`      | `Promise<OpenPrinterHealth>`                      | Check service liveness without credentials.        |
+| `discovery(options?)`   | `Promise<OpenPrinterDiscoveryDocument>`           | Read and validate the standard discovery document. |
+| `pair(input, options?)` | `Promise<OpenPrinterPairingResponse>`             | Submit an OPPA pairing request.                    |
+
+### Client methods and HTTP operations
+
+| SDK method           | HTTP request                        | Authentication       | Request body or query                 | Result                         |
+| -------------------- | ----------------------------------- | -------------------- | ------------------------------------- | ------------------------------ |
+| `health()`           | `GET /health`                       | None                 | —                                     | `OpenPrinterHealth`            |
+| `discovery()`        | `GET /.well-known/openprinter`      | None                 | —                                     | `OpenPrinterDiscoveryDocument` |
+| `pair(input)`        | `POST /openprinter/pair`            | Pairing request      | `OpenPrinterPairingRequest` JSON body | `OpenPrinterPairingResponse`   |
+| `jobs.create(input)` | `POST /v1/projects/:projectId/jobs` | `jobs:write` API key | `CreatePrintJobInput` JSON body       | `CreatePrintJobResponse`       |
+| `jobs.list(options)` | `GET /v1/projects/:projectId/jobs`  | `jobs:read` API key  | Optional `state` query parameter      | `ListPrintJobsResponse`        |
+
+`OpenPrinterDiscoveryDocument`, `OpenPrinterPairingRequest`,
+`OpenPrinterPairingResponse`, and `PrintDocument` are protocol types
+consumed by the SDK. Import them from `@openprinter/protocol` when you
+need to annotate a value explicitly; the SDK validates them at
+runtime.
+
+### `client.health()`
+
+```ts
+const health = await openprinter.health();
+
+if (!health.ok) {
+  throw new Error(
+    `OpenPrinter service ${health.service} is not healthy`,
+  );
+}
+```
+
+`health()` calls `GET /health` without an API key.
+
+Sample result:
+
+```json
+{
+  "ok": true,
+  "service": "openprinter"
+}
+```
+
+| Result field | Type      | Description                                 |
+| ------------ | --------- | ------------------------------------------- |
+| `ok`         | `boolean` | Whether the service reports itself as live. |
+| `service`    | `string`  | The service identifier.                     |
+
+### `client.discovery()`
+
+```ts
+const discovery = await openprinter.discovery();
+
+console.log(discovery.server.name);
+console.log(discovery.endpoints.pairing);
+```
+
+`discovery()` calls `GET /.well-known/openprinter` without an API key
+and validates the returned protocol document.
+
+Sample result:
+
+```json
+{
+  "protocolVersion": "1",
+  "server": {
+    "id": "neplex-openprinter-cloud",
+    "name": "Neplex OpenPrinter Cloud",
+    "version": "0.1.0"
+  },
+  "endpoints": {
+    "pairing": "/openprinter/pair",
+    "gateway": "/.well-known/openprinter/gateway"
+  },
+  "authentication": {
+    "method": "pairing-code-ed25519",
+    "challengeTtlSeconds": 30
+  }
+}
+```
+
+| Result field                         | Type                     | Description                                     |
+| ------------------------------------ | ------------------------ | ----------------------------------------------- |
+| `protocolVersion`                    | `'1'`                    | The supported OpenPrinter protocol version.     |
+| `server.id`                          | `string`                 | The server identifier.                          |
+| `server.name`                        | `string`                 | The server brand name.                          |
+| `server.version`                     | `string`                 | The server version.                             |
+| `endpoints.pairing`                  | `string`                 | Pairing route, usually relative to the service. |
+| `endpoints.gateway`                  | `string`                 | Private agent gateway route.                    |
+| `authentication.method`              | `'pairing-code-ed25519'` | The agent authentication method.                |
+| `authentication.challengeTtlSeconds` | `number`                 | Gateway challenge lifetime.                     |
+
+### `client.pair(input, options?)`
+
+Pairing is normally performed by OPPA after a user creates a one-time
+code in the Neplex dashboard. The SDK sends the public key and agent
+metadata; private key generation and signing remain agent
+responsibilities.
+
+```ts
+const paired = await openprinter.pair({
+  protocolVersion: '1',
+  code: 'ABCD-EFGH',
+  agent: {
+    name: 'OPPA',
+    version: '0.1.0',
+    platform: 'macos-arm64',
+    installationId: 'install_01',
+  },
+  credential: {
+    algorithm: 'Ed25519',
+    publicKey: {
+      kty: 'OKP',
+      crv: 'Ed25519',
+      x: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+    },
+  },
+});
+
+console.log(paired.agentId, paired.keyId);
+```
+
+Sample result:
+
+```json
+{
+  "agentId": "agt_01",
+  "keyId": "key_01",
+  "serverId": "neplex-openprinter-cloud",
+  "pairedAt": "2026-08-21T00:00:00.000Z"
+}
+```
+
+| Input field                | Type        | Description                                 |
+| -------------------------- | ----------- | ------------------------------------------- |
+| `protocolVersion`          | `'1'`       | Protocol version declared by the agent.     |
+| `code`                     | `string`    | One-time dashboard pairing code.            |
+| `agent.name`               | `string`    | Human-readable agent name.                  |
+| `agent.version`            | `string`    | Agent version.                              |
+| `agent.platform`           | `string`    | Agent platform identifier.                  |
+| `agent.installationId`     | `string`    | Stable identifier for this installation.    |
+| `credential.algorithm`     | `'Ed25519'` | Public-key algorithm.                       |
+| `credential.publicKey.kty` | `'OKP'`     | JWK key type.                               |
+| `credential.publicKey.crv` | `'Ed25519'` | JWK curve.                                  |
+| `credential.publicKey.x`   | `string`    | 43-character unpadded base64url public key. |
+
+| Result field | Type     | Description                       |
+| ------------ | -------- | --------------------------------- |
+| `agentId`    | `string` | The paired agent identifier.      |
+| `keyId`      | `string` | The paired public-key identifier. |
+| `serverId`   | `string` | The server that accepted pairing. |
+| `pairedAt`   | `string` | ISO 8601 pairing timestamp.       |
+
+Pairing requests are not automatically retried because a pairing code
+is single-use and a successful response could be lost in transit.
+
+### `client.project(projectId)`
+
+```ts
+const project = openprinter.project('project_02');
+const jobs = await project.jobs.list({ state: 'FAILED' });
+```
+
+| Member      | Type                      | Description                                     |
+| ----------- | ------------------------- | ----------------------------------------------- |
+| `projectId` | `string`                  | The immutable project identifier for this view. |
+| `jobs`      | `OpenPrinterJobsResource` | Job methods addressed to this project.          |
+
+## Request options
+
+Both `health()`, `discovery()`, and `pair()` accept
+`OpenPrinterRequestOptions`. Job methods accept the same options as
+their final argument, after the method-specific input/options.
+
+| Option   | Type          | Description                                       |
+| -------- | ------------- | ------------------------------------------------- |
+| `signal` | `AbortSignal` | Cancel the request and any pending retry backoff. |
+
+```ts
+const controller = new AbortController();
+
+const request = openprinter.jobs.list({
+  state: 'PENDING',
+  signal: controller.signal,
+});
+
+controller.abort();
+await request;
+```
+
+## `client.jobs.create(input, options?)`
+
+```ts
+client.jobs.create(
+  input: CreatePrintJobInput,
+  options?: OpenPrinterRequestOptions,
+): Promise<CreatePrintJobResponse>
+```
+
+The API key must include `jobs:write`. The SDK validates the
+structured document before sending
+`POST /v1/projects/:projectId/jobs`.
+
+### `CreatePrintJobInput`
+
+| Field            | Type                               | Required | Description                                                                                                                   |
+| ---------------- | ---------------------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `printerId`      | `string`                           | Yes      | Project printer record ID or project-local remote ID. Maximum 256 characters.                                                 |
+| `idempotencyKey` | `string`                           | Yes      | Stable key for one logical submission. Maximum 256 characters.                                                                |
+| `document`       | `PrintDocument`                    | Yes      | Structured receipt document from `@openprinter/protocol`.                                                                     |
+| `metadata`       | `Readonly<Record<string, string>>` | No       | String metadata echoed in the job projection. The SDK allows up to 32 entries, 64-character keys, and 1,000-character values. |
+| `expiresInMs`    | `number`                           | No       | Integer from 10 seconds through 30 days. The service defaults to 24 hours and may cap retention by plan.                      |
+| `maxAttempts`    | `number`                           | No       | Integer from `1` through `10`; the service defaults to `5`.                                                                   |
+
+```ts
+const result = await openprinter.jobs.create({
+  printerId: 'printer_01',
+  idempotencyKey: 'order_123_receipt_v1',
+  document: {
+    width: 80,
+    sections: [
+      {
+        type: 'text',
+        value: 'Order 123',
+        align: 'center',
+        bold: true,
+      },
+      { type: 'divider' },
+      { type: 'row', left: 'Coffee', right: '$4.00' },
+      { type: 'qr', value: 'https://example.com/orders/123' },
+      { type: 'feed', lines: 2 },
+      { type: 'cut' },
+    ],
+  },
+  metadata: {
+    orderId: 'order_123',
+    source: 'checkout',
+  },
+  maxAttempts: 5,
+});
+
+console.log(result.job.id, result.duplicate);
+```
+
+Sample result:
+
+```json
+{
+  "job": {
+    "id": "job_01",
+    "projectId": "project_01",
+    "printerId": "printer_01",
+    "idempotencyKey": "order_123_receipt_v1",
+    "state": "PENDING",
+    "metadata": {
+      "orderId": "order_123"
+    },
+    "expiresAt": "2026-08-22T00:00:00.000Z",
+    "attemptCount": 0,
+    "maxAttempts": 5,
+    "lastErrorCode": null,
+    "lastErrorMessage": null,
+    "receivedAt": null,
+    "submittedAt": null,
+    "createdAt": "2026-08-21T00:00:00.000Z",
+    "updatedAt": "2026-08-21T00:00:00.000Z"
+  },
+  "duplicate": false
+}
+```
+
+### `CreatePrintJobResponse`
+
+| Field       | Type             | Description                                                                      |
+| ----------- | ---------------- | -------------------------------------------------------------------------------- |
+| `job`       | `OpenPrinterJob` | The public job projection.                                                       |
+| `duplicate` | `boolean`        | `false` for a new job; `true` when the idempotency key returned an existing job. |
+
+A new job returns HTTP `202`. Repeating the same project and
+idempotency key returns HTTP `200` with the existing job and
+`duplicate: true`, making a retry after a network timeout safe.
+
+## `client.jobs.list(options?)`
+
+```ts
+client.jobs.list(
+  options?: ListPrintJobsOptions,
+): Promise<ListPrintJobsResponse>
+```
+
+The API key must include `jobs:read`. This calls
+`GET /v1/projects/:projectId/jobs` and returns the newest 100 public
+job projections.
+
+### `ListPrintJobsOptions`
+
+| Field    | Type                       | Description                            |
+| -------- | -------------------------- | -------------------------------------- |
+| `state`  | `OpenPrinterPrintJobState` | Optional exact lifecycle-state filter. |
+| `signal` | `AbortSignal`              | Optional cancellation signal.          |
+
+```ts
+const failedJobs = await openprinter.jobs.list({ state: 'FAILED' });
+
+for (const job of failedJobs.jobs) {
+  console.log(job.id, job.lastErrorCode, job.lastErrorMessage);
+}
+```
+
+Sample result:
+
+```json
+{
+  "jobs": [
+    {
+      "id": "job_01",
+      "projectId": "project_01",
+      "printerId": "printer_01",
+      "idempotencyKey": "order_123_receipt_v1",
+      "state": "FAILED",
+      "metadata": {
+        "orderId": "order_123"
+      },
+      "expiresAt": "2026-08-22T00:00:00.000Z",
+      "attemptCount": 5,
+      "maxAttempts": 5,
+      "lastErrorCode": "printer_offline",
+      "lastErrorMessage": "The local printer is offline.",
+      "receivedAt": "2026-08-21T00:00:01.000Z",
+      "submittedAt": null,
+      "createdAt": "2026-08-21T00:00:00.000Z",
+      "updatedAt": "2026-08-21T00:03:00.000Z"
+    }
+  ],
+  "keyPrefix": "opk_proj"
+}
+```
+
+There is currently no public pagination or job-detail REST method. The
+list response intentionally excludes the print document.
+
+### `ListPrintJobsResponse`
+
+| Field       | Type                        | Description                                                                |
+| ----------- | --------------------------- | -------------------------------------------------------------------------- |
+| `jobs`      | `readonly OpenPrinterJob[]` | Newest public job projections first.                                       |
+| `keyPrefix` | `string`                    | Safe display prefix for the authenticated API key. It is not a credential. |
+
+## `OpenPrinterJob`
+
+| Field              | Type                                       | Description                                                       |
+| ------------------ | ------------------------------------------ | ----------------------------------------------------------------- |
+| `id`               | `string`                                   | Durable Cloud job identifier.                                     |
+| `projectId`        | `string`                                   | Owning project identifier.                                        |
+| `printerId`        | `string`                                   | Project-local printer identifier.                                 |
+| `idempotencyKey`   | `string`                                   | Application submission key.                                       |
+| `state`            | `OpenPrinterPrintJobState`                 | Current delivery lifecycle state.                                 |
+| `metadata`         | `Readonly<Record<string, string>> \| null` | Application metadata, if supplied.                                |
+| `expiresAt`        | `string`                                   | ISO 8601 expiry timestamp.                                        |
+| `attemptCount`     | `number`                                   | Delivery attempts started so far.                                 |
+| `maxAttempts`      | `number`                                   | Maximum delivery attempts for this job.                           |
+| `lastErrorCode`    | `string \| null`                           | Last bounded failure code, if any.                                |
+| `lastErrorMessage` | `string \| null`                           | Last bounded failure message, if any.                             |
+| `receivedAt`       | `string \| null`                           | ISO timestamp when OPPA durably received the job.                 |
+| `submittedAt`      | `string \| null`                           | ISO timestamp when the local printer backend accepted submission. |
+| `createdAt`        | `string`                                   | ISO 8601 creation timestamp.                                      |
+| `updatedAt`        | `string`                                   | ISO 8601 update timestamp.                                        |
+
+## Constants and literal types
+
+### API-key scopes
+
+```ts
+import {
+  OPENPRINTER_API_KEY_SCOPES,
+  type OpenPrinterApiKeyScope,
+} from '@openprinter/sdk';
+
+console.log(OPENPRINTER_API_KEY_SCOPES);
+// ['jobs:read', 'jobs:write']
+```
+
+| Export                       | Type                                   | Values                        |
+| ---------------------------- | -------------------------------------- | ----------------------------- |
+| `OPENPRINTER_API_KEY_SCOPES` | `readonly ['jobs:read', 'jobs:write']` | `jobs:read`, `jobs:write`     |
+| `OpenPrinterApiKeyScope`     | Union                                  | `'jobs:read' \| 'jobs:write'` |
+
+### Print-job states
+
+| Export                         | Type           | Values                                                                                           |
+| ------------------------------ | -------------- | ------------------------------------------------------------------------------------------------ |
+| `OPENPRINTER_PRINT_JOB_STATES` | Readonly tuple | `PENDING`, `DISPATCHING`, `DELIVERED`, `PRINTING`, `COMPLETED`, `FAILED`, `EXPIRED`, `CANCELLED` |
+| `OpenPrinterPrintJobState`     | Union          | One of the states above.                                                                         |
+
+`DELIVERED` means the paired agent received the job. `submittedAt`
+records a separate local printer-backend submission timestamp; neither
+field universally proves that paper was physically produced.
+
+### API-key providers
+
+```ts
+type OpenPrinterApiKey = string | (() => string | Promise<string>);
+```
+
+Use a provider when the application rotates secrets without rebuilding
+the client:
+
+```ts
+const openprinter = createOpenPrinterClient({
+  apiKey: async () => secretManager.read('openprinter-api-key'),
+});
+```
+
+## Retry behavior
+
+| Option        | Type     | Default | Valid range                                           |
+| ------------- | -------- | ------- | ----------------------------------------------------- |
+| `maxRetries`  | `number` | `2`     | `0`–`10` retries after the initial request.           |
+| `baseDelayMs` | `number` | `250`   | `0`–`60_000` milliseconds.                            |
+| `maxDelayMs`  | `number` | `5_000` | At least `baseDelayMs`, up to `120_000` milliseconds. |
+
+The SDK retries transient `GET` requests and idempotent job `POST`
+requests for HTTP `408`, `425`, `429`, `500`, `502`, `503`, and `504`
+responses. Job creation is safe to retry because its idempotency key
+is part of the request. Pairing requests are never automatically
+retried.
+
+Set `retry: false` to disable all retries:
+
+```ts
+const openprinter = createOpenPrinterClient({
+  retry: false,
+});
+```
+
+## Errors and type guards
+
+| Error                           | Important fields                                          | When it is raised                                              |
+| ------------------------------- | --------------------------------------------------------- | -------------------------------------------------------------- |
+| `OpenPrinterApiError`           | `status`, `method`, `url`, `code`, `requestId`, `details` | The server returns a non-2xx response.                         |
+| `OpenPrinterConfigurationError` | `message`                                                 | Required configuration is missing or invalid before a request. |
+| `OpenPrinterResponseError`      | `method`, `url`, `cause`                                  | A successful response does not match the documented contract.  |
+| `OpenPrinterTimeoutError`       | `timeoutMs`, `method`, `url`                              | A request exceeds its configured deadline.                     |
+
+```ts
+import {
+  isOpenPrinterApiError,
+  isOpenPrinterConfigurationError,
+  isOpenPrinterResponseError,
+  isOpenPrinterTimeoutError,
+} from '@openprinter/sdk';
+
+try {
+  await openprinter.jobs.list();
+} catch (error) {
+  if (isOpenPrinterApiError(error)) {
+    console.error(error.status, error.code, error.requestId);
+  } else if (isOpenPrinterTimeoutError(error)) {
+    console.error(`Timed out after ${error.timeoutMs}ms`);
+  } else if (isOpenPrinterConfigurationError(error)) {
+    console.error('Check the OpenPrinter environment configuration.');
+  } else if (isOpenPrinterResponseError(error)) {
+    console.error(
+      `Unexpected response from ${error.method} ${error.url}`,
+    );
+  }
+}
+```
+
+`OpenPrinterApiError.code` is the server’s machine-readable error
+code, such as `unauthorized`, `forbidden`, `not_found`, or
+`entitlement_limit`. Use the HTTP status and code for branching; do
+not branch on human-readable messages.

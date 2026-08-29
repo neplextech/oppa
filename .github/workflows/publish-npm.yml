@@ -88,3 +88,4 @@ jobs:
 
           publish_if_needed packages/protocol
           publish_if_needed packages/server
+          publish_if_needed packages/sdk

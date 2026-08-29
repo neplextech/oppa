@@ -1,0 +1,63 @@
+---
+title: List print jobs
+description:
+  Read the latest public lifecycle projections for a project.
+---
+
+## Endpoint
+
+```http
+GET /v1/projects/:projectId/jobs
+Authorization: Bearer opk_your_project_key
+```
+
+The API key must include `jobs:read` and belong to the project in the
+URL.
+
+## Filter by state
+
+Pass one optional `state` query parameter:
+
+```http
+GET /v1/projects/project_01/jobs?state=FAILED
+```
+
+Accepted values are `PENDING`, `DISPATCHING`, `DELIVERED`, `PRINTING`,
+`COMPLETED`, `FAILED`, `EXPIRED`, and `CANCELLED`. An unknown value
+returns `400 Bad Request`.
+
+The service returns the newest 100 jobs for the project. The public
+list projection does not include the print document. There is
+currently no pagination or public REST detail endpoint.
+
+## Response
+
+```json
+{
+  "jobs": [
+    {
+      "id": "job_01",
+      "projectId": "project_01",
+      "printerId": "printer_01",
+      "idempotencyKey": "order_123_receipt_v1",
+      "state": "DELIVERED",
+      "metadata": {
+        "orderId": "order_123"
+      },
+      "expiresAt": "2026-08-22T00:00:00.000Z",
+      "attemptCount": 1,
+      "maxAttempts": 5,
+      "lastErrorCode": null,
+      "lastErrorMessage": null,
+      "receivedAt": "2026-08-21T00:00:04.000Z",
+      "submittedAt": "2026-08-21T00:00:05.000Z",
+      "createdAt": "2026-08-21T00:00:00.000Z",
+      "updatedAt": "2026-08-21T00:00:05.000Z"
+    }
+  ],
+  "keyPrefix": "opk_***********"
+}
+```
+
+`keyPrefix` is a safe display prefix for the authenticated API key. It
+is not the secret and should not be used as a credential.

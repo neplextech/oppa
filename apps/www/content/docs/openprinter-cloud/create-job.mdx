@@ -1,0 +1,101 @@
+---
+title: Create a print job
+description:
+  Submit an idempotent structured print job to a project printer.
+---
+
+## Endpoint
+
+```http
+POST /v1/projects/:projectId/jobs
+Authorization: Bearer opk_your_project_key
+Content-Type: application/json
+```
+
+The API key must include `jobs:write` and belong to the project in the
+URL.
+
+## Request body
+
+| Field            | Type         | Details                                                                                                           |
+| ---------------- | ------------ | ----------------------------------------------------------------------------------------------------------------- |
+| `printerId`      | string       | Project printer record ID or the printer's project-local remote ID. Maximum 256 characters.                       |
+| `idempotencyKey` | string       | Stable application key for this logical submission. Maximum 256 characters.                                       |
+| `document`       | object       | Required structured `PrintDocument`; see [print documents](/docs/print-documents).                                |
+| `metadata`       | object       | Optional string map. Keys are limited to 64 characters and values to 1,000 characters.                            |
+| `expiresInMs`    | safe integer | Optional requested retention duration. Defaults to 24 hours and is capped by the project's retention entitlement. |
+| `maxAttempts`    | integer      | Optional delivery-attempt limit from `1` through `10`. Defaults to `5`.                                           |
+
+The document must use protocol v1 and contain a `width` of `58` or
+`80` plus one to 256 sections. Supported section types are `text`,
+`row`, `divider`, `image`, `qr`, `barcode`, `feed`, and `cut`. The
+canonical protocol page documents each section's fields and bounds.
+
+Example:
+
+```json
+{
+  "printerId": "printer_01",
+  "idempotencyKey": "order_123_receipt_v1",
+  "document": {
+    "width": 80,
+    "sections": [
+      {
+        "type": "text",
+        "value": "Thank you",
+        "align": "center",
+        "bold": true
+      },
+      { "type": "divider" },
+      { "type": "row", "left": "Subtotal", "right": "$12.00" },
+      { "type": "qr", "value": "https://example.com/orders/123" },
+      { "type": "feed", "lines": 2 },
+      { "type": "cut" }
+    ]
+  },
+  "metadata": {
+    "orderId": "order_123",
+    "source": "checkout"
+  },
+  "maxAttempts": 5
+}
+```
+
+## Responses
+
+New jobs return `202 Accepted`:
+
+```json
+{
+  "job": {
+    "id": "job_01",
+    "projectId": "project_01",
+    "printerId": "printer_01",
+    "idempotencyKey": "order_123_receipt_v1",
+    "state": "PENDING",
+    "metadata": {
+      "orderId": "order_123"
+    },
+    "expiresAt": "2026-08-22T00:00:00.000Z",
+    "attemptCount": 0,
+    "maxAttempts": 5,
+    "lastErrorCode": null,
+    "lastErrorMessage": null,
+    "receivedAt": null,
+    "submittedAt": null,
+    "createdAt": "2026-08-21T00:00:00.000Z",
+    "updatedAt": "2026-08-21T00:00:00.000Z"
+  },
+  "duplicate": false
+}
+```
+
+If the same project submits the same `idempotencyKey` again, the
+service returns `200 OK`, the existing job, and `duplicate: true`.
+This makes a retry after a network timeout safe without an
+application-level duplicate guard.
+
+The server persists the job before starting delivery. A missing
+printer returns `404`; a disabled printer returns `409`; and a project
+that has reached its managed monthly job entitlement returns `402`
+with `error.code: "entitlement_limit"`.

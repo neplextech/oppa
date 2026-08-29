@@ -10,6 +10,11 @@ challenge, and runs each protocol session. The application owns
 HTTP/WebSocket routing, durable stores, rate limiting, live-session
 routing, cluster coordination, and durable jobs.
 
+For a managed implementation of the same public boundary, see
+[Neplex OpenPrinter Cloud](/cloud). The open-source server SDK and
+self-hosting path are completely free; managed pricing only applies to
+the Neplex cloud API.
+
 ```ts
 const server = createOpenPrinterServer({
   brand: { name: 'Acme Print Service' },

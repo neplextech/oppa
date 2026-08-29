@@ -6,11 +6,13 @@
   "scripts": {
     "dev": "next dev --port 3000",
     "build": "next build",
+    "docs:asyncapi": "node scripts/generate-asyncapi-docs.mjs",
     "typecheck": "fumadocs-mdx && tsc --noEmit --pretty false",
     "lint": "eslint app components lib source.config.ts --max-warnings=0",
     "postinstall": "fumadocs-mdx"
   },
   "dependencies": {
+    "@fumadocs/asyncapi": "catalog:",
     "@orama/orama": "catalog:",
     "fumadocs-core": "^16.13.0",
     "fumadocs-mdx": "^15.2.0",

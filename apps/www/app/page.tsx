@@ -102,6 +102,15 @@ export default function HomePage() {
                   Download OPPA
                 </Link>
               </div>
+              <a
+                className="mt-4 inline-flex items-center gap-1.5 text-[12.5px] font-medium text-orange-400 transition hover:text-orange-300"
+                href="https://neplextech.com/signup"
+                rel="noreferrer"
+                target="_blank"
+              >
+                Get started for free
+                <ArrowUpRight className="size-3.5" aria-hidden />
+              </a>
             </div>
 
             <ProtocolTrace />
@@ -193,6 +202,48 @@ export default function HomePage() {
         </div>
       </section>
 
+      <section id="cloud" className="border-b border-white/10">
+        <div className="mx-auto grid max-w-6xl gap-10 px-6 py-20 lg:grid-cols-[1fr_auto] lg:items-center lg:px-8">
+          <div className="max-w-xl">
+            <div className="font-mono text-[11px] tracking-wide text-orange-400">NEPLEX MANAGED SERVICE</div>
+            <h2 className="mt-3 text-2xl font-semibold tracking-[-0.015em]">Neplex OpenPrinter Cloud.</h2>
+            <p className="mt-3 text-[14px] leading-6 text-stone-400">
+              Pair OPPA from a managed dashboard, create project API keys, and submit durable print jobs without
+              operating the cloud gateway yourself. Self-hosting OpenPrinter remains completely free; pricing applies
+              only to the managed cloud API.
+            </p>
+            <div className="mt-6 flex flex-wrap items-center gap-4">
+              <a
+                className="inline-flex h-9 items-center gap-1.5 rounded bg-stone-100 px-4 text-[13px] font-medium text-stone-900 transition hover:bg-white"
+                href="https://neplextech.com/signup"
+                rel="noreferrer"
+                target="_blank"
+              >
+                Get started for free
+                <ArrowUpRight className="size-3.5" aria-hidden />
+              </a>
+              <Link
+                className="inline-flex items-center gap-1.5 text-[13px] font-medium text-orange-400 hover:text-orange-300"
+                href="/cloud"
+              >
+                Explore OpenPrinter Cloud
+                <ArrowRight className="size-3.5" aria-hidden />
+              </Link>
+            </div>
+          </div>
+          <div className="border-y border-white/10 py-5 font-mono text-[12px] text-stone-400 lg:w-72">
+            <div className="flex items-center justify-between border-b border-white/10 pb-3">
+              <span>self-hosted</span>
+              <span className="text-emerald-400">$0 / forever</span>
+            </div>
+            <div className="flex items-center justify-between pt-3">
+              <span>managed API</span>
+              <span className="text-emerald-400">Free tier available</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <section id="constraints" className="border-b border-white/10">
         <div className="mx-auto max-w-6xl px-6 py-20 lg:px-8">
           <div className="max-w-lg">
@@ -265,6 +316,9 @@ export default function HomePage() {
             projects.
           </span>
           <div className="flex gap-5">
+            <Link className="hover:text-stone-300" href="/pricing">
+              Pricing
+            </Link>
             <Link className="hover:text-stone-300" href="/downloads">
               Downloads
             </Link>

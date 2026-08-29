@@ -1,0 +1,1565 @@
+asyncapi: 3.0.0
+info:
+  title: Neplex OpenPrinter Cloud Gateway
+  version: '1'
+  description: |
+    The private gateway contract used by OPPA agents when they connect to
+    Neplex OpenPrinter Cloud. This checked-in AsyncAPI document is a stable
+    documentation snapshot of the OpenPrinter protocol; it does not fetch or
+    reveal the private Neplex service at build time.
+  license:
+    name: MIT
+    url: https://github.com/neplextech/oppa/blob/main/LICENSE
+  externalDocs:
+    description: OpenPrinter protocol documentation
+    url: https://oppa.neplex.dev/docs/protocol
+defaultContentType: application/json
+servers:
+  managedCloud:
+    host: '{openprinterHost}'
+    pathname: /.well-known/openprinter/gateway
+    protocol: wss
+    description: |
+      Set this host to the OpenPrinter Cloud base host supplied for your
+      project. The public API and the authenticated agent gateway may be
+      deployed behind different origins.
+    variables:
+      openprinterHost:
+        default: openprinter.neplextech.com
+        description: The configured OpenPrinter service host.
+channels:
+  gateway:
+    address: /.well-known/openprinter/gateway
+    summary: The authenticated, bidirectional OPPA gateway socket.
+    description: The authenticated, bidirectional OPPA gateway socket.
+    messages:
+      authChallenge:
+        $ref: '#/components/messages/AuthChallenge'
+      authResponse:
+        $ref: '#/components/messages/AuthResponse'
+      authAccepted:
+        $ref: '#/components/messages/AuthAccepted'
+      authRejected:
+        $ref: '#/components/messages/AuthRejected'
+      agentHello:
+        $ref: '#/components/messages/AgentHello'
+      serverHello:
+        $ref: '#/components/messages/ServerHello'
+      agentHeartbeat:
+        $ref: '#/components/messages/AgentHeartbeat'
+      serverHeartbeat:
+        $ref: '#/components/messages/ServerHeartbeat'
+      agentPrinterInventory:
+        $ref: '#/components/messages/AgentPrinterInventory'
+      agentPrinterInventoryChanged:
+        $ref: '#/components/messages/AgentPrinterInventoryChanged'
+      serverRequestPrinterInventory:
+        $ref: '#/components/messages/ServerRequestPrinterInventory'
+      serverPrintJob:
+        $ref: '#/components/messages/ServerPrintJob'
+      agentJobReceived:
+        $ref: '#/components/messages/AgentJobReceived'
+      agentJobSubmitted:
+        $ref: '#/components/messages/AgentJobSubmitted'
+      agentJobFailed:
+        $ref: '#/components/messages/AgentJobFailed'
+      serverCancelJob:
+        $ref: '#/components/messages/ServerCancelJob'
+      serverConfigurationInvalidated:
+        $ref: '#/components/messages/ServerConfigurationInvalidated'
+      serverDisconnect:
+        $ref: '#/components/messages/ServerDisconnect'
+      agentDiagnostics:
+        $ref: '#/components/messages/AgentDiagnostics'
+operations:
+  serverSendsAuthChallenge:
+    action: send
+    channel:
+      $ref: '#/channels/gateway'
+    title: Server sends an authentication challenge
+    summary: Send a socket-bound authentication challenge.
+    description: |
+      The server starts authentication by sending an unpredictable challenge
+      immediately after the WebSocket connection opens. The agent must sign
+      the decoded `payload` before `expiresAt`; normal application messages
+      are not accepted until authentication completes.
+    tags:
+      - name: Authentication
+    messages:
+      - $ref: '#/channels/gateway/messages/authChallenge'
+  agentSendsAuthResponse:
+    action: receive
+    channel:
+      $ref: '#/channels/gateway'
+    title: Agent sends an authentication response
+    summary: Prove possession of the paired Ed25519 private key.
+    description: |
+      The agent signs the exact decoded challenge payload with the private key
+      created during pairing. It echoes the challenge, agent, and key
+      identities so the server can select the paired public key. Private key
+      bytes never cross the gateway.
+    tags:
+      - name: Authentication
+    messages:
+      - $ref: '#/channels/gateway/messages/authResponse'
+  serverSendsAuthAccepted:
+    action: send
+    channel:
+      $ref: '#/channels/gateway'
+    title: Server accepts authentication
+    summary: Confirm that normal protocol traffic may begin.
+    description: |
+      The server sends this frame only after validating the signature. The
+      returned session identity and heartbeat interval apply to the normal
+      versioned application protocol. Send `agent.hello` next.
+    tags:
+      - name: Authentication
+    messages:
+      - $ref: '#/channels/gateway/messages/authAccepted'
+  serverSendsAuthRejected:
+    action: send
+    channel:
+      $ref: '#/channels/gateway'
+    title: Server rejects authentication
+    summary: Reject an invalid or expired authentication proof.
+    description: |
+      The server sends a bounded failure reason and closes the unauthenticated
+      socket. Authentication failures are terminal for this connection; the
+      agent must establish a new connection before retrying.
+    tags:
+      - name: Authentication
+    messages:
+      - $ref: '#/channels/gateway/messages/authRejected'
+  agentSendsHello:
+    action: receive
+    channel:
+      $ref: '#/channels/gateway'
+    title: Agent sends hello
+    summary: Advertise the agent identity and supported protocol versions.
+    description: |
+      This is the first application message on every authenticated connection.
+      The `agentId` must match the identity proven during authentication. A
+      server selects one shared protocol version in `server.hello`.
+    tags:
+      - name: Agent to cloud
+    messages:
+      - $ref: '#/channels/gateway/messages/agentHello'
+  serverSendsHello:
+    action: send
+    channel:
+      $ref: '#/channels/gateway'
+    title: Server sends hello
+    summary: Select the protocol version and advertise service limits.
+    description: |
+      The server correlates this response to `agent.hello`, identifies the
+      service and session, and advertises the heartbeat and wire-size limits
+      the agent must observe for the rest of the connection.
+    tags:
+      - name: Cloud to agent
+    messages:
+      - $ref: '#/channels/gateway/messages/serverHello'
+  agentSendsHeartbeat:
+    action: receive
+    channel:
+      $ref: '#/channels/gateway'
+    title: Agent sends heartbeat
+    summary: Respond to a server heartbeat request.
+    description: |
+      Reply to each `server.heartbeat` by copying its `messageId` into
+      `correlationId`. The uptime value is informational; the correlation is
+      what proves that this connection is responsive.
+    tags:
+      - name: Agent to cloud
+    messages:
+      - $ref: '#/channels/gateway/messages/agentHeartbeat'
+  serverSendsHeartbeat:
+    action: send
+    channel:
+      $ref: '#/channels/gateway'
+    title: Server sends heartbeat
+    summary: Probe agent liveness.
+    description: |
+      The server periodically sends a heartbeat with a response deadline. If
+      the correlated `agent.heartbeat` is not received in time, the server
+      closes the session and may reconnect according to its retry policy.
+    tags:
+      - name: Cloud to agent
+    messages:
+      - $ref: '#/channels/gateway/messages/serverHeartbeat'
+  agentSendsPrinterInventory:
+    action: receive
+    channel:
+      $ref: '#/channels/gateway'
+    title: Agent sends printer inventory
+    summary: Publish a complete local printer inventory.
+    description: |
+      The agent sends a complete snapshot after the handshake and whenever a
+      full refresh is needed. `revision` increases with the agent's local
+      inventory state. Include `correlationId` when this snapshot answers
+      `server.request_printer_inventory`.
+    tags:
+      - name: Agent to cloud
+    messages:
+      - $ref: '#/channels/gateway/messages/agentPrinterInventory'
+  agentSendsPrinterInventoryChanged:
+    action: receive
+    channel:
+      $ref: '#/channels/gateway'
+    title: Agent reports inventory changes
+    summary: Publish an incremental printer inventory update.
+    description: |
+      The agent sends additions, updates, and removals relative to the prior
+      inventory revision. A server applies the change only when the revision
+      advances without conflicting with its current registry.
+    tags:
+      - name: Agent to cloud
+    messages:
+      - $ref: '#/channels/gateway/messages/agentPrinterInventoryChanged'
+  serverRequestsPrinterInventory:
+    action: send
+    channel:
+      $ref: '#/channels/gateway'
+    title: Server requests printer inventory
+    summary: Request a complete printer inventory snapshot.
+    description: |
+      This request has an empty payload. The agent answers with
+      `agent.printer_inventory` and sets that message's `correlationId` to
+      this request's `messageId`.
+    tags:
+      - name: Cloud to agent
+    messages:
+      - $ref: '#/channels/gateway/messages/serverRequestPrinterInventory'
+  serverSendsPrintJob:
+    action: send
+    channel:
+      $ref: '#/channels/gateway'
+    title: Server sends a print job
+    summary: Deliver a durable structured print job at least once.
+    description: |
+      The server sends a queued job after the session is ready. Delivery is
+      at-least-once: a transport retry can deliver the same job again, so the
+      agent must deduplicate using `jobId` and `idempotencyKey` before sending
+      `agent.job_received`.
+    tags:
+      - name: Cloud to agent
+    messages:
+      - $ref: '#/channels/gateway/messages/serverPrintJob'
+  agentAcknowledgesJob:
+    action: receive
+    channel:
+      $ref: '#/channels/gateway'
+    title: Agent acknowledges a job
+    summary: Acknowledge that a job is durably persisted locally.
+    description: |
+      Send this acknowledgement only after the complete job is safely stored
+      in the agent's local queue. `received` confirms local durability; it does
+      not mean that a printer backend has accepted or physically produced the
+      job.
+    tags:
+      - name: Agent to cloud
+    messages:
+      - $ref: '#/channels/gateway/messages/agentJobReceived'
+  agentReportsSubmission:
+    action: receive
+    channel:
+      $ref: '#/channels/gateway'
+    title: Agent reports submission
+    summary: Report local backend acceptance of a print job.
+    description: |
+      Send this result after the selected local printer backend accepts the
+      job. `submitted` is a backend handoff milestone and must not be treated
+      as proof that paper was physically produced.
+    tags:
+      - name: Agent to cloud
+    messages:
+      - $ref: '#/channels/gateway/messages/agentJobSubmitted'
+  agentReportsFailure:
+    action: receive
+    channel:
+      $ref: '#/channels/gateway'
+    title: Agent reports failure
+    summary: Report a recoverable or terminal local failure.
+    description: |
+      Send a bounded, sanitized error when the agent cannot complete delivery
+      or submission. `retryable` tells the server whether another delivery
+      attempt may be useful; do not include credentials or the full document.
+    tags:
+      - name: Agent to cloud
+    messages:
+      - $ref: '#/channels/gateway/messages/agentJobFailed'
+  serverCancelsJob:
+    action: send
+    channel:
+      $ref: '#/channels/gateway'
+    title: Server cancels a job
+    summary: Request cancellation before local submission.
+    description: |
+      The server may cancel a queued or locally persisted job before backend
+      submission. The agent may race with submission; once a backend has
+      accepted the job, cancellation is no longer guaranteed.
+    tags:
+      - name: Cloud to agent
+    messages:
+      - $ref: '#/channels/gateway/messages/serverCancelJob'
+  serverInvalidatesConfiguration:
+    action: send
+    channel:
+      $ref: '#/channels/gateway'
+    title: Server invalidates configuration
+    summary: Tell the agent to refresh host-owned configuration.
+    description: |
+      Use this notification when host-owned agent or printer configuration is
+      stale. `scope` narrows the refresh and `revision` lets the agent avoid
+      applying an older configuration snapshot.
+    tags:
+      - name: Cloud to agent
+    messages:
+      - $ref: '#/channels/gateway/messages/serverConfigurationInvalidated'
+  serverDisconnects:
+    action: send
+    channel:
+      $ref: '#/channels/gateway'
+    title: Server disconnects
+    summary: Explain an intentional disconnect and reconnect policy.
+    description: |
+      The server sends this frame before an intentional close. `reconnect`
+      states whether the agent should reconnect, while `retryAfterMs` can
+      provide a lower-bound delay for the next attempt.
+    tags:
+      - name: Cloud to agent
+    messages:
+      - $ref: '#/channels/gateway/messages/serverDisconnect'
+  agentSendsDiagnostics:
+    action: receive
+    channel:
+      $ref: '#/channels/gateway'
+    title: Agent sends diagnostics
+    summary: Send a bounded operational summary.
+    description: |
+      The agent may send a sanitized health snapshot for support and service
+      monitoring. Keep diagnostics bounded and omit credentials, private keys,
+      and complete print documents.
+    tags:
+      - name: Agent to cloud
+    messages:
+      - $ref: '#/channels/gateway/messages/agentDiagnostics'
+components:
+  messages:
+    AuthChallenge:
+      name: auth.challenge
+      title: Authentication challenge
+      summary: An unpredictable, socket-bound challenge that expires quickly.
+      description: |
+        Sent by the server before any normal application traffic. The agent
+        signs the decoded `payload` bytes exactly as received and must answer
+        before `expiresAt`.
+      payload:
+        $ref: '#/components/schemas/AuthChallenge'
+      examples:
+        - name: challenge
+          summary: The server begins authentication.
+          payload:
+            type: auth.challenge
+            challengeId: challenge_01
+            payload: Y2hhbGxlbmdl
+            expiresAt: '2026-08-21T00:00:30Z'
+    AuthResponse:
+      name: auth.response
+      title: Authentication response
+      summary: The agent signature over the exact decoded challenge payload.
+      description: |
+        Sent by the agent on the same socket as the challenge. The server uses
+        `agentId` and `keyId` to find the paired public key, then verifies the
+        Ed25519 signature over the decoded challenge payload.
+      payload:
+        $ref: '#/components/schemas/AuthResponse'
+      examples:
+        - name: response
+          summary: The agent proves possession of its paired key.
+          payload:
+            type: auth.response
+            challengeId: challenge_01
+            agentId: agent_01
+            keyId: key_01
+            algorithm: Ed25519
+            signature: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+    AuthAccepted:
+      name: auth.accepted
+      title: Authentication accepted
+      description: |
+        Sent after the server validates the response. The agent may begin the
+        versioned OpenPrinter handshake after receiving this frame.
+      payload:
+        $ref: '#/components/schemas/AuthAccepted'
+      examples:
+        - name: accepted
+          summary: The server enables normal protocol traffic.
+          payload:
+            type: auth.accepted
+            sessionId: session_01
+            agentId: agent_01
+            heartbeatIntervalMs: 30000
+    AuthRejected:
+      name: auth.rejected
+      title: Authentication rejected
+      description: |
+        Sent before the server closes an unauthenticated socket. The message is
+        intentionally bounded and does not disclose credential or signature
+        details.
+      payload:
+        $ref: '#/components/schemas/AuthRejected'
+      examples:
+        - name: rejected
+          summary: The server rejects an invalid proof.
+          payload:
+            type: auth.rejected
+            code: invalid_signature
+            message: Gateway authentication failed.
+    AgentHello:
+      name: agent.hello
+      title: Agent hello
+      description: |
+        The first application message on every authenticated connection. It
+        identifies the running product and advertises the protocol versions the
+        agent can speak.
+      payload:
+        $ref: '#/components/schemas/AgentHello'
+      examples:
+        - name: hello
+          summary: OPPA announces its identity after authentication.
+          payload:
+            protocolVersion: '1'
+            messageId: message_hello_01
+            sentAt: '2026-08-21T00:00:01Z'
+            type: agent.hello
+            payload:
+              agentId: agent_01
+              agentVersion: 0.1.0
+              productId: oppa
+              productVersion: 0.1.0
+              supportedProtocolVersions: ['1']
+    ServerHello:
+      name: server.hello
+      title: Server hello
+      description: |
+        The server's correlated response to `agent.hello`. It selects the
+        protocol version and communicates service limits for this session.
+      payload:
+        $ref: '#/components/schemas/ServerHello'
+      examples:
+        - name: hello
+          summary: The server confirms the negotiated session.
+          payload:
+            protocolVersion: '1'
+            messageId: message_hello_response_01
+            sentAt: '2026-08-21T00:00:01Z'
+            correlationId: message_hello_01
+            type: server.hello
+            payload:
+              serverId: neplex-openprinter-cloud
+              serverVersion: 0.1.0
+              brand:
+                name: Neplex OpenPrinter Cloud
+              sessionId: session_01
+              supportedProtocolVersions: ['1']
+              selectedProtocolVersion: '1'
+              heartbeatIntervalMs: 30000
+              maxMessageBytes: 2097152
+    AgentHeartbeat:
+      name: agent.heartbeat
+      title: Agent heartbeat
+      description: |
+        A correlated liveness response. The `correlationId` points to the
+        `server.heartbeat` message being answered.
+      payload:
+        $ref: '#/components/schemas/AgentHeartbeat'
+      examples:
+        - name: heartbeat
+          summary: OPPA answers a server liveness probe.
+          payload:
+            protocolVersion: '1'
+            messageId: heartbeat_response_01
+            sentAt: '2026-08-21T00:00:31Z'
+            correlationId: heartbeat_01
+            type: agent.heartbeat
+            payload:
+              uptimeSeconds: 31
+    ServerHeartbeat:
+      name: server.heartbeat
+      title: Server heartbeat
+      description: |
+        A liveness probe sent after the session is connected. The agent must
+        return an `agent.heartbeat` with this message's ID as its
+        `correlationId` before `timeoutMs` elapses.
+      payload:
+        $ref: '#/components/schemas/ServerHeartbeat'
+      examples:
+        - name: heartbeat
+          summary: The server probes the active session.
+          payload:
+            protocolVersion: '1'
+            messageId: heartbeat_01
+            sentAt: '2026-08-21T00:00:30Z'
+            type: server.heartbeat
+            payload:
+              timeoutMs: 120000
+    AgentPrinterInventory:
+      name: agent.printer_inventory
+      title: Printer inventory
+      description: |
+        A complete snapshot of the printers currently visible to the agent.
+        The optional correlation ID is used when the snapshot answers a server
+        inventory request.
+      payload:
+        $ref: '#/components/schemas/AgentPrinterInventory'
+      examples:
+        - name: snapshot
+          summary: OPPA reports one local printer.
+          payload:
+            protocolVersion: '1'
+            messageId: inventory_01
+            sentAt: '2026-08-21T00:00:02Z'
+            correlationId: inventory_request_01
+            type: agent.printer_inventory
+            payload:
+              revision: 7
+              printers:
+                - id: printer_01
+                  fingerprint: usb:printer_01
+                  name: Receipt printer
+                  kind: local
+                  enabled: true
+                  availability: online
+                  capabilities:
+                    mediaWidths: [80]
+                    raster: true
+                    cut: true
+                    qr: true
+                    barcode: true
+                  connection:
+                    type: system
+                    systemName: /dev/usb/lp0
+    AgentPrinterInventoryChanged:
+      name: agent.printer_inventory_changed
+      title: Printer inventory changed
+      description: |
+        A delta from the previous inventory revision. Apply additions and
+        updates, remove the listed IDs, and retain the new `revision` as the
+        current snapshot version.
+      payload:
+        $ref: '#/components/schemas/AgentPrinterInventoryChanged'
+      examples:
+        - name: change
+          summary: The agent removes a printer from its inventory.
+          payload:
+            protocolVersion: '1'
+            messageId: inventory_change_01
+            sentAt: '2026-08-21T00:01:02Z'
+            type: agent.printer_inventory_changed
+            payload:
+              revision: 8
+              added: []
+              updated: []
+              removedPrinterIds: [printer_old]
+    ServerRequestPrinterInventory:
+      name: server.request_printer_inventory
+      title: Request printer inventory
+      description: |
+        A request with an empty payload. The agent returns a complete
+        `agent.printer_inventory` snapshot and correlates it to this request.
+      payload:
+        $ref: '#/components/schemas/ServerRequestPrinterInventory'
+      examples:
+        - name: request
+          summary: The server asks for a fresh snapshot.
+          payload:
+            protocolVersion: '1'
+            messageId: inventory_request_01
+            sentAt: '2026-08-21T00:00:01Z'
+            type: server.request_printer_inventory
+            payload: {}
+    ServerPrintJob:
+      name: server.print_job
+      title: Print job
+      description: |
+        An at-least-once delivery of a structured print job. The agent stores
+        the complete payload before acknowledging it and uses the job identity
+        to make redelivery safe.
+      payload:
+        $ref: '#/components/schemas/ServerPrintJob'
+      examples:
+        - name: receipt
+          summary: The server delivers a small receipt job.
+          payload:
+            protocolVersion: '1'
+            messageId: job_delivery_01
+            sentAt: '2026-08-21T00:00:05Z'
+            type: server.print_job
+            payload:
+              jobId: job_01
+              idempotencyKey: order_123_receipt_v1
+              printerId: printer_01
+              createdAt: '2026-08-21T00:00:00Z'
+              document:
+                width: 80
+                sections:
+                  - type: text
+                    value: Order 123
+                    align: center
+                    bold: true
+                  - type: divider
+                  - type: row
+                    left: Coffee
+                    right: '$4.00'
+                  - type: feed
+                    lines: 2
+                  - type: cut
+              metadata:
+                source: checkout
+                orderId: order_123
+    AgentJobReceived:
+      name: agent.job_received
+      title: Job received
+      description: |
+        A durable receipt for a delivered job. The correlation ID points to the
+        server's `server.print_job` message; it is safe for the server to stop
+        redelivering after this acknowledgement.
+      payload:
+        $ref: '#/components/schemas/AgentJobReceived'
+      examples:
+        - name: received
+          summary: OPPA confirms local persistence.
+          payload:
+            protocolVersion: '1'
+            messageId: job_received_01
+            sentAt: '2026-08-21T00:00:05Z'
+            correlationId: job_delivery_01
+            type: agent.job_received
+            payload:
+              jobId: job_01
+              idempotencyKey: order_123_receipt_v1
+              status: received
+              receivedAt: '2026-08-21T00:00:05Z'
+    AgentJobSubmitted:
+      name: agent.job_submitted
+      title: Job submitted
+      description: |
+        A backend handoff result for a job. It identifies the printer that
+        accepted the submission, but does not assert that paper was physically
+        produced.
+      payload:
+        $ref: '#/components/schemas/AgentJobSubmitted'
+      examples:
+        - name: submitted
+          summary: The local backend accepts the job.
+          payload:
+            protocolVersion: '1'
+            messageId: job_submitted_01
+            sentAt: '2026-08-21T00:00:06Z'
+            correlationId: job_delivery_01
+            type: agent.job_submitted
+            payload:
+              jobId: job_01
+              idempotencyKey: order_123_receipt_v1
+              printerId: printer_01
+              status: submitted
+              submittedAt: '2026-08-21T00:00:06Z'
+    AgentJobFailed:
+      name: agent.job_failed
+      title: Job failed
+      description: |
+        A bounded failure report for a job that could not be completed. The
+        server can use `retryable` to decide whether to schedule another
+        delivery attempt.
+      payload:
+        $ref: '#/components/schemas/AgentJobFailed'
+      examples:
+        - name: failed
+          summary: OPPA reports a retryable printer error.
+          payload:
+            protocolVersion: '1'
+            messageId: job_failed_01
+            sentAt: '2026-08-21T00:00:06Z'
+            correlationId: job_delivery_01
+            type: agent.job_failed
+            payload:
+              jobId: job_01
+              idempotencyKey: order_123_receipt_v1
+              status: failed
+              failedAt: '2026-08-21T00:00:06Z'
+              error:
+                code: printer_offline
+                message: The selected printer is offline.
+                retryable: true
+    ServerCancelJob:
+      name: server.cancel_job
+      title: Cancel job
+      description: |
+        A best-effort request to stop a job before printer submission. The
+        agent may receive this message at the same time as local processing.
+      payload:
+        $ref: '#/components/schemas/ServerCancelJob'
+      examples:
+        - name: cancel
+          summary: The server asks the agent to stop a queued job.
+          payload:
+            protocolVersion: '1'
+            messageId: job_cancel_01
+            sentAt: '2026-08-21T00:00:05Z'
+            type: server.cancel_job
+            payload:
+              jobId: job_01
+              reason: The order was voided.
+    ServerConfigurationInvalidated:
+      name: server.configuration_invalidated
+      title: Configuration invalidated
+      description: |
+        A notification that host-owned configuration has changed. The agent
+        refreshes only the requested scope and may use `revision` to avoid
+        applying an older snapshot.
+      payload:
+        $ref: '#/components/schemas/ServerConfigurationInvalidated'
+      examples:
+        - name: printers
+          summary: The server asks for a printer configuration refresh.
+          payload:
+            protocolVersion: '1'
+            messageId: config_invalidated_01
+            sentAt: '2026-08-21T00:02:00Z'
+            type: server.configuration_invalidated
+            payload:
+              scope: printers
+              revision: printers_8
+    ServerDisconnect:
+      name: server.disconnect
+      title: Disconnect
+      description: |
+        A final application frame before an intentional server close. The
+        reconnect flag and optional delay give the agent the host's reconnect
+        policy without exposing implementation details.
+      payload:
+        $ref: '#/components/schemas/ServerDisconnect'
+      examples:
+        - name: maintenance
+          summary: The server asks the agent to reconnect after maintenance.
+          payload:
+            protocolVersion: '1'
+            messageId: disconnect_01
+            sentAt: '2026-08-21T00:03:00Z'
+            type: server.disconnect
+            payload:
+              code: server_maintenance
+              reason: The gateway is restarting for maintenance.
+              reconnect: true
+              retryAfterMs: 5000
+    AgentDiagnostics:
+      name: agent.diagnostics
+      title: Agent diagnostics
+      description: |
+        A sanitized operational snapshot. It is intended for bounded health
+        reporting and never contains private keys, credentials, or complete
+        print documents.
+      payload:
+        $ref: '#/components/schemas/AgentDiagnostics'
+      examples:
+        - name: healthy
+          summary: OPPA reports a healthy local runtime.
+          payload:
+            protocolVersion: '1'
+            messageId: diagnostics_01
+            sentAt: '2026-08-21T00:04:00Z'
+            type: agent.diagnostics
+            payload:
+              agentId: agent_01
+              collectedAt: '2026-08-21T00:04:00Z'
+              health: healthy
+              queueDepth: 0
+              printersOnline: 1
+              printersTotal: 1
+              issues: []
+  schemas:
+    Identifier:
+      type: string
+      minLength: 1
+      maxLength: 256
+    Timestamp:
+      type: string
+      format: date-time
+    Base64Url:
+      type: string
+      minLength: 1
+      maxLength: 4096
+      pattern: '^[A-Za-z0-9_-]+$'
+    AuthChallenge:
+      type: object
+      additionalProperties: false
+      required: [type, challengeId, payload, expiresAt]
+      properties:
+        type:
+          const: auth.challenge
+        challengeId:
+          $ref: '#/components/schemas/Identifier'
+        payload:
+          $ref: '#/components/schemas/Base64Url'
+        expiresAt:
+          $ref: '#/components/schemas/Timestamp'
+    AuthResponse:
+      type: object
+      additionalProperties: false
+      required: [type, challengeId, agentId, keyId, algorithm, signature]
+      properties:
+        type:
+          const: auth.response
+        challengeId:
+          $ref: '#/components/schemas/Identifier'
+        agentId:
+          $ref: '#/components/schemas/Identifier'
+        keyId:
+          $ref: '#/components/schemas/Identifier'
+        algorithm:
+          const: Ed25519
+        signature:
+          type: string
+          minLength: 86
+          maxLength: 86
+          pattern: '^[A-Za-z0-9_-]{86}$'
+    AuthAccepted:
+      type: object
+      additionalProperties: false
+      required: [type, sessionId, agentId, heartbeatIntervalMs]
+      properties:
+        type:
+          const: auth.accepted
+        sessionId:
+          $ref: '#/components/schemas/Identifier'
+        agentId:
+          $ref: '#/components/schemas/Identifier'
+        heartbeatIntervalMs:
+          type: integer
+          minimum: 5000
+          maximum: 300000
+    AuthRejected:
+      type: object
+      additionalProperties: false
+      required: [type, code, message]
+      properties:
+        type:
+          const: auth.rejected
+        code:
+          type: string
+          enum:
+            [
+              challenge_expired,
+              challenge_invalid,
+              challenge_consumed,
+              credential_not_found,
+              credential_revoked,
+              invalid_signature,
+              unsupported_algorithm,
+              authentication_timeout,
+            ]
+        message:
+          type: string
+          minLength: 1
+          maxLength: 512
+    AgentHello:
+      type: object
+      additionalProperties: false
+      required: [protocolVersion, messageId, sentAt, type, payload]
+      properties:
+        protocolVersion:
+          const: '1'
+        messageId:
+          $ref: '#/components/schemas/Identifier'
+        sentAt:
+          $ref: '#/components/schemas/Timestamp'
+        type:
+          const: agent.hello
+        payload:
+          type: object
+          additionalProperties: false
+          required: [agentId, agentVersion, productId, productVersion, supportedProtocolVersions]
+          properties:
+            agentId:
+              $ref: '#/components/schemas/Identifier'
+            agentVersion:
+              type: string
+              minLength: 1
+              maxLength: 256
+            productId:
+              $ref: '#/components/schemas/Identifier'
+            productVersion:
+              type: string
+              minLength: 1
+              maxLength: 256
+            supportedProtocolVersions:
+              type: array
+              minItems: 1
+              maxItems: 8
+              uniqueItems: true
+              items:
+                const: '1'
+    ServerHello:
+      type: object
+      additionalProperties: false
+      required: [protocolVersion, messageId, sentAt, correlationId, type, payload]
+      properties:
+        protocolVersion:
+          const: '1'
+        messageId:
+          $ref: '#/components/schemas/Identifier'
+        sentAt:
+          $ref: '#/components/schemas/Timestamp'
+        correlationId:
+          $ref: '#/components/schemas/Identifier'
+        type:
+          const: server.hello
+        payload:
+          type: object
+          additionalProperties: false
+          required:
+            [
+              serverId,
+              serverVersion,
+              brand,
+              sessionId,
+              supportedProtocolVersions,
+              selectedProtocolVersion,
+              heartbeatIntervalMs,
+              maxMessageBytes,
+            ]
+          properties:
+            serverId:
+              $ref: '#/components/schemas/Identifier'
+            serverVersion:
+              type: string
+              minLength: 1
+              maxLength: 256
+            brand:
+              type: object
+              additionalProperties: false
+              required: [name]
+              properties:
+                name:
+                  type: string
+                  minLength: 1
+                  maxLength: 256
+            sessionId:
+              $ref: '#/components/schemas/Identifier'
+            supportedProtocolVersions:
+              type: array
+              minItems: 1
+              maxItems: 8
+              uniqueItems: true
+              items:
+                const: '1'
+            selectedProtocolVersion:
+              const: '1'
+            heartbeatIntervalMs:
+              type: integer
+              minimum: 5000
+              maximum: 300000
+            maxMessageBytes:
+              type: integer
+              minimum: 1024
+              maximum: 2097152
+    AgentHeartbeat:
+      type: object
+      additionalProperties: false
+      required: [protocolVersion, messageId, sentAt, correlationId, type, payload]
+      properties:
+        protocolVersion:
+          const: '1'
+        messageId:
+          $ref: '#/components/schemas/Identifier'
+        sentAt:
+          $ref: '#/components/schemas/Timestamp'
+        correlationId:
+          $ref: '#/components/schemas/Identifier'
+        type:
+          const: agent.heartbeat
+        payload:
+          type: object
+          additionalProperties: false
+          required: [uptimeSeconds]
+          properties:
+            uptimeSeconds:
+              type: integer
+              minimum: 0
+    ServerHeartbeat:
+      type: object
+      additionalProperties: false
+      required: [protocolVersion, messageId, sentAt, type, payload]
+      properties:
+        protocolVersion:
+          const: '1'
+        messageId:
+          $ref: '#/components/schemas/Identifier'
+        sentAt:
+          $ref: '#/components/schemas/Timestamp'
+        type:
+          const: server.heartbeat
+        payload:
+          type: object
+          additionalProperties: false
+          required: [timeoutMs]
+          properties:
+            timeoutMs:
+              type: integer
+              minimum: 1000
+              maximum: 120000
+    PrinterDescriptor:
+      oneOf:
+        - $ref: '#/components/schemas/LocalPrinterDescriptor'
+        - $ref: '#/components/schemas/NetworkPrinterDescriptor'
+        - $ref: '#/components/schemas/VirtualPrinterDescriptor'
+    PrinterBase:
+      type: object
+      required: [id, fingerprint, name, kind, enabled, availability, connection]
+      properties:
+        id:
+          $ref: '#/components/schemas/Identifier'
+        fingerprint:
+          type: string
+          minLength: 1
+          maxLength: 256
+        name:
+          type: string
+          minLength: 1
+          maxLength: 256
+        enabled:
+          type: boolean
+        availability:
+          type: string
+          enum: [online, offline, unknown]
+        capabilities:
+          $ref: '#/components/schemas/PrinterCapabilities'
+        connection:
+          type: object
+    PrinterCapabilities:
+      type: object
+      additionalProperties: false
+      required: [mediaWidths, raster, cut, qr, barcode]
+      properties:
+        mediaWidths:
+          type: array
+          minItems: 1
+          maxItems: 2
+          uniqueItems: true
+          items:
+            type: integer
+            enum: [58, 80]
+        raster:
+          type: boolean
+        cut:
+          type: boolean
+        qr:
+          type: boolean
+        barcode:
+          type: boolean
+    LocalPrinterDescriptor:
+      allOf:
+        - $ref: '#/components/schemas/PrinterBase'
+        - type: object
+          required: [kind, connection]
+          properties:
+            kind:
+              const: local
+            connection:
+              type: object
+              required: [type, systemName]
+              properties:
+                type:
+                  const: system
+                systemName:
+                  type: string
+                  minLength: 1
+                  maxLength: 256
+    NetworkPrinterDescriptor:
+      allOf:
+        - $ref: '#/components/schemas/PrinterBase'
+        - type: object
+          required: [kind, connection]
+          properties:
+            kind:
+              const: network
+            connection:
+              type: object
+              required: [type, host, port]
+              properties:
+                type:
+                  const: tcp
+                host:
+                  type: string
+                  minLength: 1
+                  maxLength: 253
+                port:
+                  type: integer
+                  minimum: 1
+                  maximum: 65535
+    VirtualPrinterDescriptor:
+      allOf:
+        - $ref: '#/components/schemas/PrinterBase'
+        - type: object
+          required: [kind, connection]
+          properties:
+            kind:
+              const: virtual
+            connection:
+              type: object
+              required: [type]
+              properties:
+                type:
+                  const: virtual
+    AgentPrinterInventory:
+      type: object
+      additionalProperties: false
+      required: [protocolVersion, messageId, sentAt, type, payload]
+      properties:
+        protocolVersion:
+          const: '1'
+        messageId:
+          $ref: '#/components/schemas/Identifier'
+        sentAt:
+          $ref: '#/components/schemas/Timestamp'
+        correlationId:
+          $ref: '#/components/schemas/Identifier'
+        type:
+          const: agent.printer_inventory
+        payload:
+          type: object
+          additionalProperties: false
+          required: [revision, printers]
+          properties:
+            revision:
+              type: integer
+              minimum: 0
+            printers:
+              type: array
+              maxItems: 512
+              items:
+                $ref: '#/components/schemas/PrinterDescriptor'
+    AgentPrinterInventoryChanged:
+      type: object
+      additionalProperties: false
+      required: [protocolVersion, messageId, sentAt, type, payload]
+      properties:
+        protocolVersion:
+          const: '1'
+        messageId:
+          $ref: '#/components/schemas/Identifier'
+        sentAt:
+          $ref: '#/components/schemas/Timestamp'
+        type:
+          const: agent.printer_inventory_changed
+        payload:
+          type: object
+          additionalProperties: false
+          required: [revision, added, updated, removedPrinterIds]
+          properties:
+            revision:
+              type: integer
+              minimum: 0
+            added:
+              type: array
+              maxItems: 512
+              items:
+                $ref: '#/components/schemas/PrinterDescriptor'
+            updated:
+              type: array
+              maxItems: 512
+              items:
+                $ref: '#/components/schemas/PrinterDescriptor'
+            removedPrinterIds:
+              type: array
+              maxItems: 512
+              uniqueItems: true
+              items:
+                $ref: '#/components/schemas/Identifier'
+    ServerRequestPrinterInventory:
+      type: object
+      additionalProperties: false
+      required: [protocolVersion, messageId, sentAt, type, payload]
+      properties:
+        protocolVersion:
+          const: '1'
+        messageId:
+          $ref: '#/components/schemas/Identifier'
+        sentAt:
+          $ref: '#/components/schemas/Timestamp'
+        type:
+          const: server.request_printer_inventory
+        payload:
+          type: object
+          additionalProperties: false
+    PrintDocument:
+      type: object
+      additionalProperties: false
+      required: [width, sections]
+      properties:
+        width:
+          type: integer
+          enum: [58, 80]
+        sections:
+          type: array
+          minItems: 1
+          maxItems: 256
+          items:
+            oneOf:
+              - type: object
+                additionalProperties: false
+                required: [type, value]
+                properties:
+                  type:
+                    const: text
+                  value:
+                    type: string
+                    maxLength: 16384
+                  align:
+                    type: string
+                    enum: [left, center, right]
+                  bold:
+                    type: boolean
+              - type: object
+                additionalProperties: false
+                required: [type, left, right]
+                properties:
+                  type:
+                    const: row
+                  left:
+                    type: string
+                    maxLength: 4096
+                  right:
+                    type: string
+                    maxLength: 4096
+              - type: object
+                additionalProperties: false
+                required: [type]
+                properties:
+                  type:
+                    const: divider
+              - type: object
+                additionalProperties: false
+                required: [type, value]
+                properties:
+                  type:
+                    const: qr
+                  value:
+                    type: string
+                    minLength: 1
+                    maxLength: 4096
+              - type: object
+                additionalProperties: false
+                required: [type, mediaType, data]
+                properties:
+                  type:
+                    const: image
+                  mediaType:
+                    type: string
+                    enum: [image/png, image/jpeg]
+                  data:
+                    type: string
+                    minLength: 4
+              - type: object
+                additionalProperties: false
+                required: [type, format, value]
+                properties:
+                  type:
+                    const: barcode
+                  format:
+                    type: string
+                    enum: [code128, code39, ean13, upca]
+                  value:
+                    type: string
+                    minLength: 1
+                    maxLength: 256
+              - type: object
+                additionalProperties: false
+                required: [type]
+                properties:
+                  type:
+                    const: cut
+              - type: object
+                additionalProperties: false
+                required: [type, lines]
+                properties:
+                  type:
+                    const: feed
+                  lines:
+                    type: integer
+                    minimum: 1
+                    maximum: 255
+    PrintJob:
+      type: object
+      additionalProperties: false
+      required: [jobId, idempotencyKey, printerId, createdAt, document]
+      properties:
+        jobId:
+          $ref: '#/components/schemas/Identifier'
+        idempotencyKey:
+          type: string
+          minLength: 1
+          maxLength: 256
+        printerId:
+          $ref: '#/components/schemas/Identifier'
+        createdAt:
+          $ref: '#/components/schemas/Timestamp'
+        document:
+          $ref: '#/components/schemas/PrintDocument'
+        metadata:
+          type: object
+          maxProperties: 32
+          additionalProperties:
+            type: string
+    ServerPrintJob:
+      type: object
+      additionalProperties: false
+      required: [protocolVersion, messageId, sentAt, type, payload]
+      properties:
+        protocolVersion:
+          const: '1'
+        messageId:
+          $ref: '#/components/schemas/Identifier'
+        sentAt:
+          $ref: '#/components/schemas/Timestamp'
+        type:
+          const: server.print_job
+        payload:
+          $ref: '#/components/schemas/PrintJob'
+    AgentJobReceived:
+      type: object
+      additionalProperties: false
+      required: [protocolVersion, messageId, sentAt, correlationId, type, payload]
+      properties:
+        protocolVersion:
+          const: '1'
+        messageId:
+          $ref: '#/components/schemas/Identifier'
+        sentAt:
+          $ref: '#/components/schemas/Timestamp'
+        correlationId:
+          $ref: '#/components/schemas/Identifier'
+        type:
+          const: agent.job_received
+        payload:
+          type: object
+          additionalProperties: false
+          required: [jobId, idempotencyKey, status, receivedAt]
+          properties:
+            jobId:
+              $ref: '#/components/schemas/Identifier'
+            idempotencyKey:
+              type: string
+              minLength: 1
+              maxLength: 256
+            status:
+              const: received
+            receivedAt:
+              $ref: '#/components/schemas/Timestamp'
+    AgentJobSubmitted:
+      type: object
+      additionalProperties: false
+      required: [protocolVersion, messageId, sentAt, correlationId, type, payload]
+      properties:
+        protocolVersion:
+          const: '1'
+        messageId:
+          $ref: '#/components/schemas/Identifier'
+        sentAt:
+          $ref: '#/components/schemas/Timestamp'
+        correlationId:
+          $ref: '#/components/schemas/Identifier'
+        type:
+          const: agent.job_submitted
+        payload:
+          type: object
+          additionalProperties: false
+          required: [jobId, idempotencyKey, printerId, status, submittedAt]
+          properties:
+            jobId:
+              $ref: '#/components/schemas/Identifier'
+            idempotencyKey:
+              type: string
+              minLength: 1
+              maxLength: 256
+            printerId:
+              $ref: '#/components/schemas/Identifier'
+            status:
+              const: submitted
+            submittedAt:
+              $ref: '#/components/schemas/Timestamp'
+    AgentJobFailed:
+      type: object
+      additionalProperties: false
+      required: [protocolVersion, messageId, sentAt, correlationId, type, payload]
+      properties:
+        protocolVersion:
+          const: '1'
+        messageId:
+          $ref: '#/components/schemas/Identifier'
+        sentAt:
+          $ref: '#/components/schemas/Timestamp'
+        correlationId:
+          $ref: '#/components/schemas/Identifier'
+        type:
+          const: agent.job_failed
+        payload:
+          type: object
+          additionalProperties: false
+          required: [jobId, idempotencyKey, status, failedAt, error]
+          properties:
+            jobId:
+              $ref: '#/components/schemas/Identifier'
+            idempotencyKey:
+              type: string
+              minLength: 1
+              maxLength: 256
+            status:
+              const: failed
+            failedAt:
+              $ref: '#/components/schemas/Timestamp'
+            error:
+              type: object
+              additionalProperties: false
+              required: [code, message, retryable]
+              properties:
+                code:
+                  $ref: '#/components/schemas/Identifier'
+                message:
+                  type: string
+                  minLength: 1
+                  maxLength: 1024
+                retryable:
+                  type: boolean
+    ServerCancelJob:
+      type: object
+      additionalProperties: false
+      required: [protocolVersion, messageId, sentAt, type, payload]
+      properties:
+        protocolVersion:
+          const: '1'
+        messageId:
+          $ref: '#/components/schemas/Identifier'
+        sentAt:
+          $ref: '#/components/schemas/Timestamp'
+        type:
+          const: server.cancel_job
+        payload:
+          type: object
+          additionalProperties: false
+          required: [jobId]
+          properties:
+            jobId:
+              $ref: '#/components/schemas/Identifier'
+            reason:
+              type: string
+              minLength: 1
+              maxLength: 512
+    ServerConfigurationInvalidated:
+      type: object
+      additionalProperties: false
+      required: [protocolVersion, messageId, sentAt, type, payload]
+      properties:
+        protocolVersion:
+          const: '1'
+        messageId:
+          $ref: '#/components/schemas/Identifier'
+        sentAt:
+          $ref: '#/components/schemas/Timestamp'
+        type:
+          const: server.configuration_invalidated
+        payload:
+          type: object
+          additionalProperties: false
+          required: [scope]
+          properties:
+            scope:
+              type: string
+              enum: [agent, printers, all]
+            revision:
+              type: string
+              minLength: 1
+              maxLength: 128
+    ServerDisconnect:
+      type: object
+      additionalProperties: false
+      required: [protocolVersion, messageId, sentAt, type, payload]
+      properties:
+        protocolVersion:
+          const: '1'
+        messageId:
+          $ref: '#/components/schemas/Identifier'
+        sentAt:
+          $ref: '#/components/schemas/Timestamp'
+        type:
+          const: server.disconnect
+        payload:
+          type: object
+          additionalProperties: false
+          required: [code, reason, reconnect]
+          properties:
+            code:
+              $ref: '#/components/schemas/Identifier'
+            reason:
+              type: string
+              minLength: 1
+              maxLength: 1024
+            reconnect:
+              type: boolean
+            retryAfterMs:
+              type: integer
+              minimum: 0
+              maximum: 86400000
+    AgentDiagnostics:
+      type: object
+      additionalProperties: false
+      required: [protocolVersion, messageId, sentAt, type, payload]
+      properties:
+        protocolVersion:
+          const: '1'
+        messageId:
+          $ref: '#/components/schemas/Identifier'
+        sentAt:
+          $ref: '#/components/schemas/Timestamp'
+        type:
+          const: agent.diagnostics
+        payload:
+          type: object
+          additionalProperties: false
+          required: [agentId, collectedAt, health, queueDepth, printersOnline, printersTotal, issues]
+          properties:
+            agentId:
+              $ref: '#/components/schemas/Identifier'
+            collectedAt:
+              $ref: '#/components/schemas/Timestamp'
+            health:
+              type: string
+              enum: [healthy, degraded, unhealthy]
+            queueDepth:
+              type: integer
+              minimum: 0
+            printersOnline:
+              type: integer
+              minimum: 0
+              maximum: 512
+            printersTotal:
+              type: integer
+              minimum: 0
+              maximum: 512
+            issues:
+              type: array
+              maxItems: 64
+              items:
+                type: object
+                additionalProperties: false
+                required: [code, message, severity]
+                properties:
+                  code:
+                    $ref: '#/components/schemas/Identifier'
+                  message:
+                    type: string
+                    minLength: 1
+                    maxLength: 1024
+                  severity:
+                    type: string
+                    enum: [info, warning, error]

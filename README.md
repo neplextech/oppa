@@ -8,10 +8,18 @@ application:
 
 - [`@openprinter/protocol`](packages/protocol) — canonical schemas, codecs, and TypeScript types
 - [`@openprinter/server`](packages/server) — transport-neutral protocol sessions and delivery
+- [`@openprinter/sdk`](packages/sdk) — typed client for the public Neplex OpenPrinter Cloud API
 
 OPPA does not contain restaurant, branch, kitchen, billing, tenant, or other integrating-application
 business concepts. The host application owns authorization policy, durable server-side jobs, retry
 schedules, and logical printer routing.
+
+## Neplex OpenPrinter Cloud
+
+Neplex OpenPrinter Cloud is the optional managed API for teams that do not want to operate their own
+OpenPrinter service. Self-hosting OpenPrinter and running OPPA are completely free; pricing applies
+only to the Neplex-managed cloud API. See the [managed pricing page](https://oppa.neplex.dev/pricing)
+or [get started with Neplex OpenPrinter Cloud](https://neplextech.com/signup).
 
 ## Delivery model
 
