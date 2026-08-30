@@ -9,11 +9,8 @@ import { SiteBrandIcon } from './site-brand-icon';
 import { GithubIcon } from './site-icons';
 
 const navItems = [
-  { label: 'Protocol', href: '/#trace', sectionId: 'trace' },
-  { label: 'Boundary', href: '/#boundary', sectionId: 'boundary' },
-  { label: 'Integration', href: '/#integration', sectionId: 'integration' },
+  { label: 'Documentation', href: '/docs', sectionId: null },
   { label: 'Cloud', href: '/cloud', sectionId: null },
-  { label: 'Security', href: '/#constraints', sectionId: 'constraints' },
   { label: 'Pricing', href: '/pricing', sectionId: null },
   { label: 'Downloads', href: '/downloads', sectionId: null },
 ];

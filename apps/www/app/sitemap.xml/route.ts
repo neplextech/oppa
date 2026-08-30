@@ -1,7 +1,5 @@
 import { source } from '@/lib/source';
 
-export const dynamic = 'force-static';
-
 const BASE_URL = 'https://oppa.neplex.dev';
 
 interface SitemapEntry {

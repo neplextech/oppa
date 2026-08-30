@@ -108,7 +108,7 @@ export default function HomePage() {
                 rel="noreferrer"
                 target="_blank"
               >
-                Get started for free
+                Get started with OpenPrinter Cloud for free
                 <ArrowUpRight className="size-3.5" aria-hidden />
               </a>
             </div>

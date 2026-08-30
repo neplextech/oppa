@@ -93,7 +93,7 @@ export function createOpenPrinterClient(options: OpenPrinterClientOptions = {}):
   const retry = resolveRetryOptions(options.retry, parseEnvironmentInteger('OPENPRINTER_MAX_RETRIES'));
   const requestImpl = options.fetch ?? globalThis.fetch;
   if (typeof requestImpl !== 'function') {
-    throw new OpenPrinterConfigurationError('A Fetch API implementation is required to use @openprinter/sdk.');
+    throw new OpenPrinterConfigurationError('A Fetch API implementation is required to use openprinter sdk.');
   }
 
   const request = createRequestFunction({
@@ -442,7 +442,12 @@ function createApiError(response: Response, method: string, url: URL, body: unkn
 
 function parseApiError(value: unknown): ParsedApiError {
   if (!isRecord(value) || !isRecord(value.error)) {
-    return { code: undefined, message: undefined, requestId: undefined, details: undefined };
+    return {
+      code: undefined,
+      message: undefined,
+      requestId: undefined,
+      details: undefined,
+    };
   }
   const error = value.error;
   return {

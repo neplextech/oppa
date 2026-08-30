@@ -34,7 +34,7 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 
-describe('@openprinter/sdk', () => {
+describe('openprinter', () => {
   it('creates a typed job with the project path and bearer key', async () => {
     let receivedBody: unknown;
     let receivedHeaders: Headers | undefined;
@@ -104,7 +104,10 @@ describe('@openprinter/sdk', () => {
       retry: false,
     });
 
-    await expect(client.project('project/two').jobs.list()).resolves.toEqual({ jobs: [], keyPrefix: 'opk_test' });
+    await expect(client.project('project/two').jobs.list()).resolves.toEqual({
+      jobs: [],
+      keyPrefix: 'opk_test',
+    });
   });
 
   it('retries a transient list failure with bounded configuration', async () => {
@@ -117,14 +120,25 @@ describe('@openprinter/sdk', () => {
         calls += 1;
         return Promise.resolve(
           calls === 1
-            ? jsonResponse({ error: { code: 'temporarily_unavailable', message: 'try again' } }, { status: 503 })
+            ? jsonResponse(
+                {
+                  error: {
+                    code: 'temporarily_unavailable',
+                    message: 'try again',
+                  },
+                },
+                { status: 503 },
+              )
             : jsonResponse({ jobs: [], keyPrefix: 'opk_test' }),
         );
       },
       retry: { maxRetries: 1, baseDelayMs: 0, maxDelayMs: 0 },
     });
 
-    await expect(client.jobs.list()).resolves.toEqual({ jobs: [], keyPrefix: 'opk_test' });
+    await expect(client.jobs.list()).resolves.toEqual({
+      jobs: [],
+      keyPrefix: 'opk_test',
+    });
     expect(calls).toBe(2);
   });
 
@@ -135,7 +149,12 @@ describe('@openprinter/sdk', () => {
       projectId: 'project-1',
       fetch: () =>
         Promise.resolve(
-          jsonResponse({ error: { code: 'forbidden', message: 'Missing jobs:read scope' } }, { status: 403 }),
+          jsonResponse(
+            {
+              error: { code: 'forbidden', message: 'Missing jobs:read scope' },
+            },
+            { status: 403 },
+          ),
         ),
       retry: false,
     });

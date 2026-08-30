@@ -61,7 +61,7 @@ jobs:
         run: pnpm --filter @openprinter/server build
 
       - name: Build SDK package
-        run: pnpm --filter @openprinter/sdk build
+        run: pnpm --filter openprinter build
 
       - name: Lint packages
         run: pnpm exec eslint packages --max-warnings=0
@@ -73,7 +73,7 @@ jobs:
         run: pnpm --filter @openprinter/server check
 
       - name: Check SDK package
-        run: pnpm --filter @openprinter/sdk check
+        run: pnpm --filter openprinter check
 
       - name: Build packages
         run: pnpm --filter './packages/**' run build

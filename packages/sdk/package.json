@@ -1,5 +1,5 @@
 {
-  "name": "@openprinter/sdk",
+  "name": "openprinter",
   "version": "0.1.0",
   "description": "Strongly typed client for the Neplex OpenPrinter Cloud API",
   "homepage": "https://oppa.neplex.dev/docs/openprinter-cloud/sdk",

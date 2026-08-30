@@ -1,3 +1,4 @@
+import { cacheLife } from 'next/cache';
 import { createHighlighter, type Highlighter } from 'shiki';
 import { bundledThemes } from 'shiki/themes';
 
@@ -46,6 +47,10 @@ export type CodeLang = 'typescript' | 'tsx' | 'json' | 'jsonc' | 'bash';
  * time, so the client never re-highlights or flashes unstyled text.
  */
 export async function highlightCode(code: string, lang: CodeLang, highlightedLines: number[] = []): Promise<string> {
+  'use cache';
+
+  cacheLife('max');
+
   const highlighter = await getHighlighter();
   return highlighter.codeToHtml(code, {
     lang,

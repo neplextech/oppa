@@ -1,6 +1,6 @@
-# @openprinter/sdk
+# openprinter
 
-`@openprinter/sdk` is a strongly typed TypeScript client for the public Neplex
+`openprinter` sdk is a strongly typed TypeScript client for the public Neplex
 OpenPrinter Cloud API. It covers project API-key access to service health,
 discovery, pairing, and durable print-job submission/listing without exposing
 server internals or agent private keys.
@@ -12,13 +12,13 @@ the managed Neplex OpenPrinter Cloud API. See the [current managed pricing](http
 ## Install
 
 ```bash
-pnpm add @openprinter/sdk
+pnpm add openprinter
 ```
 
 ## Quick start
 
 ```ts
-import { createOpenPrinterClient } from '@openprinter/sdk';
+import { createOpenPrinterClient } from 'openprinter';
 
 const openprinter = createOpenPrinterClient({
   baseUrl: process.env.OPENPRINTER_BASE_URL,
@@ -50,13 +50,13 @@ network timeout does not require an application-level duplicate guard.
 Every option can be supplied explicitly. Omitted values are read from these
 Node-compatible environment variables:
 
-| Option | Environment variable | Default |
-| --- | --- | --- |
-| `baseUrl` | `OPENPRINTER_BASE_URL`, `OPENPRINTER_API_BASE_URL`, or `OPENPRINTER_PUBLIC_BASE_URL` | required |
-| `apiKey` | `OPENPRINTER_API_KEY` | required for jobs |
-| `projectId` | `OPENPRINTER_PROJECT_ID` | required for `client.jobs` |
-| `timeoutMs` | `OPENPRINTER_TIMEOUT_MS` | `30_000` |
-| `retry.maxRetries` | `OPENPRINTER_MAX_RETRIES` | `2` |
+| Option             | Environment variable                                                                 | Default                    |
+| ------------------ | ------------------------------------------------------------------------------------ | -------------------------- |
+| `baseUrl`          | `OPENPRINTER_BASE_URL`, `OPENPRINTER_API_BASE_URL`, or `OPENPRINTER_PUBLIC_BASE_URL` | required                   |
+| `apiKey`           | `OPENPRINTER_API_KEY`                                                                | required for jobs          |
+| `projectId`        | `OPENPRINTER_PROJECT_ID`                                                             | required for `client.jobs` |
+| `timeoutMs`        | `OPENPRINTER_TIMEOUT_MS`                                                             | `30_000`                   |
+| `retry.maxRetries` | `OPENPRINTER_MAX_RETRIES`                                                            | `2`                        |
 
 The API key may also be a synchronous or asynchronous provider, which is
 useful for key rotation. `fetch`, `headers`, `signal`, timeout, and retry
@@ -88,10 +88,7 @@ Catch the exported typed errors when a caller needs to distinguish an API
 failure from a malformed response, timeout, or configuration error:
 
 ```ts
-import {
-  isOpenPrinterApiError,
-  isOpenPrinterTimeoutError,
-} from '@openprinter/sdk';
+import { isOpenPrinterApiError, isOpenPrinterTimeoutError } from 'openprinter';
 
 try {
   await openprinter.jobs.list();

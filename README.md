@@ -8,7 +8,7 @@ application:
 
 - [`@openprinter/protocol`](packages/protocol) — canonical schemas, codecs, and TypeScript types
 - [`@openprinter/server`](packages/server) — transport-neutral protocol sessions and delivery
-- [`@openprinter/sdk`](packages/sdk) — typed client for the public Neplex OpenPrinter Cloud API
+- [`openprinter`](packages/sdk) — typed client for the public Neplex OpenPrinter Cloud API
 
 OPPA does not contain restaurant, branch, kitchen, billing, tenant, or other integrating-application
 business concepts. The host application owns authorization policy, durable server-side jobs, retry
@@ -147,7 +147,8 @@ const openPrinter = createOpenPrinterServer({
 const session = openPrinter.accept({
   transport: {
     send: (message) => connection.send(message),
-    close: ({ reason, detail }) => connection.close(mapCloseReason(reason), detail),
+    close: ({ reason, detail }) =>
+      connection.close(mapCloseReason(reason), detail),
   },
 });
 

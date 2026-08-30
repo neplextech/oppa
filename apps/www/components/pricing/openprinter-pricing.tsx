@@ -1,7 +1,5 @@
-'use client';
-
-import { ArrowUpRight, Check, RefreshCw } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { ArrowUpRight, Check } from 'lucide-react';
+import { cacheLife } from 'next/cache';
 
 const PRICING_URL = 'https://neplextech.com/api/openprinter/pricing';
 const SIGNUP_URL = 'https://neplextech.com/signup';
@@ -42,28 +40,8 @@ interface PricingEntitlement {
   readonly value: unknown;
 }
 
-type PricingState =
-  | { readonly status: 'loading' }
-  | { readonly status: 'ready'; readonly product: PricingProduct }
-  | { readonly status: 'fallback' };
-
-export function OpenPrinterPricing() {
-  const [state, setState] = useState<PricingState>({ status: 'loading' });
-
-  useEffect(() => {
-    const controller = new AbortController();
-    const timeout = window.setTimeout(() => controller.abort(), 8_000);
-
-    void fetchPricing(controller.signal)
-      .then((product) => setState({ status: 'ready', product }))
-      .catch(() => setState({ status: 'fallback' }))
-      .finally(() => window.clearTimeout(timeout));
-
-    return () => {
-      window.clearTimeout(timeout);
-      controller.abort();
-    };
-  }, []);
+export async function OpenPrinterPricing() {
+  const product = await getPricing().catch(() => null);
 
   return (
     <main className="min-h-screen bg-[#0a0a09] text-stone-100">
@@ -86,13 +64,9 @@ export function OpenPrinterPricing() {
 
       <section className="border-b border-white/10">
         <div className="mx-auto max-w-6xl px-6 py-16 lg:px-8">
-          <div className="grid gap-5 lg:grid-cols-[0.8fr_1.2fr] lg:items-start">
+          <div className="space-y-8">
             <SelfHostedCard />
-            <div>
-              {state.status === 'loading' && <LoadingPlans />}
-              {state.status === 'fallback' && <FallbackPlans />}
-              {state.status === 'ready' && <ManagedPlans product={state.product} />}
-            </div>
+            {product ? <ManagedPlans product={product} /> : <FallbackPlans />}
           </div>
         </div>
       </section>
@@ -129,36 +103,28 @@ export function OpenPrinterPricing() {
 
 function SelfHostedCard() {
   return (
-    <article className="rounded border border-emerald-400/25 bg-emerald-400/[0.04] p-6 lg:sticky lg:top-24">
-      <div className="font-mono text-[11px] tracking-wide text-emerald-400">OPEN SOURCE</div>
-      <h2 className="mt-3 text-xl font-semibold">Self-hosted OpenPrinter</h2>
-      <p className="mt-3 text-[13px] leading-6 text-stone-400">
-        Run the protocol, server SDK, and OPPA yourself with no OpenPrinter license or self-hosting charge.
-      </p>
-      <div className="mt-7 border-t border-emerald-400/15 pt-5">
-        <div className="text-3xl font-semibold tracking-[-0.03em]">$0</div>
-        <div className="mt-1 font-mono text-[11px] text-stone-500">completely free, forever</div>
+    <article className="rounded border border-emerald-400/25 bg-emerald-400/[0.04] p-6 lg:p-8">
+      <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_auto_auto] lg:items-center">
+        <div>
+          <div className="font-mono text-[11px] tracking-wide text-emerald-400">OPEN SOURCE</div>
+          <h2 className="mt-3 text-xl font-semibold">Self-hosted OpenPrinter</h2>
+          <p className="mt-3 max-w-2xl text-[13px] leading-6 text-stone-400">
+            Run the protocol, server SDK, and OPPA yourself with no OpenPrinter license or self-hosting charge.
+          </p>
+        </div>
+        <div className="lg:border-l lg:border-emerald-400/15 lg:pl-8">
+          <div className="text-3xl font-semibold tracking-[-0.03em]">$0</div>
+          <div className="mt-1 font-mono text-[11px] whitespace-nowrap text-stone-500">completely free, forever</div>
+        </div>
+        <a
+          className="inline-flex items-center gap-1.5 text-[13px] font-medium text-emerald-300 hover:text-emerald-200 lg:justify-self-end"
+          href="/docs/getting-started"
+        >
+          Start self-hosting
+          <ArrowUpRight className="size-3.5" aria-hidden />
+        </a>
       </div>
-      <a
-        className="mt-6 inline-flex items-center gap-1.5 text-[13px] font-medium text-emerald-300 hover:text-emerald-200"
-        href="/docs/getting-started"
-      >
-        Start self-hosting
-        <ArrowUpRight className="size-3.5" aria-hidden />
-      </a>
     </article>
-  );
-}
-
-function LoadingPlans() {
-  return (
-    <div className="rounded border border-white/10 p-6 text-[13px] text-stone-400">
-      <div className="flex items-center gap-2 text-stone-300">
-        <RefreshCw className="size-3.5 animate-spin" aria-hidden />
-        Loading current managed cloud plans…
-      </div>
-      <p className="mt-3 leading-6 text-stone-500">Pricing is read from the public Neplex OpenPrinter pricing API.</p>
-    </div>
   );
 }
 
@@ -192,7 +158,7 @@ function ManagedPlans({ product }: { product: PricingProduct }) {
           {product.description ?? 'Managed OpenPrinter Cloud plans.'}
         </p>
       </div>
-      <div className="grid gap-4 xl:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {product.plans.map((plan) => (
           <PlanCard key={plan.slug} plan={plan} />
         ))}
@@ -266,10 +232,14 @@ function formatEntitlement(entitlement: PricingEntitlement): string {
   return label;
 }
 
-async function fetchPricing(signal: AbortSignal): Promise<PricingProduct> {
+async function getPricing(): Promise<PricingProduct> {
+  'use cache';
+
+  cacheLife('minutes');
+
   const response = await fetch(PRICING_URL, {
     headers: { accept: 'application/json' },
-    signal,
+    signal: AbortSignal.timeout(8_000),
   });
   if (!response.ok) throw new Error(`Pricing request failed with HTTP ${response.status}.`);
   return parsePricingPayload((await response.json()) as unknown);

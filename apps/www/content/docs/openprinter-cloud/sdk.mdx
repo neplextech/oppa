@@ -1,20 +1,20 @@
 ---
 title: TypeScript SDK
 description:
-  Use @openprinter/sdk to submit and inspect durable OpenPrinter Cloud
+  Use openprinter sdk to submit and inspect durable OpenPrinter Cloud
   jobs.
 ---
 
-The `@openprinter/sdk` package is a strongly typed client for the
-public Neplex OpenPrinter Cloud API. It validates structured print
-documents before sending them, validates successful responses at
-runtime, retries transient failures with bounded backoff, and
-preserves the server's idempotency model.
+The `openprinter` package is a strongly typed client for the public
+Neplex OpenPrinter Cloud API. It validates structured print documents
+before sending them, validates successful responses at runtime,
+retries transient failures with bounded backoff, and preserves the
+server's idempotency model.
 
 ## Install
 
 ```bash
-pnpm add @openprinter/sdk
+pnpm add openprinter
 ```
 
 ## Configure from the environment
@@ -25,7 +25,7 @@ export OPENPRINTER_PROJECT_ID="project_01"
 ```
 
 ```ts
-import { createOpenPrinterClient } from '@openprinter/sdk';
+import { createOpenPrinterClient } from 'openprinter';
 
 const openprinter = createOpenPrinterClient();
 
@@ -90,7 +90,7 @@ not alter the default project on the original client.
 import {
   isOpenPrinterApiError,
   isOpenPrinterTimeoutError,
-} from '@openprinter/sdk';
+} from 'openprinter';
 
 try {
   await openprinter.jobs.list();
@@ -125,10 +125,10 @@ For endpoint-by-endpoint behavior, see the
 
 # API Documentation
 
-This reference covers the complete public surface of
-`@openprinter/sdk`. The SDK is designed for server-side TypeScript
-applications, but accepts a custom `fetch` implementation for
-browsers, tests, and other Fetch-compatible runtimes.
+This reference covers the complete public surface of `openprinter`
+package. The SDK is designed for server-side TypeScript applications,
+but accepts a custom `fetch` implementation for browsers, tests, and
+other Fetch-compatible runtimes.
 
 ## Exports at a glance
 
@@ -172,7 +172,7 @@ resource views are immutable, so a project view cannot change the
 default project on the original client.
 
 ```ts
-import { createOpenPrinterClient } from '@openprinter/sdk';
+import { createOpenPrinterClient } from 'openprinter';
 
 const openprinter = createOpenPrinterClient({
   apiKey: () => keyStore.getCurrentKey(),
@@ -605,7 +605,7 @@ list response intentionally excludes the print document.
 import {
   OPENPRINTER_API_KEY_SCOPES,
   type OpenPrinterApiKeyScope,
-} from '@openprinter/sdk';
+} from 'openprinter';
 
 console.log(OPENPRINTER_API_KEY_SCOPES);
 // ['jobs:read', 'jobs:write']
@@ -679,7 +679,7 @@ import {
   isOpenPrinterConfigurationError,
   isOpenPrinterResponseError,
   isOpenPrinterTimeoutError,
-} from '@openprinter/sdk';
+} from 'openprinter';
 
 try {
   await openprinter.jobs.list();

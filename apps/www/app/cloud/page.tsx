@@ -22,7 +22,7 @@ const integrationPaths = [
   {
     icon: Cable,
     title: 'TypeScript SDK',
-    description: 'Use the strongly typed @openprinter/sdk client with retries, validation, and environment defaults.',
+    description: 'Use the strongly typed openprinter client with retries, validation, and environment defaults.',
     href: '/docs/openprinter-cloud/sdk',
     link: 'Read the SDK guide',
   },

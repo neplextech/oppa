@@ -6,8 +6,6 @@ import { OPEN_GRAPH_IMAGE_SIZE } from '@/components/open-graph/marketing-image';
 import { SiteBrandIcon, SITE_BRAND_ICON_OG_SRC } from '@/components/site-brand-icon';
 import { getPageImageUrl, source } from '@/lib/source';
 
-export const revalidate = false;
-
 export async function GET(_request: Request, { params }: { params: Promise<{ slug: string[] }> }) {
   const { slug } = await params;
 
