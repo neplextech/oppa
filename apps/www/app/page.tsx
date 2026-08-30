@@ -1,3 +1,5 @@
+import { CodeBlock as InstallCodeBlock, Pre } from 'fumadocs-ui/components/codeblock';
+import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
 import {
   ArrowRight,
   ArrowUpRight,
@@ -75,7 +77,7 @@ export default function HomePage() {
       <section id="trace" className="border-b border-white/10">
         <div className="mx-auto max-w-6xl px-6 pt-16 pb-20 lg:px-8 lg:pt-20 lg:pb-24">
           <div className="grid gap-14 lg:grid-cols-[1fr_1fr] lg:items-start">
-            <div>
+            <div className="min-w-0">
               <div className="font-mono text-[12px] text-stone-500">OPENPRINTER / OPPA</div>
               <h1 className="mt-5 max-w-lg text-[2.5rem] leading-[1.1] font-semibold tracking-[-0.02em] text-balance sm:text-[2.9rem]">
                 A safe bridge between <span className="text-emerald-400">cloud applications</span> and{' '}
@@ -86,6 +88,21 @@ export default function HomePage() {
                 processes jobs on the local machine. OpenPrinter gives your server a versioned protocol and a small
                 delivery SDK — without owning your queue, database, or business rules.
               </p>
+
+              <div className="mt-6 w-full max-w-md min-w-0">
+                <Tabs items={['Humans', 'Agents']} defaultIndex={0}>
+                  <Tab value="Humans">
+                    <InstallCodeBlock keepBackground className="px-4">
+                      <Pre>npm install openprinter</Pre>
+                    </InstallCodeBlock>
+                  </Tab>
+                  <Tab value="Agents">
+                    <InstallCodeBlock keepBackground className="px-4">
+                      <Pre>npx skills add neplextech/oppa</Pre>
+                    </InstallCodeBlock>
+                  </Tab>
+                </Tabs>
+              </div>
 
               <div className="mt-8 flex items-center gap-3">
                 <Link
@@ -113,7 +130,9 @@ export default function HomePage() {
               </a>
             </div>
 
-            <ProtocolTrace />
+            <div className="min-w-0">
+              <ProtocolTrace />
+            </div>
           </div>
 
           <dl className="mt-14 grid grid-cols-1 divide-y divide-white/10 border-y border-white/10 font-mono text-[11px] sm:grid-cols-3 sm:divide-x sm:divide-y-0">

@@ -8,15 +8,33 @@ Install in your project with:
 npx skills add neplextech/oppa
 ```
 
+To install only the public TypeScript client skill:
+
+```bash
+npx skills add neplextech/oppa
+```
+
 ---
 
 ## Skills in this collection
+
+### [openprinter](./openprinter/SKILL.md)
+
+The strongly typed TypeScript client for the public Neplex OpenPrinter Cloud API.
+
+Use this skill when you need to:
+
+- Configure `openprinter` with a service URL, project API key, and project ID
+- Submit idempotent durable print jobs or list jobs by lifecycle state
+- Use health, discovery, or agent pairing from a trusted application boundary
+- Handle typed API, response, timeout, and configuration errors
 
 ### [@openprinter/protocol](./openprinter-protocol/SKILL.md)
 
 The canonical TypeBox schema, runtime codec, and TypeScript types for the OpenPrinter wire protocol v1.
 
 Use this skill when you need to:
+
 - Understand the full message structure for either direction (agent → server, server → agent)
 - Parse or validate inbound protocol frames
 - Encode outbound messages for a custom transport
@@ -28,6 +46,7 @@ Use this skill when you need to:
 A framework-neutral protocol-session SDK for building OpenPrinter-compatible server endpoints.
 
 Use this skill when you need to:
+
 - Host an OpenPrinter agent connection in any Node.js (or compatible) environment
 - Integrate with WebSocket servers, message brokers, or custom transports
 - Receive printer inventories, job status updates, and diagnostics from agents
@@ -38,10 +57,12 @@ Use this skill when you need to:
 
 ## What this repository is
 
-**OPPA** (Open Printer Proxy Agent) is a local Tauri desktop utility that runs as the agent side of the OpenPrinter protocol. The packages in this repository — `@openprinter/protocol` and `@openprinter/server` — are the generic, product-neutral SDK layer that any OpenPrinter-compatible implementation can use.
+**OPPA** (Open Printer Proxy Agent) is a local Tauri desktop utility that runs as the agent side of the OpenPrinter protocol. The packages in this repository — `openprinter`, `@openprinter/protocol`, and `@openprinter/server` — are the generic, product-neutral SDK layer that any OpenPrinter-compatible implementation can use.
 
 Key design principles:
+
 - Protocol semantics live in `@openprinter/protocol` (TypeBox schemas → JSON Schema → Rust fixtures).
+- Public API-key access to managed OpenPrinter Cloud lives in `openprinter`.
 - Session management for server-side hosting lives in `@openprinter/server`.
 - The OPPA desktop app is one product built on top; it is not part of the SDK.
 - `'submitted'` means the OS or printer backend accepted a job. It does **not** mean paper was produced.
@@ -55,6 +76,7 @@ Key design principles:
 ```
 packages/protocol/   @openprinter/protocol — schemas, codecs, types
 packages/server/     @openprinter/server   — session SDK
+packages/sdk/        openprinter            — public TypeScript Cloud client
 protocol/            generated JSON Schema and cross-language fixtures
 apps/oppa/           OPPA desktop app (Tauri + React)
 crates/              Rust agent runtime
