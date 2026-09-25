@@ -11,7 +11,6 @@ async-trait = "0.1.91"
 oppa-core = { path = "../oppa-core" }
 oppa-printer = { path = "../oppa-printer" }
 oppa-renderer = { path = "../oppa-renderer" }
-oppa-windows-print = { path = "../oppa-windows-print" }
 tempfile.workspace = true
 thiserror = "2.0.19"
 tokio = { version = "1.53.1", features = ["fs", "io-util", "macros", "net", "process", "rt", "sync", "time"] }
@@ -19,6 +18,7 @@ tokio-util = { version = "0.7.17", features = ["rt"] }
 uuid = { version = "1.24.0", features = ["v4"] }
 
 [target.'cfg(windows)'.dependencies]
+oppa-windows-print = { path = "../oppa-windows-print" }
 printers = "2.3"
 
 [dev-dependencies]

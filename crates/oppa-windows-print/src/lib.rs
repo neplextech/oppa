@@ -178,19 +178,6 @@ pub fn print_document(queue_name: &str, document: &RasterDocument) -> Result<u32
     print_with_api(&mut gdi::GdiPrintApi, queue_name, document)
 }
 
-/// Windows driver submission is unavailable on non-Windows hosts.
-///
-/// # Errors
-///
-/// Always returns an error because GDI is not available on this target.
-#[cfg(not(windows))]
-pub fn print_document(_queue_name: &str, _document: &RasterDocument) -> Result<u32, PrintError> {
-    Err(PrintError {
-        stage: PrintStage::Open,
-        message: "GDI printing is only available on Windows".to_owned(),
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use oppa_renderer::{PixelFormat, RasterDocument, RasterPage};

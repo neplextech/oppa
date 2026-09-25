@@ -12,9 +12,12 @@ hardware.
 It does not render OPPA documents, emit printer-native languages, discover
 queues, open dialogs, or claim that a completed spooler submission produced
 physical output. `oppa-renderer` produces the page raster and `oppa-spooler`
-selects this backend for configured system queues.
+selects this backend for configured Windows system queues. On Unix, the
+spooler submits page files with `lp` in driver/filter mode so CUPS and the
+installed queue configuration handle conversion; this Windows-only crate is
+not a dependency on those targets.
 
-The public entry point is `print_document(queue_name, document)`. The lower
-level `DriverPrintApi` trait exists for controlled integration tests and future
-platform adapters. Run `cargo test -p oppa-windows-print` and the workspace
-checks to validate this crate.
+On Windows, the public entry point is `print_document(queue_name, document)`.
+The lower-level `DriverPrintApi` trait supports controlled integration tests.
+Run `cargo test -p oppa-windows-print` and the workspace checks to validate
+this crate.
