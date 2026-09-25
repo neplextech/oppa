@@ -57,8 +57,9 @@ crates/
   oppa-printer/         printer descriptors, fingerprints, capabilities, backends
   oppa-product/         compile-time product validation and embedding
   oppa-protocol/        Rust OpenPrinter wire types and validation
-  oppa-renderer/        structured receipt rendering
-  oppa-spooler/         system queue, raw TCP, and virtual submission
+  oppa-renderer/        ESC/POS interpretation and receipt/page rendering
+  oppa-spooler/         raw TCP, driver/filter queues, and virtual submission
+  oppa-windows-print/   isolated silent GDI printing through Windows drivers
   oppa-storage/         SQLite migrations, idempotency, and recovery
   oppa-transport/       authenticated WebSocket transport and reconnect state
 packages/
@@ -121,6 +122,12 @@ pnpm protocol:generate # regenerate the canonical JSON Schema
 
 Physical printers are not required in CI. Renderer, storage, lifecycle, SDK, and compatibility tests
 use mocks, fixtures, and virtual printers.
+
+Discovered system queues default to system-driver printing. Select raw ESC/POS
+only for a compatible thermal printer; the queue connection itself does not
+identify its printer language. Virtual Thermal and Virtual Office profiles
+exercise the corresponding ESC/POS and page-rendering pipelines without
+hardware.
 
 ## Server integration
 

@@ -57,9 +57,17 @@ export interface AgentStatus {
 
 export type PrinterConnectionType = 'system_queue' | 'network' | 'virtual' | 'usb';
 
+export type PrinterSubmissionMode = { type: 'driver' } | { type: 'raw'; language: 'esc-pos' };
+
+export type VirtualPrinterProfile =
+  | { type: 'esc-pos-receipt'; widthMm: 58 | 80 }
+  | { type: 'system-driver-page'; pageWidthMm: number; pageHeightMm: number; dpi: number };
+
 export interface PrinterCapabilities {
   widths: Array<58 | 80>;
-  documentTypes: Array<'esc_pos' | 'raster' | 'native' | 'virtual'>;
+  documentTypes: Array<'esc_pos' | 'raster' | 'driver' | 'native' | 'virtual'>;
+  supportsSystemDriver: boolean;
+  supportsEscPos: boolean;
   supportsCut: boolean;
   supportsQr: boolean;
 }
@@ -74,6 +82,8 @@ export interface PrinterSummary {
   available: boolean;
   isVirtual: boolean;
   capabilities: PrinterCapabilities | null;
+  submissionMode: PrinterSubmissionMode;
+  virtualProfile?: VirtualPrinterProfile;
 }
 
 export type VirtualPrinterMode = 'always_succeed' | 'fail_next' | 'always_fail' | 'delay' | 'offline';
@@ -147,6 +157,17 @@ export interface VirtualOutput {
   format: 'structured' | 'esc_pos' | 'raster';
   preview: string;
   byteLength: number;
+  imageDataUrl?: string;
+  diagnostics?: {
+    interpretedCommands: number;
+    textLines: number;
+    images: number;
+    qrCodes: number;
+    barcodes: number;
+    feedLines: number;
+    cutRequested: boolean;
+    unsupportedCommands: string[];
+  };
   /** Original structured document, when the virtual printer captured one. */
   document?: PrintDocument;
 }
@@ -199,7 +220,13 @@ export interface ManualPrinterInput {
 
 export interface VirtualPrinterInput {
   displayName: string;
-  width: 58 | 80;
+  profile: VirtualPrinterProfile;
+}
+
+export interface PrinterConfigurationChanges {
+  displayName?: string;
+  enabled?: boolean;
+  submissionMode?: PrinterSubmissionMode;
 }
 
 export function isVirtualPrinter(printer: PrinterSummary): printer is VirtualPrinterSummary {

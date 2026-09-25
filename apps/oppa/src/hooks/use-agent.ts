@@ -9,6 +9,7 @@ import type {
   JobSummary,
   ManualPrinterInput,
   OpenPrinterServerConfiguration,
+  PrinterConfigurationChanges,
   PrinterSummary,
   VirtualPrinterInput,
   VirtualPrinterMode,
@@ -109,7 +110,7 @@ export function useAgent() {
         const nextPrinters = await run('refresh-printers', () => agentClient.refreshPrinters());
         setPrinters(nextPrinters);
       },
-      configurePrinter: async (printerId: string, changes: { displayName?: string; enabled?: boolean }) => {
+      configurePrinter: async (printerId: string, changes: PrinterConfigurationChanges) => {
         const updated = await run(`printer-${printerId}`, () => agentClient.configurePrinter(printerId, changes));
         setPrinters((current) => current.map((printer) => (printer.id === printerId ? updated : printer)));
       },

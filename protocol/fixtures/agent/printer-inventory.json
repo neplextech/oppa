@@ -18,7 +18,9 @@
         },
         "capabilities": {
           "mediaWidths": [58, 80],
-          "raster": true,
+          "systemDriver": false,
+          "escPos": true,
+          "raster": false,
           "cut": true,
           "qr": true,
           "barcode": true
@@ -35,9 +37,11 @@
           "type": "virtual"
         },
         "capabilities": {
-          "mediaWidths": [80],
+          "mediaWidths": [58, 80],
+          "systemDriver": true,
+          "escPos": false,
           "raster": true,
-          "cut": true,
+          "cut": false,
           "qr": true,
           "barcode": true
         },

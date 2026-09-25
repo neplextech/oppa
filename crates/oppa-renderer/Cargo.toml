@@ -8,8 +8,11 @@ readme = "README.md"
 
 [dependencies]
 base64 = "0.22.1"
+barcoders = { version = "2.0.0", default-features = false }
+font8x8 = "0.3.1"
 image = { version = "0.25.8", default-features = false, features = ["jpeg", "png"] }
 oppa-protocol = { path = "../oppa-protocol" }
+qrcode = "0.14.1"
 serde = { version = "1.0.229", features = ["derive"] }
 thiserror = "2.0.19"
 unicode-segmentation = "1.12.0"

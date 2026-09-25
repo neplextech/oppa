@@ -1,10 +1,11 @@
 //! Rendering of validated OpenPrinter documents into backend-ready output.
 //!
-//! Rendering is deliberately separate from submission. The initial ESC/POS
-//! renderer supports reliable ASCII receipt text and raster images. It rejects
+//! Rendering is deliberately separate from submission. The ESC/POS renderer
+//! supports reliable ASCII receipt text and raster images. It rejects
 //! non-ASCII text explicitly because device code-page behavior cannot provide
-//! dependable Nepali Unicode output; a future text-to-raster renderer can fill
-//! that boundary without silently corrupting receipts.
+//! dependable Unicode output. The page renderer rasterizes text from its
+//! embedded glyph set for system-driver printing; unsupported glyphs use a
+//! visible fallback instead of becoming printer-control bytes.
 //!
 //! PNG and JPEG decoders receive strict 2,048-pixel per-axis limits and a
 //! 16 MiB allocation budget before decompression begins. Decoder resource-limit
@@ -17,17 +18,28 @@
 use std::io::Cursor;
 
 use base64::{Engine as _, engine::general_purpose::STANDARD};
-use image::{
-    DynamicImage, ImageError, ImageReader, Limits, error::LimitErrorKind, imageops::FilterType,
-};
+use image::{DynamicImage, ImageError, ImageReader, Limits, error::LimitErrorKind};
 use oppa_protocol::{
-    BarcodeFormat, ImageMediaType, PrintDocument, PrintSection, ReceiptWidth, TextAlignment,
-    Validate,
+    BarcodeFormat, ImageMediaType, PrintDocument, PrintSection, TextAlignment, Validate,
 };
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
+
+pub use oppa_protocol::ReceiptWidth;
+
+pub mod escpos;
+pub mod page;
+
+pub use escpos::{
+    EscPosDiagnostics, EscPosInterpretation, EscPosInterpreter, UnsupportedEscPosCommand,
+};
+pub use page::{
+    PageRenderOptions, PrintLayout, ReceiptElement, ReceiptImage, encode_raster_page_png,
+    encode_raster_page_preview_png, render_escpos_for_page, render_layout_page,
+    render_layout_receipt,
+};
 
 /// Default maximum number of bytes emitted for one rendered document.
 pub const DEFAULT_MAX_OUTPUT_BYTES: usize = 4 * 1024 * 1024;
@@ -41,8 +53,8 @@ pub const MAX_IMAGE_DIMENSION: u32 = 2_048;
 /// Output ready for a compatible spooler.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RenderedDocument {
-    /// Raw ESC/POS command bytes.
-    EscPos(Vec<u8>),
+    /// Raw ESC/POS command bytes plus the receipt width used to encode them.
+    EscPos(EscPosDocument),
     /// One or more monochrome raster pages.
     Raster(RasterDocument),
     /// Platform-native document payload.
@@ -67,12 +79,22 @@ impl RenderedDocument {
     #[must_use]
     pub fn byte_len(&self) -> usize {
         match self {
-            Self::EscPos(bytes) => bytes.len(),
+            Self::EscPos(document) => document.bytes.len(),
             Self::Raster(document) => document.pages.iter().map(|page| page.data.len()).sum(),
             Self::Native(document) => document.data.len(),
             Self::Virtual(document) => document.preview_lines.iter().map(String::len).sum(),
         }
     }
+}
+
+/// Printer-language payload with the layout width needed by compatibility
+/// interpreters. ESC/POS itself has no standard width declaration.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EscPosDocument {
+    /// Raw ESC/POS command bytes.
+    pub bytes: Vec<u8>,
+    /// Receipt width used when OPPA encoded or configured the byte stream.
+    pub receipt_width: ReceiptWidth,
 }
 
 /// Monochrome raster document for a raster-capable backend.
@@ -82,15 +104,71 @@ pub struct RasterDocument {
     pub pages: Vec<RasterPage>,
 }
 
-/// One tightly packed, one-bit raster page.
+/// Raster page in one of the supported pixel formats.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RasterPage {
     /// Pixel width.
     pub width: u32,
     /// Pixel height.
     pub height: u32,
+    /// Horizontal resolution represented by this page.
+    pub dpi_x: u16,
+    /// Vertical resolution represented by this page.
+    pub dpi_y: u16,
+    /// Pixel encoding used in `data`.
+    pub format: PixelFormat,
     /// Row-major bytes, most-significant bit first.
     pub data: Vec<u8>,
+}
+
+/// Pixel encodings supported by a raster page.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PixelFormat {
+    /// Packed one-bit black pixels, most-significant bit first, white background.
+    Mono1,
+    /// One grayscale byte per pixel.
+    Gray8,
+    /// Three RGB bytes per pixel.
+    Rgb24,
+    /// Four RGBA bytes per pixel.
+    Rgba32,
+}
+
+impl RasterPage {
+    /// Checks dimensions and verifies the exact packed buffer length.
+    pub fn validate(&self) -> RendererResult<()> {
+        let bytes_per_row =
+            match self.format {
+                PixelFormat::Mono1 => self.width.div_ceil(8),
+                PixelFormat::Gray8 => self.width,
+                PixelFormat::Rgb24 => self.width.checked_mul(3).ok_or_else(|| {
+                    RendererError::InvalidRasterPage("row size overflow".to_owned())
+                })?,
+                PixelFormat::Rgba32 => self.width.checked_mul(4).ok_or_else(|| {
+                    RendererError::InvalidRasterPage("row size overflow".to_owned())
+                })?,
+            };
+        let expected = usize::try_from(bytes_per_row)
+            .ok()
+            .and_then(|row| {
+                usize::try_from(self.height)
+                    .ok()
+                    .and_then(|height| row.checked_mul(height))
+            })
+            .ok_or_else(|| RendererError::InvalidRasterPage("page size overflow".to_owned()))?;
+        if self.width == 0 || self.height == 0 || self.dpi_x == 0 || self.dpi_y == 0 {
+            return Err(RendererError::InvalidRasterPage(
+                "dimensions and resolution must be non-zero".to_owned(),
+            ));
+        }
+        if self.data.len() != expected {
+            return Err(RendererError::InvalidRasterPage(format!(
+                "pixel buffer has {} bytes; expected {expected}",
+                self.data.len()
+            )));
+        }
+        Ok(())
+    }
 }
 
 /// Opaque platform-native print content.
@@ -117,6 +195,8 @@ pub struct VirtualPrintDocument {
 pub enum RenderTarget {
     /// ESC/POS bytes for receipt printers.
     EscPos,
+    /// Device-independent page raster for an installed printer driver.
+    Page(PageRenderOptions),
     /// Structured virtual-printer output.
     Virtual,
 }
@@ -161,7 +241,17 @@ impl DocumentRenderer {
             .validate()
             .map_err(|error| RendererError::InvalidDocument(error.to_string()))?;
         let rendered = match target {
-            RenderTarget::EscPos => RenderedDocument::EscPos(render_esc_pos(document)?),
+            RenderTarget::EscPos => {
+                let layout = PrintLayout::from_document(document)?;
+                RenderedDocument::EscPos(EscPosDocument {
+                    bytes: escpos::render_layout(&layout)?,
+                    receipt_width: layout.width,
+                })
+            }
+            RenderTarget::Page(options) => {
+                let layout = PrintLayout::from_document(document)?;
+                RenderedDocument::Raster(render_layout_page(&layout, options)?)
+            }
             RenderTarget::Virtual => RenderedDocument::Virtual(render_virtual(document)),
         };
         let actual = rendered.byte_len();
@@ -181,6 +271,9 @@ pub enum RendererError {
     /// Renderer limits were nonsensical.
     #[error("renderer output limit must be greater than zero")]
     InvalidLimits,
+    /// A configured physical page size or resolution is unsupported.
+    #[error("page dimensions must be 100–500 mm and resolution 72–600 DPI")]
+    InvalidPageOptions,
     /// Protocol validation rejected the document.
     #[error("print document is invalid: {0}")]
     InvalidDocument(String),
@@ -211,6 +304,23 @@ pub enum RendererError {
         /// Configured bound.
         maximum: usize,
     },
+    /// Raster page dimensions or pixel data were inconsistent.
+    #[error("raster page is invalid: {0}")]
+    InvalidRasterPage(String),
+    /// A receipt did not fit inside the configured page profile.
+    #[error("receipt content exceeds the configured page height")]
+    PageOverflow,
+    /// A barcode could not be represented as a safe graphical barcode.
+    #[error("barcode cannot be rendered: {0}")]
+    BarcodeRender(String),
+    /// An ESC/POS stream could not be safely interpreted.
+    #[error("ESC/POS command stream is unsupported or malformed at byte {offset}: {reason}")]
+    InvalidEscPos {
+        /// Byte offset where parsing stopped.
+        offset: usize,
+        /// Bounded parser reason.
+        reason: String,
+    },
 }
 
 /// Result alias for render operations.
@@ -221,62 +331,6 @@ fn columns(width: ReceiptWidth) -> usize {
         ReceiptWidth::Mm58 => 32,
         ReceiptWidth::Mm80 => 48,
     }
-}
-
-fn dots(width: ReceiptWidth) -> u32 {
-    match width {
-        ReceiptWidth::Mm58 => 384,
-        ReceiptWidth::Mm80 => 576,
-    }
-}
-
-fn render_esc_pos(document: &PrintDocument) -> RendererResult<Vec<u8>> {
-    let width = columns(document.width);
-    let mut output = vec![0x1b, b'@'];
-    for section in &document.sections {
-        match section {
-            PrintSection::Text { value, align, bold } => {
-                require_ascii(value)?;
-                output.extend_from_slice(&[0x1b, b'a', alignment_code(*align)]);
-                output.extend_from_slice(&[0x1b, b'E', u8::from(bold.unwrap_or(false))]);
-                for line in wrap_text(value, width) {
-                    output.extend_from_slice(line.as_bytes());
-                    output.push(b'\n');
-                }
-                output.extend_from_slice(&[0x1b, b'E', 0]);
-            }
-            PrintSection::Row { left, right } => {
-                require_ascii(left)?;
-                require_ascii(right)?;
-                output.extend_from_slice(&[0x1b, b'a', 0]);
-                for line in layout_row(left, right, width) {
-                    output.extend_from_slice(line.as_bytes());
-                    output.push(b'\n');
-                }
-            }
-            PrintSection::Divider => {
-                output.extend(std::iter::repeat_n(b'-', width));
-                output.push(b'\n');
-            }
-            PrintSection::Image { media_type, data } => {
-                let image = decode_image(*media_type, data)?;
-                output.extend(render_image(image, dots(document.width))?);
-            }
-            PrintSection::Qr { value } => {
-                output.extend(render_qr(value));
-            }
-            PrintSection::Barcode { format, value } => {
-                output.extend(render_barcode(*format, value)?);
-            }
-            PrintSection::Feed { lines } => {
-                output.extend_from_slice(&[0x1b, b'd', *lines]);
-            }
-            PrintSection::Cut => {
-                output.extend_from_slice(&[0x1d, b'V', 0]);
-            }
-        }
-    }
-    Ok(output)
 }
 
 fn require_ascii(value: &str) -> RendererResult<()> {
@@ -405,64 +459,6 @@ fn map_image_decode_error(error: ImageError) -> RendererError {
         _ => "decoder resource limit exceeded".to_owned(),
     };
     RendererError::ImageTooLarge(reason)
-}
-
-fn render_image(image: DynamicImage, maximum_width: u32) -> RendererResult<Vec<u8>> {
-    let image = if image.width() > maximum_width {
-        let target_height = image
-            .height()
-            .saturating_mul(maximum_width)
-            .checked_div(image.width())
-            .unwrap_or(1)
-            .max(1);
-        image.resize_exact(maximum_width, target_height, FilterType::Triangle)
-    } else {
-        image
-    }
-    .to_luma8();
-    let width = image.width();
-    let height = image.height();
-    let bytes_per_row = width.div_ceil(8);
-    let payload_len = usize::try_from(bytes_per_row)
-        .ok()
-        .and_then(|row| {
-            usize::try_from(height)
-                .ok()
-                .and_then(|height| row.checked_mul(height))
-        })
-        .ok_or_else(|| RendererError::ImageTooLarge("raster size overflow".to_owned()))?;
-    let mut output = Vec::with_capacity(payload_len + 8);
-    let width_low = u8::try_from(bytes_per_row & 0xff)
-        .map_err(|_| RendererError::ImageTooLarge("raster width overflow".to_owned()))?;
-    let width_high = u8::try_from((bytes_per_row >> 8) & 0xff)
-        .map_err(|_| RendererError::ImageTooLarge("raster width overflow".to_owned()))?;
-    let height_low = u8::try_from(height & 0xff)
-        .map_err(|_| RendererError::ImageTooLarge("raster height overflow".to_owned()))?;
-    let height_high = u8::try_from((height >> 8) & 0xff)
-        .map_err(|_| RendererError::ImageTooLarge("raster height overflow".to_owned()))?;
-    output.extend_from_slice(&[
-        0x1d,
-        b'v',
-        b'0',
-        0,
-        width_low,
-        width_high,
-        height_low,
-        height_high,
-    ]);
-    for y in 0..height {
-        for byte_index in 0..bytes_per_row {
-            let mut byte = 0_u8;
-            for bit in 0..8 {
-                let x = byte_index * 8 + bit;
-                if x < width && image.get_pixel(x, y).0[0] < 128 {
-                    byte |= 0x80 >> bit;
-                }
-            }
-            output.push(byte);
-        }
-    }
-    Ok(output)
 }
 
 fn render_qr(value: &str) -> Vec<u8> {
@@ -649,9 +645,10 @@ mod tests {
                 RenderTarget::EscPos,
             )
             .expect("render");
-        let RenderedDocument::EscPos(bytes) = rendered else {
+        let RenderedDocument::EscPos(document) = rendered else {
             panic!("expected ESC/POS");
         };
+        let bytes = document.bytes;
         assert!(bytes.starts_with(&[0x1b, b'@', 0x1b, b'a', 1]));
         assert!(bytes.windows(6).any(|window| window == b"Coffee"));
         assert!(bytes.ends_with(&[0x1d, b'V', 0]));

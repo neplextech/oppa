@@ -11,8 +11,10 @@ async-trait = "0.1.91"
 oppa-core = { path = "../oppa-core" }
 oppa-printer = { path = "../oppa-printer" }
 oppa-renderer = { path = "../oppa-renderer" }
+oppa-windows-print = { path = "../oppa-windows-print" }
+tempfile.workspace = true
 thiserror = "2.0.19"
-tokio = { version = "1.53.1", features = ["io-util", "macros", "net", "process", "rt", "sync", "time"] }
+tokio = { version = "1.53.1", features = ["fs", "io-util", "macros", "net", "process", "rt", "sync", "time"] }
 tokio-util = { version = "0.7.17", features = ["rt"] }
 uuid = { version = "1.24.0", features = ["v4"] }
 
@@ -20,5 +22,7 @@ uuid = { version = "1.24.0", features = ["v4"] }
 printers = "2.3"
 
 [dev-dependencies]
+base64.workspace = true
 oppa-protocol = { path = "../oppa-protocol" }
+image = { version = "0.25.8", default-features = false, features = ["png"] }
 tokio = { version = "1.53.1", features = ["macros", "rt-multi-thread"] }

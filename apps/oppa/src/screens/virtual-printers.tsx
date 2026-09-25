@@ -14,7 +14,13 @@ import {
 } from '@/components/ui/context-menu';
 import { playPrinterSound } from '@/lib/printer-sound';
 import { isVirtualPrinter } from '@/lib/types';
-import type { PrinterSummary, VirtualOutput, VirtualPrinterInput, VirtualPrinterMode } from '@/lib/types';
+import type {
+  PrinterSummary,
+  VirtualOutput,
+  VirtualPrinterInput,
+  VirtualPrinterMode,
+  VirtualPrinterProfile,
+} from '@/lib/types';
 import { cn, formatRelativeTime } from '@/lib/utils';
 
 const MODES: Array<{
@@ -70,8 +76,8 @@ export function VirtualPrintersScreen({
   const [selectedId, setSelectedId] = useState(virtualPrinters[0]?.id ?? '');
   const [showCreate, setShowCreate] = useState(false);
   const [input, setInput] = useState<VirtualPrinterInput>({
-    displayName: 'Receipt preview',
-    width: 80,
+    displayName: 'Virtual Thermal 80mm',
+    profile: { type: 'esc-pos-receipt', widthMm: 80 },
   });
 
   // Per-printer sound enabled flags, persisted to localStorage
@@ -113,8 +119,8 @@ export function VirtualPrintersScreen({
   return (
     <ScreenContainer>
       <ScreenHeader
-        title="Virtual Printer"
-        description="Simulate print delivery without hardware. Exercise the complete protocol lifecycle."
+        title="Virtual Printers"
+        description="Inspect thermal ESC/POS receipts and office-driver pages without hardware."
         action={
           <Button size="sm" onClick={() => setShowCreate((v) => !v)}>
             <Plus className="size-3" aria-hidden />
@@ -137,20 +143,22 @@ export function VirtualPrintersScreen({
               />
             </div>
             <div>
-              <FieldLabel htmlFor="virtual-width">Receipt width</FieldLabel>
+              <FieldLabel htmlFor="virtual-profile">Printer profile</FieldLabel>
               <select
-                id="virtual-width"
-                className={cn(inputClass, 'w-24')}
-                value={input.width}
-                onChange={(e) =>
-                  setInput((c) => ({
-                    ...c,
-                    width: Number(e.target.value) as 58 | 80,
-                  }))
-                }
+                id="virtual-profile"
+                className={cn(inputClass, 'w-56')}
+                value={profileKey(input.profile)}
+                onChange={(e) => {
+                  const selectedProfile = profileFromKey(e.target.value);
+                  setInput({
+                    displayName: profileName(selectedProfile),
+                    profile: selectedProfile,
+                  });
+                }}
               >
-                <option value={58}>58 mm</option>
-                <option value={80}>80 mm</option>
+                <option value="thermal-58">Virtual Thermal 58mm</option>
+                <option value="thermal-80">Virtual Thermal 80mm</option>
+                <option value="office-a4">Virtual Office A4</option>
               </select>
             </div>
             <div className="flex gap-2">
@@ -204,7 +212,9 @@ export function VirtualPrintersScreen({
                     <MonitorCog className="size-3.5 shrink-0" aria-hidden />
                     <div className="min-w-0">
                       <p className="truncate font-medium">{printer.displayName}</p>
-                      <p className="text-muted-foreground/60 text-xs">{printer.history.length} captured</p>
+                      <p className="text-muted-foreground/60 truncate text-xs">
+                        {virtualProfileLabel(printer.virtualProfile)} · {printer.history.length} captured
+                      </p>
                     </div>
                   </ContextMenuTrigger>
                   <ContextMenuContent className="min-w-48">
@@ -261,6 +271,7 @@ export function VirtualPrintersScreen({
                 <div className="mb-3 flex items-center justify-between">
                   <div>
                     <p className="text-foreground text-sm font-semibold">{selected.displayName}</p>
+                    <p className="text-muted-foreground text-xs">{virtualProfileLabel(selected.virtualProfile)}</p>
                     <p className="text-muted-foreground font-mono text-xs">{selected.id}</p>
                   </div>
                   <Button
@@ -379,6 +390,19 @@ export function VirtualPrintersScreen({
                           <p className="text-muted-foreground/60 mt-0.5 text-xs">
                             {formatRelativeTime(output.createdAt)} · {output.byteLength} bytes
                           </p>
+                          {output.diagnostics && (
+                            <p
+                              className="text-muted-foreground/70 mt-2 max-w-sm text-xs leading-4"
+                              title={output.diagnostics.unsupportedCommands.join('\n') || undefined}
+                            >
+                              {output.diagnostics.interpretedCommands} commands · {output.diagnostics.qrCodes} QR ·{' '}
+                              {output.diagnostics.barcodes} barcode · {output.diagnostics.images} image ·{' '}
+                              {output.diagnostics.feedLines} feed lines · cut{' '}
+                              {output.diagnostics.cutRequested ? 'requested' : 'not requested'}
+                              {output.diagnostics.unsupportedCommands.length > 0 &&
+                                ` · ${output.diagnostics.unsupportedCommands.length} unsupported`}
+                            </p>
+                          )}
                           {output.format === 'structured' && output.document && (
                             <p className="text-muted-foreground/60 mt-4 max-w-xs text-xs leading-5">
                               Structured output rendered as a receipt. Physical output may vary by printer.
@@ -400,6 +424,17 @@ export function VirtualPrintersScreen({
 }
 
 function CapturedOutputPreview({ output }: { output: VirtualOutput }) {
+  if (output.imageDataUrl) {
+    return (
+      <div className="border-border bg-background flex max-h-[560px] w-full justify-center overflow-auto rounded border p-3">
+        <img
+          src={output.imageDataUrl}
+          alt="Interpreted virtual printer output"
+          className="h-auto max-h-[520px] w-auto max-w-full object-contain"
+        />
+      </div>
+    );
+  }
   if (output.format === 'structured' && output.document) {
     return <ReceiptPreview document={output.document} />;
   }
@@ -409,4 +444,27 @@ function CapturedOutputPreview({ output }: { output: VirtualOutput }) {
       {output.preview}
     </pre>
   );
+}
+
+function profileKey(profile: VirtualPrinterProfile): string {
+  if (profile.type === 'esc-pos-receipt') return `thermal-${profile.widthMm}`;
+  return 'office-a4';
+}
+
+function profileFromKey(key: string): VirtualPrinterProfile {
+  if (key === 'thermal-58') return { type: 'esc-pos-receipt', widthMm: 58 };
+  if (key === 'office-a4') {
+    return { type: 'system-driver-page', pageWidthMm: 210, pageHeightMm: 297, dpi: 300 };
+  }
+  return { type: 'esc-pos-receipt', widthMm: 80 };
+}
+
+function profileName(profile: VirtualPrinterProfile): string {
+  if (profile.type === 'esc-pos-receipt') return `Virtual Thermal ${profile.widthMm}mm`;
+  return 'Virtual Office A4';
+}
+
+function virtualProfileLabel(profile: VirtualPrinterProfile | undefined): string {
+  if (profile?.type === 'esc-pos-receipt') return `ESC/POS • ${profile.widthMm} mm`;
+  return 'System driver • A4';
 }

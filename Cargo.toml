@@ -13,6 +13,7 @@ members = [
   "crates/oppa-spooler",
   "crates/oppa-storage",
   "crates/oppa-transport",
+  "crates/oppa-windows-print",
 ]
 resolver = "3"
 

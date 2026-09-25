@@ -13,12 +13,20 @@ use std::{
 };
 
 #[cfg(unix)]
-use std::process::Stdio;
+use std::{ffi::OsString, path::PathBuf, process::Stdio};
 
 use async_trait::async_trait;
 use oppa_core::{PrintJobId, PrinterId, Timestamp};
-use oppa_printer::{ConnectionKind, PrinterConnection, PrinterRef, SubmissionReceipt};
-use oppa_renderer::RenderedDocument;
+use oppa_printer::{
+    ConnectionKind, PrinterConnection, PrinterLanguage, PrinterRef, SubmissionMode,
+    SubmissionReceipt, VirtualPrinterProfile,
+};
+#[cfg(unix)]
+use oppa_renderer::encode_raster_page_png;
+use oppa_renderer::{
+    EscPosDiagnostics, EscPosInterpreter, PageRenderOptions, RasterDocument, RasterPage,
+    ReceiptWidth, RenderedDocument, render_escpos_for_page, render_layout_receipt,
+};
 use thiserror::Error;
 use tokio::{
     io::AsyncWriteExt,
@@ -31,6 +39,7 @@ use uuid::Uuid;
 
 /// Default upper bound for one spooler submission payload.
 pub const DEFAULT_MAX_SUBMISSION_BYTES: usize = 4 * 1024 * 1024;
+const DEFAULT_MAX_VIRTUAL_HISTORY: usize = 20;
 
 /// Borrowed submission inputs passed to a concrete spooler.
 pub struct SubmissionRequest<'a> {
@@ -133,6 +142,7 @@ impl Spooler for RawTcpSpooler {
                 request.printer.connection.kind(),
             ));
         };
+        require_raw_mode(request.printer)?;
         let bytes = raw_bytes(request.document)?;
         enforce_size(bytes.len(), self.max_submission_bytes)?;
 
@@ -172,7 +182,11 @@ impl Spooler for RawTcpSpooler {
         Ok(receipt(
             "raw-tcp",
             None,
-            BTreeMap::from([("endpoint".to_owned(), format!("{host}:{port}"))]),
+            BTreeMap::from([
+                ("endpoint".to_owned(), format!("{host}:{port}")),
+                ("submissionMode".to_owned(), "raw".to_owned()),
+                ("language".to_owned(), "esc-pos".to_owned()),
+            ]),
         ))
     }
 }
@@ -211,21 +225,141 @@ impl Spooler for SystemQueueSpooler {
                 request.printer.connection.kind(),
             ));
         };
-        let bytes = raw_bytes(request.document)?;
-        enforce_size(bytes.len(), self.max_submission_bytes)?;
-        submit_system_queue(queue_name, bytes, self.submission_timeout, cancellation).await
+        let prepared = prepare_system_queue_submission(
+            request.printer,
+            request.document,
+            self.max_submission_bytes,
+        )?;
+        submit_system_queue(queue_name, prepared, self.submission_timeout, cancellation).await
+    }
+}
+
+enum SystemQueuePayload {
+    RawEscPos(Vec<u8>),
+    DriverPages {
+        document: RasterDocument,
+        compatibility: Option<EscPosDiagnostics>,
+    },
+}
+
+fn prepare_system_queue_submission(
+    printer: &PrinterRef,
+    document: &RenderedDocument,
+    max_submission_bytes: usize,
+) -> SpoolerResult<SystemQueuePayload> {
+    let payload = match printer.submission_mode {
+        SubmissionMode::Raw(PrinterLanguage::EscPos) => {
+            SystemQueuePayload::RawEscPos(raw_bytes(document)?.to_vec())
+        }
+        SubmissionMode::Driver => {
+            let (document, compatibility) = driver_pages(document)?;
+            SystemQueuePayload::DriverPages {
+                document,
+                compatibility,
+            }
+        }
+    };
+    let byte_len = match &payload {
+        SystemQueuePayload::RawEscPos(bytes) => bytes.len(),
+        SystemQueuePayload::DriverPages { document, .. } => {
+            document.pages.iter().map(|page| page.data.len()).sum()
+        }
+    };
+    enforce_size(byte_len, max_submission_bytes)?;
+    Ok(payload)
+}
+
+fn driver_pages(
+    document: &RenderedDocument,
+) -> SpoolerResult<(RasterDocument, Option<EscPosDiagnostics>)> {
+    match document {
+        RenderedDocument::Raster(document) => Ok((document.clone(), None)),
+        RenderedDocument::EscPos(document) => {
+            let (page, diagnostics) = render_escpos_for_page(
+                &document.bytes,
+                document.receipt_width,
+                PageRenderOptions::A4_PORTRAIT,
+            )
+            .map_err(|error| SpoolerError::DocumentRender(error.to_string()))?;
+            Ok((page, Some(diagnostics)))
+        }
+        other => Err(SpoolerError::UnsupportedDocument {
+            backend: "system driver",
+            document: other.kind(),
+        }),
+    }
+}
+
+fn require_raw_mode(printer: &PrinterRef) -> SpoolerResult<()> {
+    if matches!(
+        printer.submission_mode,
+        SubmissionMode::Raw(PrinterLanguage::EscPos)
+    ) {
+        Ok(())
+    } else {
+        Err(SpoolerError::InvalidSubmissionMode(
+            "raw TCP requires explicit raw ESC/POS mode".to_owned(),
+        ))
     }
 }
 
 #[cfg(unix)]
 async fn submit_system_queue(
     queue_name: &str,
+    payload: SystemQueuePayload,
+    deadline: Duration,
+    cancellation: &CancellationToken,
+) -> SpoolerResult<SubmissionReceipt> {
+    match payload {
+        SystemQueuePayload::RawEscPos(bytes) => {
+            submit_cups_raw(queue_name, &bytes, deadline, cancellation).await
+        }
+        SystemQueuePayload::DriverPages {
+            document,
+            compatibility,
+        } => submit_cups_driver(queue_name, &document, compatibility, deadline, cancellation).await,
+    }
+}
+
+#[cfg(windows)]
+async fn submit_system_queue(
+    queue_name: &str,
+    payload: SystemQueuePayload,
+    deadline: Duration,
+    cancellation: &CancellationToken,
+) -> SpoolerResult<SubmissionReceipt> {
+    let queue_name = queue_name.to_owned();
+    let worker = tokio::task::spawn_blocking(move || match payload {
+        SystemQueuePayload::RawEscPos(bytes) => windows_print_raw(&queue_name, &bytes),
+        SystemQueuePayload::DriverPages {
+            document,
+            compatibility,
+        } => windows_print_driver(&queue_name, &document, compatibility),
+    });
+    tokio::select! {
+        () = cancellation.cancelled() => Err(SpoolerError::Cancelled),
+        result = timeout(deadline, worker) => {
+            result
+                .map_err(|_| SpoolerError::Timeout {
+                    stage: "system queue submission",
+                    duration: deadline,
+                })?
+                .map_err(|error| SpoolerError::BackendUnavailable(format!(
+                    "print worker did not finish: {error}"
+                )))?
+        }
+    }
+}
+
+#[cfg(unix)]
+async fn submit_cups_raw(
+    queue_name: &str,
     bytes: &[u8],
     deadline: Duration,
     cancellation: &CancellationToken,
 ) -> SpoolerResult<SubmissionReceipt> {
     let mut child = tokio::process::Command::new("lp")
-        .args(["-d", queue_name, "-o", "raw"])
+        .args(cups_raw_args(queue_name))
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -249,19 +383,7 @@ async fn submit_system_queue(
             .wait_with_output()
             .await
             .map_err(|error| SpoolerError::Connectivity(error.to_string()))?;
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(SpoolerError::Rejected(
-                stderr.trim().chars().take(1_000).collect(),
-            ));
-        }
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let backend_job_id = parse_lp_job_id(&stdout);
-        Ok(receipt(
-            "system-queue",
-            backend_job_id,
-            BTreeMap::from([("queue".to_owned(), queue_name.to_owned())]),
-        ))
+        lp_receipt(queue_name, output, "cups-raw", "raw", Some("esc-pos"), None)
     };
     tokio::select! {
         () = cancellation.cancelled() => Err(SpoolerError::Cancelled),
@@ -274,29 +396,118 @@ async fn submit_system_queue(
     }
 }
 
-#[cfg(windows)]
-async fn submit_system_queue(
+#[cfg(unix)]
+async fn submit_cups_driver(
     queue_name: &str,
-    bytes: &[u8],
+    document: &RasterDocument,
+    compatibility: Option<EscPosDiagnostics>,
     deadline: Duration,
     cancellation: &CancellationToken,
 ) -> SpoolerResult<SubmissionReceipt> {
-    let queue_name = queue_name.to_owned();
-    let payload = bytes.to_vec();
-    let worker = tokio::task::spawn_blocking(move || windows_print_raw(&queue_name, &payload));
+    if document.pages.is_empty() {
+        return Err(SpoolerError::DocumentRender(
+            "driver document contains no pages".to_owned(),
+        ));
+    }
+    let mut files = Vec::with_capacity(document.pages.len());
+    for page in &document.pages {
+        let image = encode_raster_page_png(page)
+            .map_err(|error| SpoolerError::DocumentRender(error.to_string()))?;
+        let file = tempfile::Builder::new()
+            .prefix("oppa-print-")
+            .suffix(".png")
+            .tempfile()
+            .map_err(|error| SpoolerError::BackendUnavailable(error.to_string()))?;
+        std::fs::write(file.path(), image)
+            .map_err(|error| SpoolerError::Connectivity(error.to_string()))?;
+        files.push(file);
+    }
+    let paths = files
+        .iter()
+        .map(|file| file.path().to_owned())
+        .collect::<Vec<_>>();
+    let mut command = tokio::process::Command::new("lp");
+    command
+        .args(cups_driver_args(queue_name, &paths))
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true);
+    let operation = async {
+        let output = command.output().await.map_err(|error| {
+            SpoolerError::BackendUnavailable(format!("cannot start lp: {error}"))
+        })?;
+        lp_receipt(
+            queue_name,
+            output,
+            "cups-filter",
+            "driver",
+            None,
+            compatibility,
+        )
+    };
     tokio::select! {
         () = cancellation.cancelled() => Err(SpoolerError::Cancelled),
-        result = timeout(deadline, worker) => {
-            result
-                .map_err(|_| SpoolerError::Timeout {
-                    stage: "system queue submission",
-                    duration: deadline,
-                })?
-                .map_err(|error| {
-                    SpoolerError::BackendUnavailable(format!("print worker did not finish: {error}"))
-                })?
+        result = timeout(deadline, operation) => {
+            result.map_err(|_| SpoolerError::Timeout {
+                stage: "system queue submission",
+                duration: deadline,
+            })?
         }
     }
+}
+
+#[cfg(unix)]
+fn cups_raw_args(queue_name: &str) -> Vec<OsString> {
+    ["-d", queue_name, "-o", "raw"]
+        .into_iter()
+        .map(OsString::from)
+        .collect()
+}
+
+#[cfg(unix)]
+fn cups_driver_args(queue_name: &str, paths: &[PathBuf]) -> Vec<OsString> {
+    let mut args = vec![OsString::from("-d"), OsString::from(queue_name)];
+    args.extend(paths.iter().map(|path| path.as_os_str().to_owned()));
+    args
+}
+
+#[cfg(unix)]
+fn lp_receipt(
+    queue_name: &str,
+    output: std::process::Output,
+    backend: &str,
+    mode: &str,
+    language: Option<&str>,
+    compatibility: Option<EscPosDiagnostics>,
+) -> SpoolerResult<SubmissionReceipt> {
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(SpoolerError::Rejected(
+            stderr.trim().chars().take(1_000).collect(),
+        ));
+    }
+    let mut metadata = BTreeMap::from([
+        ("queue".to_owned(), queue_name.to_owned()),
+        ("submissionMode".to_owned(), mode.to_owned()),
+    ]);
+    if let Some(language) = language {
+        metadata.insert("language".to_owned(), language.to_owned());
+    }
+    if let Some(diagnostics) = compatibility {
+        metadata.insert(
+            "compatibilityCommands".to_owned(),
+            diagnostics.interpreted_commands.to_string(),
+        );
+        metadata.insert(
+            "compatibilityCutRequested".to_owned(),
+            diagnostics.cut_requested.to_string(),
+        );
+    }
+    Ok(receipt(
+        backend,
+        parse_lp_job_id(&String::from_utf8_lossy(&output.stdout)),
+        metadata,
+    ))
 }
 
 /// Sends raw bytes to a Windows print queue as a `RAW` datatype job through the
@@ -318,16 +529,50 @@ fn windows_print_raw(queue_name: &str, bytes: &[u8]) -> SpoolerResult<Submission
             SpoolerError::Rejected(error.message.chars().take(1_000).collect::<String>())
         })?;
     Ok(receipt(
-        "system-queue",
+        "windows-spooler",
         Some(backend_job_id.to_string()),
-        BTreeMap::from([("queue".to_owned(), queue_name.to_owned())]),
+        BTreeMap::from([
+            ("queue".to_owned(), queue_name.to_owned()),
+            ("submissionMode".to_owned(), "raw".to_owned()),
+            ("language".to_owned(), "esc-pos".to_owned()),
+        ]),
+    ))
+}
+
+#[cfg(windows)]
+fn windows_print_driver(
+    queue_name: &str,
+    document: &RasterDocument,
+    compatibility: Option<EscPosDiagnostics>,
+) -> SpoolerResult<SubmissionReceipt> {
+    let backend_job_id = oppa_windows_print::print_document(queue_name, document)
+        .map_err(|error| SpoolerError::Rejected(error.to_string()))?;
+    let mut metadata = BTreeMap::from([
+        ("queue".to_owned(), queue_name.to_owned()),
+        ("submissionMode".to_owned(), "driver".to_owned()),
+        ("pageCount".to_owned(), document.pages.len().to_string()),
+    ]);
+    if let Some(diagnostics) = compatibility {
+        metadata.insert(
+            "compatibilityCommands".to_owned(),
+            diagnostics.interpreted_commands.to_string(),
+        );
+        metadata.insert(
+            "compatibilityCutRequested".to_owned(),
+            diagnostics.cut_requested.to_string(),
+        );
+    }
+    Ok(receipt(
+        "windows-gdi",
+        Some(backend_job_id.to_string()),
+        metadata,
     ))
 }
 
 #[cfg(not(any(unix, windows)))]
 async fn submit_system_queue(
     _queue_name: &str,
-    _bytes: &[u8],
+    _payload: SystemQueuePayload,
     _deadline: Duration,
     _cancellation: &CancellationToken,
 ) -> SpoolerResult<SubmissionReceipt> {
@@ -349,7 +594,7 @@ fn parse_lp_job_id(output: &str) -> Option<String> {
 
 fn raw_bytes(document: &RenderedDocument) -> SpoolerResult<&[u8]> {
     match document {
-        RenderedDocument::EscPos(bytes) => Ok(bytes),
+        RenderedDocument::EscPos(document) => Ok(&document.bytes),
         other => Err(SpoolerError::UnsupportedDocument {
             backend: "raw byte spooler",
             document: other.kind(),
@@ -405,6 +650,17 @@ pub struct VirtualSubmission {
     pub outcome: VirtualOutcome,
     /// Complete rendered output for the local inspector.
     pub document: RenderedDocument,
+    /// Result after the concrete emulated device interpreted its input.
+    pub preview: VirtualPreview,
+}
+
+/// Interpreted output produced by one virtual printer profile.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VirtualPreview {
+    /// Inspectable receipt or office page raster.
+    pub pages: Vec<RasterPage>,
+    /// ESC/POS interpreter diagnostics when the input passed through it.
+    pub escpos: Option<EscPosDiagnostics>,
 }
 
 #[derive(Default)]
@@ -464,7 +720,7 @@ impl Default for VirtualSpooler {
     fn default() -> Self {
         Self {
             state: Arc::new(Mutex::new(VirtualState::default())),
-            max_history: 100,
+            max_history: DEFAULT_MAX_VIRTUAL_HISTORY,
             max_submission_bytes: DEFAULT_MAX_SUBMISSION_BYTES,
         }
     }
@@ -482,6 +738,7 @@ impl Spooler for VirtualSpooler {
         cancellation: &CancellationToken,
     ) -> SpoolerResult<SubmissionReceipt> {
         enforce_size(request.document.byte_len(), self.max_submission_bytes)?;
+        let preview = virtual_preview(request.printer, request.document)?;
         let simulation = {
             let mut state = self.state.lock().await;
             let current = state.simulation;
@@ -514,19 +771,110 @@ impl Spooler for VirtualSpooler {
             recorded_at: Timestamp::now(),
             outcome,
             document: request.document.clone(),
+            preview: preview.clone(),
         })
         .await;
 
         match outcome {
             VirtualOutcome::Submitted => {
                 let backend_job_id = Uuid::new_v4().to_string();
-                Ok(receipt("virtual", Some(backend_job_id), BTreeMap::new()))
+                let mut metadata = BTreeMap::from([
+                    (
+                        "submissionMode".to_owned(),
+                        match request.printer.submission_mode {
+                            SubmissionMode::Driver => "driver",
+                            SubmissionMode::Raw(PrinterLanguage::EscPos) => "raw",
+                        }
+                        .to_owned(),
+                    ),
+                    ("pageCount".to_owned(), preview.pages.len().to_string()),
+                ]);
+                if let Some(diagnostics) = preview.escpos {
+                    metadata.insert(
+                        "interpretedCommands".to_owned(),
+                        diagnostics.interpreted_commands.to_string(),
+                    );
+                    metadata.insert(
+                        "cutRequested".to_owned(),
+                        diagnostics.cut_requested.to_string(),
+                    );
+                }
+                Ok(receipt("virtual", Some(backend_job_id), metadata))
             }
             VirtualOutcome::Failed => Err(SpoolerError::SimulatedFailure),
             VirtualOutcome::Offline => Err(SpoolerError::Connectivity(
                 "virtual printer is offline".to_owned(),
             )),
         }
+    }
+}
+
+fn virtual_preview(
+    printer: &PrinterRef,
+    document: &RenderedDocument,
+) -> SpoolerResult<VirtualPreview> {
+    let profile = printer.virtual_profile.ok_or_else(|| {
+        SpoolerError::InvalidTarget("virtual printer profile is missing".to_owned())
+    })?;
+    match profile {
+        VirtualPrinterProfile::EscPosReceipt { width_mm } => {
+            let RenderedDocument::EscPos(document) = document else {
+                return Err(SpoolerError::UnsupportedDocument {
+                    backend: "virtual ESC/POS device",
+                    document: document.kind(),
+                });
+            };
+            let width = receipt_width(width_mm)?;
+            let interpretation = EscPosInterpreter::new(width)
+                .interpret(&document.bytes)
+                .map_err(|error| SpoolerError::DocumentRender(error.to_string()))?;
+            let preview = render_layout_receipt(&interpretation.layout, 203)
+                .map_err(|error| SpoolerError::DocumentRender(error.to_string()))?;
+            Ok(VirtualPreview {
+                pages: preview.pages,
+                escpos: Some(interpretation.diagnostics),
+            })
+        }
+        VirtualPrinterProfile::SystemDriverPage {
+            page_width_mm,
+            page_height_mm,
+            dpi,
+        } => {
+            let options = PageRenderOptions {
+                width_mm: page_width_mm,
+                height_mm: page_height_mm,
+                dpi,
+            };
+            match document {
+                RenderedDocument::Raster(document) => Ok(VirtualPreview {
+                    pages: document.pages.clone(),
+                    escpos: None,
+                }),
+                RenderedDocument::EscPos(document) => {
+                    let (page, diagnostics) =
+                        render_escpos_for_page(&document.bytes, document.receipt_width, options)
+                            .map_err(|error| SpoolerError::DocumentRender(error.to_string()))?;
+                    Ok(VirtualPreview {
+                        pages: page.pages,
+                        escpos: Some(diagnostics),
+                    })
+                }
+                other => Err(SpoolerError::UnsupportedDocument {
+                    backend: "virtual system driver device",
+                    document: other.kind(),
+                }),
+            }
+        }
+    }
+}
+
+fn receipt_width(width_mm: u16) -> SpoolerResult<ReceiptWidth> {
+    match width_mm {
+        58 => Ok(ReceiptWidth::Mm58),
+        80 => Ok(ReceiptWidth::Mm80),
+        _ => Err(SpoolerError::InvalidTarget(
+            "virtual receipt width must be 58 or 80 millimetres".to_owned(),
+        )),
     }
 }
 
@@ -563,6 +911,12 @@ pub enum SpoolerError {
         /// Rendered document family.
         document: &'static str,
     },
+    /// The configured submission mode cannot reach the selected transport.
+    #[error("invalid printer submission mode: {0}")]
+    InvalidSubmissionMode(String),
+    /// A rendered document could not be converted to the selected backend format.
+    #[error("document rendering failed: {0}")]
+    DocumentRender(String),
     /// Input exceeded the backend's bounded payload.
     #[error("document is {actual} bytes; spooler maximum is {maximum}")]
     DocumentTooLarge {
@@ -604,7 +958,15 @@ pub type SpoolerResult<T> = Result<T, SpoolerError>;
 
 #[cfg(test)]
 mod tests {
-    use oppa_renderer::VirtualPrintDocument;
+    use std::io::Cursor;
+
+    use base64::{Engine as _, engine::general_purpose::STANDARD};
+    use image::ImageEncoder;
+    use oppa_printer::VirtualPrinterProfile;
+    use oppa_renderer::{
+        DocumentRenderer, EscPosDocument, PageRenderOptions, RenderTarget, RenderedDocument,
+        VirtualPrintDocument,
+    };
 
     use super::*;
 
@@ -619,31 +981,122 @@ mod tests {
             connection: PrinterConnection::Virtual {
                 printer_id: "virtual_1".to_owned(),
             },
+            submission_mode: SubmissionMode::Driver,
+            virtual_profile: Some(VirtualPrinterProfile::SystemDriverPage {
+                page_width_mm: 210,
+                page_height_mm: 297,
+                dpi: 300,
+            }),
             enabled: true,
         }
     }
 
     fn virtual_document() -> RenderedDocument {
+        DocumentRenderer::default()
+            .render(
+                &oppa_protocol_fixture(),
+                RenderTarget::Page(PageRenderOptions::A4_PORTRAIT),
+            )
+            .expect("office page")
+    }
+
+    fn oppa_protocol_fixture() -> oppa_protocol::PrintDocument {
+        let image = image::GrayImage::from_fn(8, 8, |x, y| {
+            if x == y || x + y == 7 {
+                image::Luma([0])
+            } else {
+                image::Luma([255])
+            }
+        });
+        let mut png = Cursor::new(Vec::new());
+        image::codecs::png::PngEncoder::new(&mut png)
+            .write_image(
+                image.as_raw(),
+                image.width(),
+                image.height(),
+                image::ExtendedColorType::L8,
+            )
+            .expect("encode fixture image");
+        oppa_protocol::PrintDocument {
+            width: oppa_protocol::ReceiptWidth::Mm58,
+            sections: vec![
+                oppa_protocol::PrintSection::Text {
+                    value: "Centered title".to_owned(),
+                    align: Some(oppa_protocol::TextAlignment::Center),
+                    bold: Some(true),
+                },
+                oppa_protocol::PrintSection::Text {
+                    value: "Normal text".to_owned(),
+                    align: None,
+                    bold: None,
+                },
+                oppa_protocol::PrintSection::Row {
+                    left: "Coffee".to_owned(),
+                    right: "120.00".to_owned(),
+                },
+                oppa_protocol::PrintSection::Divider,
+                oppa_protocol::PrintSection::Image {
+                    media_type: oppa_protocol::ImageMediaType::Png,
+                    data: STANDARD.encode(png.into_inner()),
+                },
+                oppa_protocol::PrintSection::Qr {
+                    value: "https://openprinter.dev/test".to_owned(),
+                },
+                oppa_protocol::PrintSection::Barcode {
+                    format: oppa_protocol::BarcodeFormat::Code128,
+                    value: "RECEIPT-123".to_owned(),
+                },
+                oppa_protocol::PrintSection::Feed { lines: 2 },
+                oppa_protocol::PrintSection::Cut,
+            ],
+        }
+    }
+
+    fn thermal_printer(width_mm: u16) -> PrinterRef {
+        PrinterRef {
+            id: PrinterId::new("virtual_thermal").expect("fixture printer"),
+            display_name: "Virtual thermal".to_owned(),
+            connection: PrinterConnection::Virtual {
+                printer_id: "virtual_thermal".to_owned(),
+            },
+            submission_mode: SubmissionMode::Raw(PrinterLanguage::EscPos),
+            virtual_profile: Some(VirtualPrinterProfile::EscPosReceipt { width_mm }),
+            enabled: true,
+        }
+    }
+
+    fn legacy_virtual_document() -> RenderedDocument {
         RenderedDocument::Virtual(VirtualPrintDocument {
             document: oppa_protocol_fixture(),
             preview_lines: vec!["Test".to_owned()],
         })
     }
 
-    fn oppa_protocol_fixture() -> oppa_protocol::PrintDocument {
-        oppa_protocol::PrintDocument {
-            width: oppa_protocol::ReceiptWidth::Mm58,
-            sections: vec![oppa_protocol::PrintSection::Text {
-                value: "Test".to_owned(),
-                align: None,
-                bold: None,
-            }],
+    fn system_queue(mode: SubmissionMode) -> PrinterRef {
+        PrinterRef {
+            id: PrinterId::new("system_1").expect("fixture printer"),
+            display_name: "System queue".to_owned(),
+            connection: PrinterConnection::SystemQueue {
+                queue_name: "Office".to_owned(),
+            },
+            submission_mode: mode,
+            virtual_profile: None,
+            enabled: true,
         }
+    }
+
+    fn escpos_document() -> RenderedDocument {
+        RenderedDocument::EscPos(EscPosDocument {
+            bytes: vec![
+                0x1b, b'@', b'R', b'e', b'c', b'e', b'i', b'p', b't', b'\n', 0x1d, b'V', 0,
+            ],
+            receipt_width: oppa_protocol::ReceiptWidth::Mm80,
+        })
     }
 
     #[tokio::test]
     async fn virtual_fail_next_resets_and_keeps_bounded_history() {
-        let spooler = VirtualSpooler::new(1, 1024).expect("spooler");
+        let spooler = VirtualSpooler::new(1, DEFAULT_MAX_SUBMISSION_BYTES).expect("spooler");
         spooler.set_simulation(VirtualSimulation::FailNext).await;
         let printer = virtual_printer();
         let job = job_id();
@@ -664,11 +1117,102 @@ mod tests {
         let history = spooler.history().await;
         assert_eq!(history.len(), 1);
         assert_eq!(history[0].outcome, VirtualOutcome::Submitted);
+        assert_eq!(
+            (
+                history[0].preview.pages[0].width,
+                history[0].preview.pages[0].height
+            ),
+            (2480, 3508)
+        );
+        assert!(
+            history[0].preview.pages[0]
+                .data
+                .iter()
+                .any(|byte| *byte != 0)
+        );
+        let RenderedDocument::Raster(submitted_page) = &history[0].document else {
+            panic!("virtual office device must capture the generic page raster");
+        };
+        assert_eq!(history[0].preview.pages, submitted_page.pages);
+    }
+
+    #[tokio::test]
+    async fn virtual_thermal_consumes_escpos_bytes_and_interprets_receipt_semantics() {
+        let printer = thermal_printer(58);
+        let source = oppa_protocol_fixture();
+        let document = DocumentRenderer::default()
+            .render(&source, RenderTarget::EscPos)
+            .expect("ESC/POS bytes");
+        let spooler = VirtualSpooler::default();
+        let job = job_id();
+        spooler
+            .submit(
+                SubmissionRequest {
+                    job_id: &job,
+                    printer: &printer,
+                    document: &document,
+                },
+                &CancellationToken::new(),
+            )
+            .await
+            .expect("virtual thermal output");
+        let history = spooler.history().await;
+        let output = history.first().expect("captured receipt");
+        assert!(matches!(output.document, RenderedDocument::EscPos(_)));
+        assert_eq!(output.preview.pages[0].width, 464);
+        assert!(output.preview.pages[0].data.iter().any(|byte| *byte != 0));
+        let diagnostics = output.preview.escpos.as_ref().expect("interpreter details");
+        assert_eq!(diagnostics.images, 1);
+        assert_eq!(diagnostics.qr_codes, 1);
+        assert_eq!(diagnostics.barcodes, 1);
+        assert_eq!(diagnostics.feed_lines, 2);
+        assert!(diagnostics.cut_requested);
+        assert!(diagnostics.unsupported_commands.is_empty());
+    }
+
+    #[tokio::test]
+    async fn raw_escpos_compatibility_page_matches_structured_page_output() {
+        let source = oppa_protocol_fixture();
+        let renderer = DocumentRenderer::default();
+        let structured = renderer
+            .render(&source, RenderTarget::Page(PageRenderOptions::A4_PORTRAIT))
+            .expect("structured office page");
+        let raw = renderer
+            .render(&source, RenderTarget::EscPos)
+            .expect("ESC/POS compatibility input");
+        let printer = virtual_printer();
+        let spooler = VirtualSpooler::default();
+        let job = job_id();
+        spooler
+            .submit(
+                SubmissionRequest {
+                    job_id: &job,
+                    printer: &printer,
+                    document: &raw,
+                },
+                &CancellationToken::new(),
+            )
+            .await
+            .expect("office compatibility output");
+        let history = spooler.history().await;
+        let compat_page = &history[0].preview.pages[0];
+        let RenderedDocument::Raster(structured) = structured else {
+            panic!("expected structured page raster");
+        };
+        let expected_page = &structured.pages[0];
+        let differing_bytes = compat_page
+            .data
+            .iter()
+            .zip(&expected_page.data)
+            .filter(|(actual, expected)| actual != expected)
+            .count();
+        assert_eq!(differing_bytes, 0);
+        assert!(history[0].preview.escpos.as_ref().unwrap().cut_requested);
     }
 
     #[tokio::test]
     async fn virtual_delay_supports_cancellation() {
-        let spooler = VirtualSpooler::new(10, 1024).expect("spooler");
+        let spooler = VirtualSpooler::new(10, DEFAULT_MAX_SUBMISSION_BYTES).expect("spooler");
         spooler
             .set_simulation(VirtualSimulation::Delay(Duration::from_secs(30)))
             .await;
@@ -714,10 +1258,15 @@ mod tests {
                 host: "127.0.0.1".to_owned(),
                 port: address.port(),
             },
+            submission_mode: SubmissionMode::Raw(PrinterLanguage::EscPos),
+            virtual_profile: None,
             enabled: true,
         };
         let job = job_id();
-        let document = RenderedDocument::EscPos(vec![0x1b, b'@', b'O', b'K']);
+        let document = RenderedDocument::EscPos(oppa_renderer::EscPosDocument {
+            bytes: vec![0x1b, b'@', b'O', b'K'],
+            receipt_width: oppa_protocol::ReceiptWidth::Mm80,
+        });
         RawTcpSpooler::default()
             .submit(
                 SubmissionRequest {
@@ -732,6 +1281,80 @@ mod tests {
         assert_eq!(server.await.expect("server"), vec![0x1b, b'@', b'O', b'K']);
     }
 
+    #[test]
+    fn generic_system_queue_prepares_driver_page_not_raw_bytes() {
+        let printer = system_queue(SubmissionMode::Driver);
+        let raw_document = escpos_document();
+        let prepared =
+            prepare_system_queue_submission(&printer, &raw_document, DEFAULT_MAX_SUBMISSION_BYTES)
+                .expect("driver compatibility page");
+        let SystemQueuePayload::DriverPages {
+            document,
+            compatibility,
+        } = prepared
+        else {
+            panic!("generic system queue must never receive raw ESC/POS");
+        };
+        assert_eq!(document.pages.len(), 1);
+        assert_eq!(
+            (document.pages[0].width, document.pages[0].height),
+            (2480, 3508)
+        );
+        assert!(document.pages[0].data.iter().any(|byte| *byte != 0));
+        assert!(
+            compatibility
+                .expect("interpreter diagnostics")
+                .cut_requested
+        );
+    }
+
+    #[test]
+    fn explicitly_raw_system_queue_keeps_printer_ready_escpos_bytes() {
+        let printer = system_queue(SubmissionMode::Raw(PrinterLanguage::EscPos));
+        let source = escpos_document();
+        let prepared =
+            prepare_system_queue_submission(&printer, &source, DEFAULT_MAX_SUBMISSION_BYTES)
+                .expect("raw bytes");
+        let SystemQueuePayload::RawEscPos(bytes) = prepared else {
+            panic!("explicit raw queue should retain ESC/POS bytes");
+        };
+        assert_eq!(bytes, raw_bytes(&source).expect("ESC/POS bytes"));
+    }
+
+    #[test]
+    fn cups_arguments_keep_driver_and_raw_filtering_separate() {
+        #[cfg(unix)]
+        {
+            let raw = cups_raw_args("Thermal");
+            assert_eq!(
+                raw.iter()
+                    .map(|arg| arg.to_string_lossy())
+                    .collect::<Vec<_>>(),
+                ["-d", "Thermal", "-o", "raw"]
+            );
+            let driver = cups_driver_args("Office", &[PathBuf::from("/tmp/page.png")]);
+            let driver = driver
+                .iter()
+                .map(|arg| arg.to_string_lossy().into_owned())
+                .collect::<Vec<_>>();
+            assert_eq!(driver, ["-d", "Office", "/tmp/page.png"]);
+            assert!(!driver.iter().any(|arg| arg == "raw"));
+        }
+    }
+
+    #[test]
+    fn driver_compatibility_stops_on_unknown_commands() {
+        let printer = system_queue(SubmissionMode::Driver);
+        let unsupported = RenderedDocument::EscPos(EscPosDocument {
+            bytes: vec![0x1b, b'@', 0x1b, b'X', b'R', b'A', b'W'],
+            receipt_width: oppa_protocol::ReceiptWidth::Mm80,
+        });
+        assert!(matches!(
+            prepare_system_queue_submission(&printer, &unsupported, DEFAULT_MAX_SUBMISSION_BYTES),
+            Err(SpoolerError::DocumentRender(_))
+        ));
+    }
+
     #[tokio::test]
     async fn raw_backend_rejects_virtual_documents_explicitly() {
         let printer = PrinterRef {
@@ -741,10 +1364,12 @@ mod tests {
                 host: "127.0.0.1".to_owned(),
                 port: 9100,
             },
+            submission_mode: SubmissionMode::Raw(PrinterLanguage::EscPos),
+            virtual_profile: None,
             enabled: true,
         };
         let job = job_id();
-        let document = virtual_document();
+        let document = legacy_virtual_document();
         assert!(matches!(
             RawTcpSpooler::default()
                 .submit(

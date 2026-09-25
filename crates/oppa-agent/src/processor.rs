@@ -2,12 +2,17 @@ use std::{collections::HashMap, sync::Arc};
 
 use async_trait::async_trait;
 use oppa_core::{IdentifierError, JobState, PrintJobId, PrinterId, Timestamp};
-use oppa_printer::{PrinterConnection, PrinterRef, SubmissionReceipt};
+use oppa_printer::{
+    PrinterConnection, PrinterLanguage, PrinterRef, SubmissionMode, SubmissionReceipt,
+    VirtualPrinterProfile,
+};
 use oppa_protocol::{
     AgentMessage, AgentMessageKind, FailureDetail, JobFailed, JobReceived, JobStatus, JobSubmitted,
     PrintJob, ProtocolVersion, ServerMessage, ServerMessageKind, Validate, ValidationError,
 };
-use oppa_renderer::{DocumentRenderer, RenderTarget, RenderedDocument, RendererError};
+use oppa_renderer::{
+    DocumentRenderer, PageRenderOptions, RenderTarget, RenderedDocument, RendererError,
+};
 use oppa_spooler::{SpoolerError, SpoolerRegistry, SubmissionRequest};
 use oppa_storage::{
     InsertResult, JobRepository, NewOutboundStatus, ReceivedPrintJob, RecoveryResult, StorageError,
@@ -680,12 +685,7 @@ impl JobProcessor {
     }
 
     fn render(&self, job: &PrintJob, printer: &PrinterRef) -> Result<RenderedDocument, JobFailure> {
-        let target = match &printer.connection {
-            PrinterConnection::Virtual { .. } => RenderTarget::Virtual,
-            PrinterConnection::SystemQueue { .. }
-            | PrinterConnection::Network { .. }
-            | PrinterConnection::Usb { .. } => RenderTarget::EscPos,
-        };
+        let target = printer_render_target(printer)?;
         self.renderer
             .render(&job.document, target)
             .map_err(|error| renderer_failure(&error))
@@ -837,6 +837,51 @@ impl JobProcessor {
                 warn!(error = %error, "could not refresh pending job count");
             }
         }
+    }
+}
+
+fn printer_render_target(printer: &PrinterRef) -> Result<RenderTarget, JobFailure> {
+    let invalid_mode = || {
+        JobFailure::new(
+            "printer.submission_mode_unsupported",
+            "the selected submission mode is not supported by this printer connection",
+            false,
+        )
+    };
+    match (
+        &printer.connection,
+        printer.submission_mode,
+        printer.virtual_profile,
+    ) {
+        (
+            PrinterConnection::Virtual { .. },
+            SubmissionMode::Raw(PrinterLanguage::EscPos),
+            Some(VirtualPrinterProfile::EscPosReceipt { .. }),
+        )
+        | (
+            PrinterConnection::SystemQueue { .. }
+            | PrinterConnection::Network { .. }
+            | PrinterConnection::Usb { .. },
+            SubmissionMode::Raw(PrinterLanguage::EscPos),
+            None,
+        ) => Ok(RenderTarget::EscPos),
+        (
+            PrinterConnection::Virtual { .. },
+            SubmissionMode::Driver,
+            Some(VirtualPrinterProfile::SystemDriverPage {
+                page_width_mm,
+                page_height_mm,
+                dpi,
+            }),
+        ) => Ok(RenderTarget::Page(PageRenderOptions {
+            width_mm: page_width_mm,
+            height_mm: page_height_mm,
+            dpi,
+        })),
+        (PrinterConnection::SystemQueue { .. }, SubmissionMode::Driver, None) => {
+            Ok(RenderTarget::Page(PageRenderOptions::A4_PORTRAIT))
+        }
+        _ => Err(invalid_mode()),
     }
 }
 
@@ -1007,4 +1052,121 @@ fn truncate_utf8(value: &str, maximum: usize) -> &str {
         boundary -= 1;
     }
     &value[..boundary]
+}
+
+#[cfg(test)]
+mod routing_tests {
+    use oppa_core::PrinterId;
+    use oppa_printer::{
+        PrinterConnection, PrinterLanguage, PrinterRef, SubmissionMode, VirtualPrinterProfile,
+    };
+    use oppa_renderer::{PageRenderOptions, RenderTarget};
+
+    use super::printer_render_target;
+
+    fn printer(
+        connection: PrinterConnection,
+        submission_mode: SubmissionMode,
+        virtual_profile: Option<VirtualPrinterProfile>,
+    ) -> PrinterRef {
+        PrinterRef {
+            id: PrinterId::new("printer_test").expect("valid id"),
+            display_name: "Test printer".to_owned(),
+            connection,
+            submission_mode,
+            virtual_profile,
+            enabled: true,
+        }
+    }
+
+    #[test]
+    fn virtual_thermal_uses_escpos_renderer() {
+        let printer = printer(
+            PrinterConnection::Virtual {
+                printer_id: "printer_test".to_owned(),
+            },
+            SubmissionMode::Raw(PrinterLanguage::EscPos),
+            Some(VirtualPrinterProfile::EscPosReceipt { width_mm: 80 }),
+        );
+        assert!(matches!(
+            printer_render_target(&printer),
+            Ok(RenderTarget::EscPos)
+        ));
+    }
+
+    #[test]
+    fn generic_system_queue_defaults_to_driver_page_renderer() {
+        let printer = printer(
+            PrinterConnection::SystemQueue {
+                queue_name: "Office".to_owned(),
+            },
+            SubmissionMode::Driver,
+            None,
+        );
+        assert!(matches!(
+            printer_render_target(&printer),
+            Ok(RenderTarget::Page(options)) if options == PageRenderOptions::A4_PORTRAIT
+        ));
+    }
+
+    #[test]
+    fn explicitly_raw_system_queue_and_network_use_escpos_renderer() {
+        let raw = SubmissionMode::Raw(PrinterLanguage::EscPos);
+        let queue = printer(
+            PrinterConnection::SystemQueue {
+                queue_name: "Thermal".to_owned(),
+            },
+            raw,
+            None,
+        );
+        let network = printer(
+            PrinterConnection::Network {
+                host: "127.0.0.1".to_owned(),
+                port: 9100,
+            },
+            raw,
+            None,
+        );
+        assert!(matches!(
+            printer_render_target(&queue),
+            Ok(RenderTarget::EscPos)
+        ));
+        assert!(matches!(
+            printer_render_target(&network),
+            Ok(RenderTarget::EscPos)
+        ));
+    }
+
+    #[test]
+    fn virtual_office_uses_its_configured_page_profile() {
+        let profile = VirtualPrinterProfile::SystemDriverPage {
+            page_width_mm: 210,
+            page_height_mm: 297,
+            dpi: 300,
+        };
+        let printer = printer(
+            PrinterConnection::Virtual {
+                printer_id: "printer_test".to_owned(),
+            },
+            SubmissionMode::Driver,
+            Some(profile),
+        );
+        assert!(matches!(
+            printer_render_target(&printer),
+            Ok(RenderTarget::Page(options)) if options == PageRenderOptions::A4_PORTRAIT
+        ));
+    }
+
+    #[test]
+    fn driver_mode_cannot_fall_through_to_raw_network_output() {
+        let printer = printer(
+            PrinterConnection::Network {
+                host: "printer.local".to_owned(),
+                port: 9100,
+            },
+            SubmissionMode::Driver,
+            None,
+        );
+        assert!(printer_render_target(&printer).is_err());
+    }
 }

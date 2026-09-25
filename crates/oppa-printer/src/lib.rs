@@ -51,6 +51,76 @@ pub enum PrinterConnection {
     },
 }
 
+/// Language carried by a raw printer submission.
+///
+/// This describes the bytes sent over a connection. It is intentionally
+/// separate from [`PrinterConnection`], which only describes how the printer
+/// is reached.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum PrinterLanguage {
+    /// ESC/POS receipt-printer commands.
+    EscPos,
+}
+
+/// How rendered content is submitted to a configured printer.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(tag = "type", content = "language", rename_all = "kebab-case")]
+pub enum SubmissionMode {
+    /// Render a device-independent page and let the operating-system driver
+    /// translate it for the printer.
+    #[default]
+    Driver,
+    /// Send printer-language bytes directly through the selected transport.
+    Raw(PrinterLanguage),
+}
+
+/// The concrete printer class emulated by an in-process virtual printer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    tag = "type",
+    rename_all = "kebab-case",
+    rename_all_fields = "camelCase",
+    deny_unknown_fields
+)]
+pub enum VirtualPrinterProfile {
+    /// Thermal receipt printer that consumes raw ESC/POS.
+    EscPosReceipt {
+        /// Receipt width in millimetres. Supported values are 58 and 80.
+        width_mm: u16,
+    },
+    /// Office printer that consumes a page for driver-based printing.
+    SystemDriverPage {
+        /// Page width in millimetres.
+        page_width_mm: u16,
+        /// Page height in millimetres.
+        page_height_mm: u16,
+        /// Raster resolution used by the virtual and real driver paths.
+        dpi: u16,
+    },
+}
+
+impl VirtualPrinterProfile {
+    /// Validates bounded page dimensions and resolution.
+    pub fn validate(&self) -> Result<(), PrinterValidationError> {
+        match self {
+            Self::EscPosReceipt { width_mm: 58 | 80 } => Ok(()),
+            Self::EscPosReceipt { .. } => Err(PrinterValidationError::InvalidVirtualProfile),
+            Self::SystemDriverPage {
+                page_width_mm,
+                page_height_mm,
+                dpi,
+            } if (100..=500).contains(page_width_mm)
+                && (100..=500).contains(page_height_mm)
+                && (72..=600).contains(dpi) =>
+            {
+                Ok(())
+            }
+            Self::SystemDriverPage { .. } => Err(PrinterValidationError::InvalidVirtualProfile),
+        }
+    }
+}
+
 impl PrinterConnection {
     /// Validates fields before a connection is saved or used.
     pub fn validate(&self) -> Result<(), PrinterValidationError> {
@@ -229,6 +299,9 @@ pub struct PrinterCapabilities {
     pub receipt_widths_mm: Vec<u16>,
     /// Whether the selected backend accepts ESC/POS bytes.
     pub esc_pos: bool,
+    /// Whether device-independent pages can be sent through a system driver.
+    #[serde(default)]
+    pub system_driver: bool,
     /// Whether raster documents can be submitted.
     pub raster: bool,
     /// Whether the device has an automatic cutter.
@@ -302,6 +375,12 @@ pub struct PrinterRef {
     pub display_name: String,
     /// Selected connection.
     pub connection: PrinterConnection,
+    /// How rendered content is submitted through the selected connection.
+    #[serde(default)]
+    pub submission_mode: SubmissionMode,
+    /// Emulated device profile, present only for virtual printers.
+    #[serde(default)]
+    pub virtual_profile: Option<VirtualPrinterProfile>,
     /// Whether the agent may advertise and submit to this printer.
     pub enabled: bool,
 }
@@ -314,7 +393,29 @@ impl PrinterRef {
             &self.display_name,
             MAX_PRINTER_NAME_BYTES,
         )?;
-        self.connection.validate()
+        self.connection
+            .validate()
+            .and_then(|()| match (&self.connection, self.virtual_profile) {
+                (PrinterConnection::Virtual { .. }, Some(profile)) => {
+                    profile.validate()?;
+                    match (profile, self.submission_mode) {
+                        (
+                            VirtualPrinterProfile::EscPosReceipt { .. },
+                            SubmissionMode::Raw(PrinterLanguage::EscPos),
+                        )
+                        | (
+                            VirtualPrinterProfile::SystemDriverPage { .. },
+                            SubmissionMode::Driver,
+                        ) => Ok(()),
+                        _ => Err(PrinterValidationError::IncompatibleVirtualMode),
+                    }
+                }
+                (PrinterConnection::Virtual { .. }, None) => {
+                    Err(PrinterValidationError::MissingVirtualProfile)
+                }
+                (_, Some(_)) => Err(PrinterValidationError::UnexpectedVirtualProfile),
+                _ => Ok(()),
+            })
     }
 }
 
@@ -361,6 +462,18 @@ pub enum PrinterValidationError {
     /// Discovery data did not identify its provider.
     #[error("discovered printer must preserve at least one provider observation")]
     MissingProvider,
+    /// A virtual printer did not identify the device it emulates.
+    #[error("virtual printer must define an emulation profile")]
+    MissingVirtualProfile,
+    /// A physical printer was configured with a virtual device profile.
+    #[error("physical printers cannot define a virtual emulation profile")]
+    UnexpectedVirtualProfile,
+    /// The virtual profile and submission mode describe different devices.
+    #[error("virtual printer profile and submission mode are incompatible")]
+    IncompatibleVirtualMode,
+    /// A virtual profile contains unsupported dimensions or resolution.
+    #[error("virtual printer profile has unsupported dimensions or resolution")]
+    InvalidVirtualProfile,
 }
 
 fn validate_text(
@@ -460,5 +573,41 @@ mod tests {
         let value = serde_json::to_value(connection).expect("serialize connection");
         assert_eq!(value["type"], "system-queue");
         assert_eq!(value["queue_name"], "receipts");
+    }
+
+    #[test]
+    fn submission_mode_defaults_to_driver_and_keeps_language_separate() {
+        let legacy = serde_json::json!({
+            "id": "printer_legacy",
+            "displayName": "Office",
+            "connection": {"type": "system-queue", "queue_name": "Office"},
+            "enabled": true
+        });
+        let printer: PrinterRef = serde_json::from_value(legacy).expect("legacy printer");
+        assert_eq!(printer.submission_mode, SubmissionMode::Driver);
+
+        let raw = serde_json::to_value(SubmissionMode::Raw(PrinterLanguage::EscPos))
+            .expect("serialize mode");
+        assert_eq!(raw["type"], "raw");
+        assert_eq!(raw["language"], "esc-pos");
+    }
+
+    #[test]
+    fn virtual_profiles_are_validated_and_separate_from_connection_identity() {
+        let printer = PrinterRef {
+            id: PrinterId::new("virtual-office").expect("id"),
+            display_name: "Virtual Office".to_owned(),
+            connection: PrinterConnection::Virtual {
+                printer_id: "virtual-office".to_owned(),
+            },
+            submission_mode: SubmissionMode::Driver,
+            virtual_profile: Some(VirtualPrinterProfile::SystemDriverPage {
+                page_width_mm: 210,
+                page_height_mm: 297,
+                dpi: 300,
+            }),
+            enabled: true,
+        };
+        assert!(printer.validate().is_ok());
     }
 }

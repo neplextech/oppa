@@ -9,6 +9,8 @@ import type {
   JobSummary,
   ManualPrinterInput,
   OpenPrinterServerConfiguration,
+  PrinterConfigurationChanges,
+  PrinterSubmissionMode,
   PrinterSummary,
   RecentServer,
   PrintDocument,
@@ -60,9 +62,13 @@ const demoVirtualPrinter: VirtualPrinterSummary = {
   capabilities: {
     widths: [58, 80],
     documentTypes: ['virtual', 'esc_pos'],
+    supportsSystemDriver: false,
+    supportsEscPos: true,
     supportsCut: true,
     supportsQr: true,
   },
+  submissionMode: { type: 'raw', language: 'esc-pos' },
+  virtualProfile: { type: 'esc-pos-receipt', widthMm: 80 },
   mode: 'always_succeed',
   delayMs: 0,
   history: [
@@ -91,10 +97,13 @@ const demoPrinters: PrinterSummary[] = [
     isVirtual: false,
     capabilities: {
       widths: [80],
-      documentTypes: ['native', 'raster'],
-      supportsCut: true,
+      documentTypes: ['driver', 'raster'],
+      supportsSystemDriver: true,
+      supportsEscPos: false,
+      supportsCut: false,
       supportsQr: true,
     },
+    submissionMode: { type: 'driver' },
   },
   {
     id: 'printer_network_counter',
@@ -108,9 +117,12 @@ const demoPrinters: PrinterSummary[] = [
     capabilities: {
       widths: [80],
       documentTypes: ['esc_pos'],
+      supportsSystemDriver: false,
+      supportsEscPos: true,
       supportsCut: true,
       supportsQr: true,
     },
+    submissionMode: { type: 'raw', language: 'esc-pos' },
   },
 ];
 
@@ -317,10 +329,7 @@ export const agentClient = {
     return isTauri() ? command('refresh_printers') : structuredClone(demoPrinters);
   },
 
-  async configurePrinter(
-    printerId: string,
-    changes: { displayName?: string; enabled?: boolean },
-  ): Promise<PrinterSummary> {
+  async configurePrinter(printerId: string, changes: PrinterConfigurationChanges): Promise<PrinterSummary> {
     if (isTauri()) {
       return command('configure_printer', { printerId, changes });
     }
@@ -347,9 +356,12 @@ export const agentClient = {
       capabilities: {
         widths: [80],
         documentTypes: ['esc_pos'],
+        supportsSystemDriver: false,
+        supportsEscPos: true,
         supportsCut: true,
         supportsQr: true,
       },
+      submissionMode: { type: 'raw', language: 'esc-pos' },
     };
   },
 
@@ -363,14 +375,20 @@ export const agentClient = {
     if (isTauri()) {
       return command('create_virtual_printer', { input });
     }
+    const isThermal = input.profile.type === 'esc-pos-receipt';
+    const submissionMode: PrinterSubmissionMode = isThermal ? { type: 'raw', language: 'esc-pos' } : { type: 'driver' };
     return {
       ...structuredClone(demoVirtualPrinter),
       id: `printer_virtual_${Date.now()}`,
       displayName: input.displayName,
+      virtualProfile: input.profile,
+      submissionMode,
       capabilities: {
-        widths: [input.width],
-        documentTypes: ['virtual', 'esc_pos'],
-        supportsCut: true,
+        widths: input.profile.type === 'esc-pos-receipt' ? [input.profile.widthMm] : [58, 80],
+        documentTypes: isThermal ? ['virtual', 'esc_pos'] : ['virtual', 'driver', 'raster'],
+        supportsSystemDriver: !isThermal,
+        supportsEscPos: isThermal,
+        supportsCut: isThermal,
         supportsQr: true,
       },
       history: [],

@@ -308,6 +308,37 @@ fn printer_capabilities_may_be_absent_when_discovery_cannot_determine_them() {
 }
 
 #[test]
+fn output_mode_capabilities_remain_optional_for_older_peers() {
+    let raw = fs::read(fixture_directory("agent").join("printer-inventory.json"))
+        .expect("fixture must be readable");
+    let mut value: Value = serde_json::from_slice(&raw).expect("fixture must be JSON");
+    let capabilities = value["payload"]["printers"][0]["capabilities"]
+        .as_object_mut()
+        .expect("fixture capabilities must be an object");
+    capabilities.remove("systemDriver");
+    capabilities.remove("escPos");
+    let legacy = serde_json::to_vec(&value).expect("legacy payload must serialize");
+
+    let message = decode_agent_message(&legacy).expect("older capabilities remain valid");
+    let AgentMessageKind::PrinterInventory(inventory) = &message.kind else {
+        panic!("fixture must be a printer inventory");
+    };
+    let capabilities = inventory.printers[0]
+        .capabilities
+        .as_ref()
+        .expect("legacy printer capabilities remain present");
+    assert_eq!(capabilities.system_driver, None);
+    assert_eq!(capabilities.esc_pos, None);
+    assert_eq!(
+        serde_json::from_slice::<Value>(
+            &encode_agent_message(&message).expect("legacy message re-encodes")
+        )
+        .expect("round trip must be JSON"),
+        value
+    );
+}
+
+#[test]
 fn json_schema_integer_notation_is_accepted() {
     let raw = fs::read_to_string(fixture_directory("server").join("heartbeat.json"))
         .expect("fixture must be readable")

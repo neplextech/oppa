@@ -1,7 +1,8 @@
 # oppa-renderer
 
-`oppa-renderer` converts validated OpenPrinter structured documents into printer-ready output
-without performing submission.
+`oppa-renderer` converts validated OpenPrinter structured documents and
+supported ESC/POS streams into output for receipt printers, system drivers,
+and virtual printer profiles. It never submits jobs.
 
 ## Implemented output
 
@@ -9,12 +10,23 @@ without performing submission.
 - Text wrapping, alignment, bold, rows, dividers, feed, and cut
 - PNG/JPEG raster images with compressed-input, dimension, and decoder-allocation bounds
 - Native ESC/POS QR codes and validated Code 128, Code 39, EAN-13, and UPC-A
+- A monochrome page renderer for office-driver printing, with receipt content
+  kept at its physical 58 mm or 80 mm width and placed at the top-center of a
+  configurable page
+- An ESC/POS interpreter for the subset emitted by OPPA: reset, alignment,
+  bold, text, line feed, raster images, QR, barcode, and cut
+- ESC/POS-to-page compatibility rendering; cut is recorded as metadata and
+  does not create page output
 - Structured virtual output with a readable preview
 
 ESC/POS code pages cannot reliably represent Nepali Unicode across hardware. The renderer therefore
 rejects non-ASCII ESC/POS text with `UnicodeRequiresRasterization` instead of emitting corrupted
-output. Virtual output preserves Unicode, and the `RasterDocument` boundary is ready for a future
-dependable text-to-raster implementation.
+output. Driver-page rendering rasterizes text with its embedded 8-by-8 glyph set; characters outside
+that set use a question-mark fallback. Virtual office output uses the same page raster passed to the
+driver boundary.
+
+The interpreter deliberately supports only the command subset emitted by the current OPPA renderer.
+Unknown commands stop interpretation so trailing binary data is never mistaken for printable text.
 
 ## Image safety limits
 
@@ -30,9 +42,11 @@ data returns `RendererError::InvalidImage`. The default rendered-document output
 
 ## Primary APIs
 
-- `DocumentRenderer`, `RenderTarget`, and `RenderLimits`
+- `DocumentRenderer`, `RenderTarget`, `PageRenderOptions`, and `RenderLimits`
 - `RenderedDocument`
-- `VirtualPrintDocument`, `RasterDocument`, and `NativePrintDocument`
+- `RasterPage`, `RasterDocument`, and `PixelFormat`
+- `EscPosInterpreter`, `EscPosDiagnostics`, and `PrintLayout`
+- `VirtualPrintDocument` and `NativePrintDocument`
 
 The crate consumes the canonical `oppa-protocol::PrintDocument` and has no printer I/O.
 `oppa-spooler` owns transport and timeout behavior.

@@ -1,6 +1,6 @@
 use oppa_printer::{
     PrinterAvailability, PrinterCapabilities as DomainPrinterCapabilities, PrinterConnection,
-    PrinterFingerprint, PrinterRef, ProviderMetadata,
+    PrinterFingerprint, PrinterRef, ProviderMetadata, SubmissionMode, VirtualPrinterProfile,
 };
 use oppa_product::ProductConfig;
 use oppa_protocol::PrintDocument;
@@ -99,6 +99,24 @@ pub struct DiscoveredServiceSummary {
 pub struct PrinterCapabilities {
     pub widths: Vec<u16>,
     pub document_types: Vec<DocumentType>,
+    #[serde(flatten)]
+    pub output_modes: PrinterOutputModes,
+    #[serde(flatten)]
+    pub receipt_features: PrinterReceiptFeatures,
+}
+
+/// Printer output modes exposed by the desktop catalog.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PrinterOutputModes {
+    pub supports_system_driver: bool,
+    pub supports_esc_pos: bool,
+}
+
+/// Receipt operations reported by the selected printer profile.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PrinterReceiptFeatures {
     pub supports_cut: bool,
     pub supports_qr: bool,
 }
@@ -109,6 +127,7 @@ pub struct PrinterCapabilities {
 pub enum DocumentType {
     EscPos,
     Raster,
+    Driver,
     Virtual,
 }
 
@@ -125,6 +144,9 @@ pub struct PrinterSummary {
     pub available: bool,
     pub is_virtual: bool,
     pub capabilities: Option<PrinterCapabilities>,
+    pub submission_mode: SubmissionMode,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub virtual_profile: Option<VirtualPrinterProfile>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mode: Option<VirtualPrinterMode>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -166,7 +188,25 @@ pub struct VirtualOutput {
     pub preview: String,
     pub byte_length: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub image_data_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub diagnostics: Option<VirtualOutputDiagnostics>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub document: Option<PrintDocument>,
+}
+
+/// Bounded summary of ESC/POS emulation performed by a virtual printer.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VirtualOutputDiagnostics {
+    pub interpreted_commands: usize,
+    pub text_lines: usize,
+    pub images: usize,
+    pub qr_codes: usize,
+    pub barcodes: usize,
+    pub feed_lines: usize,
+    pub cut_requested: bool,
+    pub unsupported_commands: Vec<String>,
 }
 
 /// Rendered virtual output family.
@@ -219,6 +259,7 @@ pub struct PersistedCatalog {
 pub struct ConfigurePrinterChanges {
     pub display_name: Option<String>,
     pub enabled: Option<bool>,
+    pub submission_mode: Option<SubmissionMode>,
 }
 
 /// Input for a raw TCP printer.
@@ -235,7 +276,7 @@ pub struct ManualPrinterInput {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct VirtualPrinterInput {
     pub display_name: String,
-    pub width: u16,
+    pub profile: VirtualPrinterProfile,
 }
 
 /// Recent durable job projection.
@@ -368,7 +409,34 @@ pub struct PendingDeepLink(pub std::sync::Mutex<Option<DeepLinkPayload>>);
 
 #[cfg(test)]
 mod tests {
-    use super::OpenPrinterConnectionState;
+    use super::{
+        DocumentType, OpenPrinterConnectionState, PrinterCapabilities, PrinterOutputModes,
+        PrinterReceiptFeatures,
+    };
+
+    #[test]
+    fn printer_capabilities_keep_the_flat_frontend_wire_shape() {
+        let value = serde_json::to_value(PrinterCapabilities {
+            widths: vec![58, 80],
+            document_types: vec![DocumentType::Driver, DocumentType::Raster],
+            output_modes: PrinterOutputModes {
+                supports_system_driver: true,
+                supports_esc_pos: false,
+            },
+            receipt_features: PrinterReceiptFeatures {
+                supports_cut: false,
+                supports_qr: true,
+            },
+        })
+        .expect("capabilities serialize");
+
+        assert_eq!(value["supportsSystemDriver"], serde_json::json!(true));
+        assert_eq!(value["supportsEscPos"], serde_json::json!(false));
+        assert_eq!(value["supportsCut"], serde_json::json!(false));
+        assert_eq!(value["supportsQr"], serde_json::json!(true));
+        assert!(value.get("outputModes").is_none());
+        assert!(value.get("receiptFeatures").is_none());
+    }
 
     #[test]
     fn connection_states_serialize_as_one_explicit_phase() {

@@ -45,4 +45,26 @@ own logical routing model.
 A manually configured printer records a validated host and port. Raw
 TCP submission normally uses port 9100, but the port is explicit.
 Discovery does not imply reachability; the spooler applies a bounded
-connection and write timeout for each submission.
+connection and write timeout for each submission. The existing manual
+raw TCP receipt-printer flow is configured for ESC/POS. Port 9100
+alone does not prove that a device understands ESC/POS; use this flow
+only with a compatible printer.
+
+## System queues and printing modes
+
+A discovered system queue defaults to **System driver** mode. OPPA
+renders a page and asks the installed operating-system printer driver
+to submit it. On Windows this uses silent GDI printing; on Unix, OPPA
+gives CUPS a page file so its filters can prepare the device language.
+
+The queue can instead be explicitly configured as **ESC/POS direct**
+for a compatible thermal receipt printer. This sends printer-ready
+ESC/POS bytes to the queue as RAW data. Queue names and port numbers
+do not identify a printer language, so OPPA does not infer ESC/POS
+from a generic system queue. Use raw mode only when the printer is
+known to support ESC/POS.
+
+Driver mode can also interpret a supported ESC/POS command stream and
+render its receipt on a page. The interpreter covers the subset
+emitted by OPPA and stops on unknown commands; it does not claim to
+recognize every vendor's ESC/POS extensions.

@@ -6,7 +6,7 @@ use oppa_agent::{
     OutboundReporter, ProcessOutcome, ReceiveJobOutcome, StaticPrinterResolver,
 };
 use oppa_core::{JobState, PrintJobId, PrinterId};
-use oppa_printer::{PrinterConnection, PrinterRef};
+use oppa_printer::{PrinterConnection, PrinterRef, SubmissionMode, VirtualPrinterProfile};
 use oppa_protocol::{
     AgentMessage, AgentMessageKind, PrintDocument, PrintJob, PrintSection, ProtocolVersion,
     ReceiptWidth, ServerMessage, ServerMessageKind,
@@ -203,6 +203,12 @@ fn virtual_printer() -> PrinterRef {
         connection: PrinterConnection::Virtual {
             printer_id: "virtual_backend_1".to_owned(),
         },
+        submission_mode: SubmissionMode::Driver,
+        virtual_profile: Some(VirtualPrinterProfile::SystemDriverPage {
+            page_width_mm: 210,
+            page_height_mm: 297,
+            dpi: 300,
+        }),
         enabled: true,
     }
 }

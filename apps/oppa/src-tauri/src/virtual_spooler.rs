@@ -147,8 +147,8 @@ impl Spooler for PerPrinterVirtualSpooler {
 #[cfg(test)]
 mod tests {
     use oppa_core::{PrintJobId, PrinterId};
-    use oppa_printer::{PrinterConnection, PrinterRef};
-    use oppa_renderer::{RenderedDocument, VirtualPrintDocument};
+    use oppa_printer::{PrinterConnection, PrinterRef, SubmissionMode, VirtualPrinterProfile};
+    use oppa_renderer::{DocumentRenderer, PageRenderOptions, RenderTarget};
     use oppa_spooler::{Spooler, SubmissionRequest};
     use tokio_util::sync::CancellationToken;
 
@@ -169,14 +169,14 @@ mod tests {
 
         let first_ref = printer(first);
         let second_ref = printer(second);
-        let document = RenderedDocument::Virtual(VirtualPrintDocument {
-            document: serde_json::from_value(serde_json::json!({
-                "width": 58,
-                "sections": [{ "type": "text", "value": "test" }]
-            }))
-            .expect("document"),
-            preview_lines: vec!["test".to_owned()],
-        });
+        let source = serde_json::from_value(serde_json::json!({
+            "width": 58,
+            "sections": [{ "type": "text", "value": "test" }]
+        }))
+        .expect("document");
+        let document = DocumentRenderer::default()
+            .render(&source, RenderTarget::Page(PageRenderOptions::A4_PORTRAIT))
+            .expect("driver page");
         let job = PrintJobId::new("job-test").expect("job");
         let cancellation = CancellationToken::new();
 
@@ -219,6 +219,12 @@ mod tests {
             },
             id,
             display_name: "Virtual".to_owned(),
+            submission_mode: SubmissionMode::Driver,
+            virtual_profile: Some(VirtualPrinterProfile::SystemDriverPage {
+                page_width_mm: 210,
+                page_height_mm: 297,
+                dpi: 300,
+            }),
             enabled: true,
         }
     }

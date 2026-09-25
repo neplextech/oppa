@@ -17,8 +17,10 @@
           "port": 9100
         },
         "capabilities": {
-          "mediaWidths": [80],
-          "raster": true,
+          "mediaWidths": [58, 80],
+          "systemDriver": false,
+          "escPos": true,
+          "raster": false,
           "cut": true,
           "qr": true,
           "barcode": true

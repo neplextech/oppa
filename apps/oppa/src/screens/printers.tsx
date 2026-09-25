@@ -31,7 +31,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import type { ManualPrinterInput, PrinterSummary } from '@/lib/types';
+import type { ManualPrinterInput, PrinterConfigurationChanges, PrinterSummary } from '@/lib/types';
 import { cn, titleCase } from '@/lib/utils';
 
 function ConnectionIcon({ type }: { type: PrinterSummary['connectionType'] }) {
@@ -53,7 +53,7 @@ export function PrintersScreen({
   busy: string | null;
   developerMode: boolean;
   onRefresh: () => Promise<void>;
-  onConfigure: (id: string, changes: { displayName?: string; enabled?: boolean }) => Promise<void>;
+  onConfigure: (id: string, changes: PrinterConfigurationChanges) => Promise<void>;
   onAddManual: (input: ManualPrinterInput) => Promise<void>;
   onRemove: (id: string) => Promise<void>;
   onTest: (id: string) => Promise<void>;
@@ -92,7 +92,7 @@ export function PrintersScreen({
 
       {showForm && (
         <div className="border-border bg-card/60 shrink-0 border-b px-6 py-5">
-          <p className="text-foreground mb-4 text-sm font-semibold">Add network printer</p>
+          <p className="text-foreground mb-4 text-sm font-semibold">Add raw TCP printer</p>
           <div className="flex flex-wrap items-end gap-4">
             <div>
               <FieldLabel htmlFor="manual-name">Display name</FieldLabel>
@@ -145,7 +145,9 @@ export function PrintersScreen({
               </Button>
             </div>
           </div>
-          <p className="text-muted-foreground mt-3 text-xs">Default port 9100. Raw TCP with explicit timeout.</p>
+          <p className="text-muted-foreground mt-3 text-xs">
+            Sends ESC/POS directly to compatible receipt printers. Port 9100 alone does not identify a printer language.
+          </p>
         </div>
       )}
 
@@ -223,7 +225,7 @@ function PrinterRow({
   developerMode: boolean;
   onSelect: () => void;
   onOpenDetails: () => void;
-  onConfigure: (id: string, changes: { displayName?: string; enabled?: boolean }) => Promise<void>;
+  onConfigure: (id: string, changes: PrinterConfigurationChanges) => Promise<void>;
   onRemove: (id: string) => Promise<void>;
   onTest: (id: string) => Promise<void>;
 }) {
@@ -390,7 +392,7 @@ function PrinterDetail({
 }: {
   printer: PrinterSummary;
   busy: string | null;
-  onConfigure: (id: string, changes: { displayName?: string; enabled?: boolean }) => Promise<void>;
+  onConfigure: (id: string, changes: PrinterConfigurationChanges) => Promise<void>;
   onRemove: (id: string) => Promise<void>;
   onTest: (id: string) => Promise<void>;
   onClose: () => void;
@@ -449,6 +451,32 @@ function PrinterDetail({
             <Row label="Source">{printer.sourceName}</Row>
             <Row label="Connection">{titleCase(printer.connectionType)}</Row>
             {printer.address && <Row label="Address">{printer.address}</Row>}
+            {printer.connectionType === 'system_queue' && (
+              <div className="pt-1">
+                <FieldLabel htmlFor={`submission-mode-${printer.id}`}>Printing mode</FieldLabel>
+                <select
+                  id={`submission-mode-${printer.id}`}
+                  className={inputClass}
+                  value={printer.submissionMode.type}
+                  disabled={busy === `printer-${printer.id}`}
+                  onChange={(event) => {
+                    const submissionMode =
+                      event.target.value === 'raw'
+                        ? { type: 'raw' as const, language: 'esc-pos' as const }
+                        : { type: 'driver' as const };
+                    void onConfigure(printer.id, { submissionMode });
+                  }}
+                >
+                  <option value="driver">System driver</option>
+                  <option value="raw">ESC/POS direct</option>
+                </select>
+                <p className="text-muted-foreground/70 mt-1 text-xs leading-4">
+                  {printer.submissionMode.type === 'driver'
+                    ? 'Prints a page through the installed printer driver.'
+                    : 'Sends ESC/POS commands directly. Use only with a compatible receipt printer.'}
+                </p>
+              </div>
+            )}
             <Row label="ID">{printer.id}</Row>
           </div>
         </div>
@@ -463,6 +491,8 @@ function PrinterDetail({
               ))}
               {printer.capabilities.supportsCut && <Cap>cut</Cap>}
               {printer.capabilities.supportsQr && <Cap>qr</Cap>}
+              {printer.capabilities.supportsSystemDriver && <Cap>system driver</Cap>}
+              {printer.capabilities.supportsEscPos && <Cap>esc/pos</Cap>}
               {printer.capabilities.documentTypes.map((t) => (
                 <Cap key={t}>{t}</Cap>
               ))}

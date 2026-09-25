@@ -7,6 +7,7 @@ use std::{
     time::Duration,
 };
 
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 use chrono::Utc;
 use oppa_agent::StaticPrinterResolver;
 use oppa_core::PrinterId;
@@ -16,7 +17,8 @@ use oppa_discovery::{
 };
 use oppa_printer::{
     DiscoveredPrinter, PrinterAvailability, PrinterCapabilities as DomainPrinterCapabilities,
-    PrinterConnection, PrinterFingerprint, PrinterRef, ProviderMetadata,
+    PrinterConnection, PrinterFingerprint, PrinterLanguage, PrinterRef, ProviderMetadata,
+    SubmissionMode, VirtualPrinterProfile,
 };
 use oppa_product::ProductFeatures;
 use oppa_protocol::{
@@ -24,9 +26,10 @@ use oppa_protocol::{
     PrinterConnection as ProtocolConnection, PrinterDescriptor, PrinterKind as ProtocolPrinterKind,
     ReceiptWidth,
 };
-use oppa_renderer::RenderedDocument;
+use oppa_renderer::{RenderedDocument, encode_raster_page_preview_png};
 use oppa_spooler::VirtualSubmission;
 use oppa_storage::SqliteStorage;
+use serde_json::Value;
 use tokio::sync::{Mutex, RwLock};
 use uuid::Uuid;
 
@@ -36,8 +39,8 @@ use crate::{
     models::{
         CatalogPrinter, ConfigurePrinterChanges, DiscoveryProviderStatus, DocumentType,
         ManualPrinterInput, PersistedCatalog, PrinterCapabilities, PrinterConnectionType,
-        PrinterSummary, VirtualOutput, VirtualOutputFormat, VirtualPrinterInput,
-        VirtualPrinterMode,
+        PrinterOutputModes, PrinterReceiptFeatures, PrinterSummary, VirtualOutput,
+        VirtualOutputDiagnostics, VirtualOutputFormat, VirtualPrinterInput, VirtualPrinterMode,
     },
     virtual_spooler::PerPrinterVirtualSpooler,
 };
@@ -45,7 +48,6 @@ use crate::{
 const CATALOG_SETTING: &str = "desktop.printer-catalog.v1";
 const DISCOVERY_TIMEOUT: Duration = Duration::from_secs(8);
 const MAX_VIRTUAL_DELAY_MS: u64 = 60_000;
-const MAX_ESC_POS_PREVIEW_BYTES: usize = 512;
 
 /// Host-owned configured and discovered printer state.
 pub struct PrinterCatalog {
@@ -72,9 +74,22 @@ impl PrinterCatalog {
             .await
             .map_err(|error| CommandError::internal(error.to_string()))?
         {
-            Some(value) => serde_json::from_value::<PersistedCatalog>(value).map_err(|error| {
-                CommandError::internal(format!("printer catalog is invalid: {error}"))
-            })?,
+            Some(mut value) => {
+                let migrated = migrate_legacy_printer_config(&mut value);
+                let persisted =
+                    serde_json::from_value::<PersistedCatalog>(value).map_err(|error| {
+                        CommandError::internal(format!("printer catalog is invalid: {error}"))
+                    })?;
+                if migrated {
+                    let migrated_value = serde_json::to_value(&persisted)
+                        .map_err(|error| CommandError::internal(error.to_string()))?;
+                    storage
+                        .set_setting(CATALOG_SETTING, &migrated_value)
+                        .await
+                        .map_err(|error| CommandError::internal(error.to_string()))?;
+                }
+                persisted
+            }
             None => PersistedCatalog::default(),
         };
 
@@ -287,22 +302,41 @@ impl PrinterCatalog {
                 existing.fingerprint = fingerprint;
                 existing.providers.clone_from(&observation.providers);
                 if existing.is_virtual() {
-                    existing.capabilities =
-                        Some(virtual_capabilities(existing.virtual_width.unwrap_or(80)));
+                    existing.capabilities = Some(virtual_capabilities_for_profile(
+                        existing.reference.virtual_profile,
+                    ));
                 }
             } else {
-                let virtual_width =
-                    matches!(observation.connection, PrinterConnection::Virtual { .. })
-                        .then_some(80);
+                let is_virtual =
+                    matches!(observation.connection, PrinterConnection::Virtual { .. });
+                let default_virtual_profile =
+                    is_virtual.then_some(VirtualPrinterProfile::EscPosReceipt { width_mm: 80 });
+                let submission_mode = new_printer_submission_mode(
+                    &observation.connection,
+                    observation.capabilities.as_ref(),
+                );
+                let virtual_profile = default_virtual_profile;
+                let virtual_width = virtual_profile.and_then(|profile| match profile {
+                    VirtualPrinterProfile::EscPosReceipt { width_mm } => Some(width_mm),
+                    VirtualPrinterProfile::SystemDriverPage { .. } => None,
+                });
                 let mut capabilities = observation.capabilities.clone();
-                if let Some(width) = virtual_width {
-                    capabilities = Some(virtual_capabilities(width));
+                if let Some(profile) = virtual_profile {
+                    capabilities = Some(virtual_capabilities_for_profile(Some(profile)));
+                } else if matches!(
+                    observation.connection,
+                    PrinterConnection::SystemQueue { .. }
+                ) && capabilities.is_none()
+                {
+                    capabilities = Some(system_driver_capabilities());
                 }
                 next.printers.push(CatalogPrinter {
                     reference: PrinterRef {
                         id,
                         display_name: observation.name.clone(),
                         connection: observation.connection,
+                        submission_mode,
+                        virtual_profile,
                         enabled: true,
                     },
                     source_name: observation.name,
@@ -365,6 +399,17 @@ impl PrinterCatalog {
             if let Some(enabled) = changes.enabled {
                 printer.reference.enabled = enabled;
             }
+            if let Some(submission_mode) = changes.submission_mode {
+                if !matches!(
+                    printer.reference.connection,
+                    PrinterConnection::SystemQueue { .. }
+                ) {
+                    return Err(CommandError::invalid(
+                        "Only system queues can switch between driver and raw ESC/POS mode.",
+                    ));
+                }
+                printer.reference.submission_mode = submission_mode;
+            }
             printer
                 .reference
                 .validate()
@@ -400,6 +445,8 @@ impl PrinterCatalog {
                 host: input.host,
                 port: input.port,
             },
+            submission_mode: SubmissionMode::Raw(PrinterLanguage::EscPos),
+            virtual_profile: None,
             enabled: true,
         };
         reference
@@ -444,11 +491,10 @@ impl PrinterCatalog {
                 "Virtual printers are disabled in this product build.",
             ));
         }
-        if !matches!(input.width, 58 | 80) {
-            return Err(CommandError::invalid(
-                "Virtual printer width must be 58 or 80 millimetres.",
-            ));
-        }
+        input
+            .profile
+            .validate()
+            .map_err(|error| CommandError::invalid(error.to_string()))?;
         let id = PrinterId::new(format!("printer_virtual_{}", Uuid::new_v4()))
             .map_err(|error| CommandError::internal(error.to_string()))?;
         let reference = PrinterRef {
@@ -457,6 +503,8 @@ impl PrinterCatalog {
             connection: PrinterConnection::Virtual {
                 printer_id: id.to_string(),
             },
+            submission_mode: mode_for_virtual_profile(input.profile),
+            virtual_profile: Some(input.profile),
             enabled: true,
         };
         reference
@@ -472,9 +520,12 @@ impl PrinterCatalog {
             }],
             reference,
             availability: PrinterAvailability::Online,
-            capabilities: Some(virtual_capabilities(input.width)),
+            capabilities: Some(virtual_capabilities_for_profile(Some(input.profile))),
             fingerprint,
-            virtual_width: Some(input.width),
+            virtual_width: match input.profile {
+                VirtualPrinterProfile::EscPosReceipt { width_mm } => Some(width_mm),
+                VirtualPrinterProfile::SystemDriverPage { .. } => None,
+            },
             virtual_mode: VirtualPrinterMode::AlwaysSucceed,
             virtual_delay_ms: 0,
         };
@@ -627,22 +678,15 @@ impl PrinterCatalog {
     }
 
     async fn summary(&self, printer: &CatalogPrinter) -> Result<PrinterSummary, CommandError> {
-        let (connection_type, address, document_types) = match &printer.reference.connection {
-            PrinterConnection::SystemQueue { queue_name } => (
-                PrinterConnectionType::SystemQueue,
-                Some(queue_name.clone()),
-                vec![DocumentType::EscPos],
-            ),
+        let (connection_type, address) = match &printer.reference.connection {
+            PrinterConnection::SystemQueue { queue_name } => {
+                (PrinterConnectionType::SystemQueue, Some(queue_name.clone()))
+            }
             PrinterConnection::Network { host, port } => (
                 PrinterConnectionType::Network,
                 Some(format!("{host}:{port}")),
-                vec![DocumentType::EscPos],
             ),
-            PrinterConnection::Virtual { .. } => (
-                PrinterConnectionType::Virtual,
-                None,
-                vec![DocumentType::Virtual, DocumentType::EscPos],
-            ),
+            PrinterConnection::Virtual { .. } => (PrinterConnectionType::Virtual, None),
             PrinterConnection::Usb {
                 vendor_id,
                 product_id,
@@ -650,19 +694,28 @@ impl PrinterCatalog {
             } => (
                 PrinterConnectionType::Usb,
                 Some(format!("{vendor_id:04x}:{product_id:04x}")),
-                vec![DocumentType::EscPos],
             ),
         };
         let capabilities = printer.capabilities.as_ref().map(|capabilities| {
-            let mut types = document_types;
+            let mut types = configured_document_types(printer);
             if capabilities.raster {
                 types.push(DocumentType::Raster);
             }
             PrinterCapabilities {
                 widths: capabilities.receipt_widths_mm.clone(),
                 document_types: types,
-                supports_cut: capabilities.cut,
-                supports_qr: capabilities.qr_code,
+                output_modes: PrinterOutputModes {
+                    supports_system_driver: capabilities.system_driver,
+                    supports_esc_pos: capabilities.esc_pos
+                        || matches!(
+                            printer.reference.submission_mode,
+                            SubmissionMode::Raw(PrinterLanguage::EscPos)
+                        ),
+                },
+                receipt_features: PrinterReceiptFeatures {
+                    supports_cut: capabilities.cut,
+                    supports_qr: capabilities.qr_code,
+                },
             }
         });
         let (mode, delay_ms, history) = if printer.is_virtual() {
@@ -695,6 +748,8 @@ impl PrinterCatalog {
                 && matches!(printer.availability, PrinterAvailability::Online),
             is_virtual: printer.is_virtual(),
             capabilities,
+            submission_mode: printer.reference.submission_mode,
+            virtual_profile: printer.reference.virtual_profile,
             mode,
             delay_ms,
             history,
@@ -710,7 +765,27 @@ fn virtual_output((index, submission): (usize, VirtualSubmission)) -> VirtualOut
             Some(document.document.clone()),
         ),
         RenderedDocument::EscPos(bytes) => {
-            (VirtualOutputFormat::EscPos, esc_pos_preview(bytes), None)
+            let diagnostics = submission.preview.escpos.as_ref();
+            (
+                VirtualOutputFormat::EscPos,
+                diagnostics.map_or_else(
+                    || format!("{} ESC/POS bytes interpreted", bytes.bytes.len()),
+                    |diagnostics| {
+                        format!(
+                            "{} commands · {} text lines · {} QR · {} barcode · {} image{} · {} feed lines · cut {}",
+                            diagnostics.interpreted_commands,
+                            diagnostics.text_lines,
+                            diagnostics.qr_codes,
+                            diagnostics.barcodes,
+                            diagnostics.images,
+                            if diagnostics.images == 1 { "" } else { "s" },
+                            diagnostics.feed_lines,
+                            if diagnostics.cut_requested { "requested" } else { "not requested" },
+                        )
+                    },
+                ),
+                None,
+            )
         }
         RenderedDocument::Raster(document) => (
             VirtualOutputFormat::Raster,
@@ -723,6 +798,31 @@ fn virtual_output((index, submission): (usize, VirtualSubmission)) -> VirtualOut
             None,
         ),
     };
+    let image_data_url = submission
+        .preview
+        .pages
+        .first()
+        .and_then(|page| encode_raster_page_preview_png(page).ok())
+        .map(|png| format!("data:image/png;base64,{}", STANDARD.encode(png)));
+    let diagnostics =
+        submission
+            .preview
+            .escpos
+            .as_ref()
+            .map(|diagnostics| VirtualOutputDiagnostics {
+                interpreted_commands: diagnostics.interpreted_commands,
+                text_lines: diagnostics.text_lines,
+                images: diagnostics.images,
+                qr_codes: diagnostics.qr_codes,
+                barcodes: diagnostics.barcodes,
+                feed_lines: diagnostics.feed_lines,
+                cut_requested: diagnostics.cut_requested,
+                unsupported_commands: diagnostics
+                    .unsupported_commands
+                    .iter()
+                    .map(|command| command.command.clone())
+                    .collect(),
+            });
     VirtualOutput {
         id: format!("output_{}_{}", submission.job_id, index),
         job_id: submission.job_id.to_string(),
@@ -730,6 +830,8 @@ fn virtual_output((index, submission): (usize, VirtualSubmission)) -> VirtualOut
         format,
         preview,
         byte_length: submission.document.byte_len(),
+        image_data_url,
+        diagnostics,
         document,
     }
 }
@@ -749,6 +851,100 @@ fn persisted_virtual_mode(mode: VirtualPrinterMode) -> VirtualPrinterMode {
     } else {
         mode
     }
+}
+
+/// Adds explicit submission and virtual device profiles to older catalog rows.
+///
+/// Old system queues are moved to the safe driver path. Existing network and
+/// USB targets retain their former raw ESC/POS behavior, and old virtual
+/// printers become thermal profiles using their persisted receipt width.
+fn migrate_legacy_printer_config(value: &mut Value) -> bool {
+    let Some(printers) = value.get_mut("printers").and_then(Value::as_array_mut) else {
+        return false;
+    };
+    let mut changed = false;
+    for printer in printers {
+        let legacy_width = printer
+            .get("virtualWidth")
+            .and_then(Value::as_u64)
+            .filter(|width| matches!(width, 58 | 80))
+            .unwrap_or(80);
+        let Some(reference) = printer.get_mut("reference").and_then(Value::as_object_mut) else {
+            continue;
+        };
+        let connection_type = reference
+            .get("connection")
+            .and_then(|connection| connection.get("type"))
+            .and_then(Value::as_str)
+            .map(str::to_owned);
+        let had_submission_mode = reference.contains_key("submissionMode");
+        if !had_submission_mode {
+            let submission_mode = match connection_type.as_deref() {
+                Some("system-queue") => serde_json::json!({ "type": "driver" }),
+                Some("network" | "usb" | "virtual") => serde_json::json!({
+                    "type": "raw",
+                    "language": "esc-pos"
+                }),
+                _ => continue,
+            };
+            reference.insert("submissionMode".to_owned(), submission_mode);
+            changed = true;
+        }
+        if connection_type.as_deref() == Some("virtual")
+            && !reference.contains_key("virtualProfile")
+        {
+            let is_driver = reference
+                .get("submissionMode")
+                .and_then(|mode| mode.get("type"))
+                .and_then(Value::as_str)
+                == Some("driver");
+            let profile = if is_driver {
+                serde_json::json!({
+                    "type": "system-driver-page",
+                    "pageWidthMm": 210,
+                    "pageHeightMm": 297,
+                    "dpi": 300
+                })
+            } else {
+                serde_json::json!({
+                    "type": "esc-pos-receipt",
+                    "widthMm": legacy_width
+                })
+            };
+            reference.insert("virtualProfile".to_owned(), profile);
+            changed = true;
+        }
+        if !had_submission_mode && connection_type.as_deref() == Some("system-queue") {
+            migrate_legacy_system_queue_capabilities(printer);
+            changed = true;
+        }
+    }
+    changed
+}
+
+fn migrate_legacy_system_queue_capabilities(printer: &mut Value) {
+    let Some(printer) = printer.as_object_mut() else {
+        return;
+    };
+    let capabilities = printer
+        .entry("capabilities".to_owned())
+        .or_insert_with(|| Value::Object(serde_json::Map::new()));
+    if capabilities.is_null() {
+        *capabilities = Value::Object(serde_json::Map::new());
+    }
+    let Some(capabilities) = capabilities.as_object_mut() else {
+        return;
+    };
+    capabilities
+        .entry("receiptWidthsMm".to_owned())
+        .or_insert_with(|| serde_json::json!([58, 80]));
+    capabilities.insert("systemDriver".to_owned(), Value::Bool(true));
+    capabilities.insert("escPos".to_owned(), Value::Bool(false));
+    capabilities.insert("raster".to_owned(), Value::Bool(true));
+    capabilities.insert("cut".to_owned(), Value::Bool(false));
+    capabilities.insert("qrCode".to_owned(), Value::Bool(true));
+    capabilities.insert("barcode".to_owned(), Value::Bool(true));
+    capabilities.insert("cancellation".to_owned(), Value::Bool(true));
 }
 
 fn matching_printer_index(
@@ -810,24 +1006,6 @@ fn fingerprint_for_connection(connection: &PrinterConnection) -> PrinterFingerpr
     }
 }
 
-fn esc_pos_preview(bytes: &[u8]) -> String {
-    let shown = bytes.len().min(MAX_ESC_POS_PREVIEW_BYTES);
-    let mut lines = bytes[..shown]
-        .chunks(16)
-        .map(|chunk| {
-            chunk
-                .iter()
-                .map(|byte| format!("{byte:02X}"))
-                .collect::<Vec<_>>()
-                .join(" ")
-        })
-        .collect::<Vec<_>>();
-    if shown < bytes.len() {
-        lines.push(format!("... {} more byte(s)", bytes.len() - shown));
-    }
-    lines.join("\n")
-}
-
 fn protocol_descriptor(printer: &CatalogPrinter) -> Result<PrinterDescriptor, CommandError> {
     let (kind, connection, fingerprint) = match &printer.reference.connection {
         PrinterConnection::SystemQueue { queue_name } => (
@@ -863,10 +1041,9 @@ fn protocol_descriptor(printer: &CatalogPrinter) -> Result<PrinterDescriptor, Co
         name: printer.reference.display_name.clone(),
         kind,
         connection,
-        capabilities: printer
-            .capabilities
-            .as_ref()
-            .and_then(protocol_capabilities),
+        capabilities: printer.capabilities.as_ref().and_then(|capabilities| {
+            protocol_capabilities(capabilities, printer.reference.submission_mode)
+        }),
         enabled: printer.reference.enabled,
         availability: match printer.availability {
             PrinterAvailability::Online => ProtocolAvailability::Online,
@@ -878,7 +1055,10 @@ fn protocol_descriptor(printer: &CatalogPrinter) -> Result<PrinterDescriptor, Co
     })
 }
 
-fn protocol_capabilities(capabilities: &DomainPrinterCapabilities) -> Option<ProtocolCapabilities> {
+fn protocol_capabilities(
+    capabilities: &DomainPrinterCapabilities,
+    submission_mode: SubmissionMode,
+) -> Option<ProtocolCapabilities> {
     let mut widths = capabilities
         .receipt_widths_mm
         .iter()
@@ -892,6 +1072,14 @@ fn protocol_capabilities(capabilities: &DomainPrinterCapabilities) -> Option<Pro
     widths.dedup();
     (!widths.is_empty()).then_some(ProtocolCapabilities {
         media_widths: widths,
+        system_driver: Some(capabilities.system_driver),
+        esc_pos: Some(
+            capabilities.esc_pos
+                || matches!(
+                    submission_mode,
+                    SubmissionMode::Raw(PrinterLanguage::EscPos)
+                ),
+        ),
         raster: capabilities.raster,
         cut: capabilities.cut,
         qr: capabilities.qr_code,
@@ -966,6 +1154,7 @@ fn receipt_capabilities() -> DomainPrinterCapabilities {
     DomainPrinterCapabilities {
         receipt_widths_mm: vec![58, 80],
         esc_pos: true,
+        system_driver: false,
         raster: false,
         cut: true,
         qr_code: true,
@@ -977,8 +1166,78 @@ fn receipt_capabilities() -> DomainPrinterCapabilities {
 fn virtual_capabilities(width: u16) -> DomainPrinterCapabilities {
     DomainPrinterCapabilities {
         receipt_widths_mm: vec![width],
+        system_driver: false,
+        esc_pos: true,
         raster: false,
-        ..receipt_capabilities()
+        cut: true,
+        qr_code: true,
+        barcode: true,
+        cancellation: true,
+    }
+}
+
+fn virtual_capabilities_for_profile(
+    profile: Option<VirtualPrinterProfile>,
+) -> DomainPrinterCapabilities {
+    match profile {
+        Some(VirtualPrinterProfile::EscPosReceipt { width_mm }) => virtual_capabilities(width_mm),
+        Some(VirtualPrinterProfile::SystemDriverPage { .. }) | None => system_driver_capabilities(),
+    }
+}
+
+fn system_driver_capabilities() -> DomainPrinterCapabilities {
+    DomainPrinterCapabilities {
+        receipt_widths_mm: vec![58, 80],
+        esc_pos: false,
+        system_driver: true,
+        raster: true,
+        cut: false,
+        qr_code: true,
+        barcode: true,
+        cancellation: true,
+    }
+}
+
+fn mode_for_virtual_profile(profile: VirtualPrinterProfile) -> SubmissionMode {
+    match profile {
+        VirtualPrinterProfile::EscPosReceipt { .. } => SubmissionMode::Raw(PrinterLanguage::EscPos),
+        VirtualPrinterProfile::SystemDriverPage { .. } => SubmissionMode::Driver,
+    }
+}
+
+fn new_printer_submission_mode(
+    connection: &PrinterConnection,
+    capabilities: Option<&DomainPrinterCapabilities>,
+) -> SubmissionMode {
+    match connection {
+        PrinterConnection::SystemQueue { .. } | PrinterConnection::Usb { .. } => {
+            SubmissionMode::Driver
+        }
+        PrinterConnection::Network { .. }
+            if capabilities.is_some_and(|capabilities| capabilities.esc_pos) =>
+        {
+            SubmissionMode::Raw(PrinterLanguage::EscPos)
+        }
+        PrinterConnection::Virtual { .. } => SubmissionMode::Raw(PrinterLanguage::EscPos),
+        PrinterConnection::Network { .. } => SubmissionMode::Driver,
+    }
+}
+
+fn configured_document_types(printer: &CatalogPrinter) -> Vec<DocumentType> {
+    if printer.is_virtual() {
+        let mut types = vec![DocumentType::Virtual];
+        match printer.reference.virtual_profile {
+            Some(VirtualPrinterProfile::EscPosReceipt { .. }) => types.push(DocumentType::EscPos),
+            Some(VirtualPrinterProfile::SystemDriverPage { .. }) => {
+                types.push(DocumentType::Driver);
+            }
+            None => {}
+        }
+        return types;
+    }
+    match printer.reference.submission_mode {
+        SubmissionMode::Driver => vec![DocumentType::Driver],
+        SubmissionMode::Raw(PrinterLanguage::EscPos) => vec![DocumentType::EscPos],
     }
 }
 
@@ -998,12 +1257,15 @@ mod tests {
     use oppa_core::PrinterId;
     use oppa_printer::{
         DiscoveredPrinter, PrinterAvailability, PrinterConnection, PrinterFingerprint, PrinterKind,
-        PrinterRef, ProviderMetadata,
+        PrinterRef, ProviderMetadata, SubmissionMode, VirtualPrinterProfile,
     };
     use oppa_product::ProductFeatures;
 
-    use super::{discovered_printer_id, esc_pos_preview, feature_allows_printer};
-    use crate::models::{CatalogPrinter, VirtualPrinterMode};
+    use super::{
+        discovered_printer_id, feature_allows_printer, migrate_legacy_printer_config,
+        protocol_capabilities, system_driver_capabilities,
+    };
+    use crate::models::{CatalogPrinter, PersistedCatalog, VirtualPrinterMode};
 
     #[test]
     fn discovery_identity_is_stable_for_the_same_connection() {
@@ -1039,6 +1301,12 @@ mod tests {
                 connection: PrinterConnection::Virtual {
                     printer_id: "virtual_test".to_owned(),
                 },
+                submission_mode: SubmissionMode::Driver,
+                virtual_profile: Some(VirtualPrinterProfile::SystemDriverPage {
+                    page_width_mm: 210,
+                    page_height_mm: 297,
+                    dpi: 300,
+                }),
                 enabled: true,
             },
             source_name: "Virtual printer".to_owned(),
@@ -1065,12 +1333,137 @@ mod tests {
     }
 
     #[test]
-    fn esc_pos_preview_is_hex_encoded_and_bounded() {
-        assert_eq!(esc_pos_preview(&[0x1b, 0x40, 0x0a]), "1B 40 0A");
+    fn legacy_catalog_migration_uses_safe_system_queue_default_and_preserves_raw_receipts() {
+        let mut catalog = serde_json::json!({
+            "printers": [
+                {
+                    "reference": {
+                        "id": "printer_office",
+                        "displayName": "Office",
+                        "connection": { "type": "system-queue", "queue_name": "Office" },
+                        "enabled": true
+                    },
+                    "sourceName": "Office",
+                    "availability": "unknown",
+                    "capabilities": {
+                        "receiptWidthsMm": [58, 80],
+                        "escPos": true,
+                        "raster": false,
+                        "cut": true,
+                        "qrCode": true,
+                        "barcode": true,
+                        "cancellation": true
+                    }
+                },
+                {
+                    "reference": {
+                        "id": "printer_network",
+                        "displayName": "Receipt",
+                        "connection": { "type": "network", "host": "127.0.0.1", "port": 9100 },
+                        "enabled": true
+                    },
+                    "sourceName": "Raw TCP printer",
+                    "availability": "unknown",
+                    "capabilities": null
+                },
+                {
+                    "reference": {
+                        "id": "printer_virtual",
+                        "displayName": "Virtual thermal",
+                    "connection": { "type": "virtual", "printer_id": "virtual" },
+                        "enabled": true
+                    },
+                    "sourceName": "Virtual printer",
+                    "availability": "online",
+                    "capabilities": null,
+                    "virtualWidth": 58
+                }
+            ]
+        });
 
-        let bytes = vec![0xFF; 513];
-        let preview = esc_pos_preview(&bytes);
-        assert!(preview.ends_with("... 1 more byte(s)"));
-        assert_eq!(preview.matches("FF").count(), 512);
+        assert!(migrate_legacy_printer_config(&mut catalog));
+        assert_eq!(
+            catalog["printers"][0]["reference"]["submissionMode"],
+            serde_json::json!({ "type": "driver" })
+        );
+        assert_eq!(
+            catalog["printers"][1]["reference"]["submissionMode"],
+            serde_json::json!({ "type": "raw", "language": "esc-pos" })
+        );
+        assert_eq!(
+            catalog["printers"][2]["reference"]["virtualProfile"],
+            serde_json::json!({ "type": "esc-pos-receipt", "widthMm": 58 })
+        );
+
+        let migrated: PersistedCatalog =
+            serde_json::from_value(catalog.clone()).expect("migrated catalog deserializes");
+        assert!(
+            migrated
+                .printers
+                .iter()
+                .all(|printer| printer.reference.validate().is_ok())
+        );
+        let office_capabilities = migrated.printers[0]
+            .capabilities
+            .as_ref()
+            .expect("legacy system queue gains driver capabilities");
+        assert!(office_capabilities.system_driver);
+        assert!(!office_capabilities.esc_pos);
+        assert!(office_capabilities.raster);
+        assert!(!office_capabilities.cut);
+        assert!(!migrate_legacy_printer_config(&mut catalog));
+    }
+
+    #[test]
+    fn current_printer_configuration_roundtrips_without_changing_mode_or_profile() {
+        let mut catalog = serde_json::json!({
+            "printers": [{
+                "reference": {
+                    "id": "printer_virtual_office",
+                    "displayName": "Virtual office",
+                    "connection": { "type": "virtual", "printer_id": "virtual-office" },
+                    "submissionMode": { "type": "driver" },
+                    "virtualProfile": {
+                        "type": "system-driver-page",
+                        "pageWidthMm": 210,
+                        "pageHeightMm": 297,
+                        "dpi": 300
+                    },
+                    "enabled": true
+                },
+                "sourceName": "Virtual printer",
+                "availability": "online",
+                "capabilities": null
+            }]
+        });
+        assert!(!migrate_legacy_printer_config(&mut catalog));
+        let parsed: PersistedCatalog = serde_json::from_value(catalog).expect("catalog");
+        let reference = &parsed.printers[0].reference;
+        assert_eq!(reference.submission_mode, SubmissionMode::Driver);
+        assert_eq!(
+            reference.virtual_profile,
+            Some(VirtualPrinterProfile::SystemDriverPage {
+                page_width_mm: 210,
+                page_height_mm: 297,
+                dpi: 300,
+            })
+        );
+    }
+
+    #[test]
+    fn generic_system_queue_capabilities_claim_escpos_only_after_explicit_configuration() {
+        let capabilities = system_driver_capabilities();
+        let driver = protocol_capabilities(&capabilities, SubmissionMode::Driver)
+            .expect("driver capabilities");
+        assert_eq!(driver.system_driver, Some(true));
+        assert_eq!(driver.esc_pos, Some(false));
+
+        let raw = protocol_capabilities(
+            &capabilities,
+            SubmissionMode::Raw(oppa_printer::PrinterLanguage::EscPos),
+        )
+        .expect("explicit raw capabilities");
+        assert_eq!(raw.system_driver, Some(true));
+        assert_eq!(raw.esc_pos, Some(true));
     }
 }

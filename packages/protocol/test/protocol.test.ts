@@ -195,6 +195,18 @@ describe('runtime validation', () => {
     expect(descriptor).not.toHaveProperty('capabilities');
   });
 
+  it('accepts printer capabilities from peers without output-mode fields', () => {
+    const envelope = JSON.parse(readFileSync(`${fixtureRoot}/agent/printer-inventory.json`, 'utf8')) as {
+      payload: { printers: Array<Record<string, unknown>> };
+    };
+    const descriptor = structuredClone(envelope.payload.printers[0]!);
+    const capabilities = descriptor.capabilities as Record<string, unknown>;
+    delete capabilities.systemDriver;
+    delete capabilities.escPos;
+
+    expect(parsePrinterDescriptor(descriptor)).toEqual(descriptor);
+  });
+
   it('requires bounded, resource-free brand metadata in server hello', () => {
     const hello = JSON.parse(readFileSync(`${fixtureRoot}/server/server-hello.json`, 'utf8')) as {
       payload: Record<string, unknown>;

@@ -1,0 +1,23 @@
+[package]
+name = "oppa-windows-print"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Isolated Windows GDI page submission for OPPA system queues"
+readme = "README.md"
+
+[dependencies]
+oppa-renderer = { path = "../oppa-renderer" }
+thiserror.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_Storage_Xps"] }
+
+[lints.rust]
+unsafe_code = "deny"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+module_name_repetitions = "allow"
+must_use_candidate = "allow"

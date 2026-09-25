@@ -162,8 +162,22 @@ fn receipt_capabilities() -> PrinterCapabilities {
     PrinterCapabilities {
         receipt_widths_mm: vec![58, 80],
         esc_pos: true,
+        system_driver: false,
         raster: true,
         cut: true,
+        qr_code: true,
+        barcode: true,
+        cancellation: true,
+    }
+}
+
+fn system_driver_capabilities() -> PrinterCapabilities {
+    PrinterCapabilities {
+        receipt_widths_mm: vec![58, 80],
+        esc_pos: false,
+        system_driver: true,
+        raster: true,
+        cut: false,
         qr_code: true,
         barcode: true,
         cancellation: true,
@@ -329,7 +343,7 @@ pub fn parse_lpstat(output: &str) -> Vec<DiscoveredPrinter> {
                 } else {
                     PrinterAvailability::Unknown
                 },
-                capabilities: None,
+                capabilities: Some(system_driver_capabilities()),
                 providers: vec![ProviderMetadata {
                     provider: "system-queue".to_owned(),
                     provider_id: Some(name),
@@ -369,7 +383,7 @@ fn parse_windows_printers(output: &str) -> DiscoveryResult<Vec<DiscoveredPrinter
                 ..PrinterFingerprint::default()
             },
             availability: windows_availability(fields[3], fields[4]),
-            capabilities: None,
+            capabilities: Some(system_driver_capabilities()),
             providers: vec![ProviderMetadata {
                 provider: "system-queue".to_owned(),
                 provider_id: Some(fields[0].to_owned()),
@@ -419,6 +433,10 @@ mod tests {
             .iter()
             .find(|printer| printer.name == "Receipt")
             .expect("receipt queue");
+        let capabilities = receipt.capabilities.as_ref().expect("driver capabilities");
+        assert!(capabilities.system_driver);
+        assert!(capabilities.raster);
+        assert!(!capabilities.esc_pos);
         assert_eq!(
             receipt.fingerprint.device_uri.as_deref(),
             Some("socket://printer.local:9100")
@@ -429,6 +447,15 @@ mod tests {
             .expect("offline queue");
         assert_eq!(offline.availability, PrinterAvailability::Offline);
         assert_eq!(receipt.availability, PrinterAvailability::Online);
+    }
+
+    #[test]
+    fn generic_system_queue_never_claims_escpos_by_default() {
+        let printer = parse_lpstat("printer Office is idle. enabled since today")
+            .into_iter()
+            .next()
+            .expect("office queue");
+        assert!(!printer.capabilities.unwrap().esc_pos);
     }
 
     #[cfg(windows)]

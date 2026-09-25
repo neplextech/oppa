@@ -34,6 +34,10 @@ export const PrinterCapabilitiesSchema = Type.Object(
       maxItems: 2,
       uniqueItems: true,
     }),
+    /** Whether an installed operating-system printer driver is available. */
+    systemDriver: Type.Optional(Type.Boolean()),
+    /** Whether the selected printer mode is explicitly configured for ESC/POS. */
+    escPos: Type.Optional(Type.Boolean()),
     raster: Type.Boolean(),
     cut: Type.Boolean(),
     qr: Type.Boolean(),

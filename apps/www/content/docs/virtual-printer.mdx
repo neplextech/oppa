@@ -5,18 +5,31 @@ description:
   hardware.
 ---
 
-A virtual printer participates in discovery and job delivery like a
-physical target but captures output locally instead of opening a
-device connection.
+A virtual printer emulates a concrete printer class. It captures the
+data at the same boundary used by a real printer backend, then shows a
+preview of the result. It does not call a platform driver or require
+printer hardware.
 
 Use it to:
 
 - develop an integrating server without printer hardware
-- inspect the structured document sent by the server
-- inspect rendered ESC/POS bytes and byte counts
-- preview raster or receipt output when available
+- exercise actual ESC/POS rendering and interpretation
+- preview the same page raster sent toward an office printer driver
 - test restart recovery and idempotency
 - simulate predictable failures
+
+## Virtual printer profiles
+
+| Profile                        | Input and preview                                                                            |
+| ------------------------------ | -------------------------------------------------------------------------------------------- |
+| Virtual Thermal 58 mm or 80 mm | OPPA renders ESC/POS, then the virtual device interprets those bytes into a receipt preview. |
+| Virtual Office A4              | OPPA renders a page raster, then the virtual device captures that page for preview.          |
+
+Thermal diagnostics summarize command count, interpreted text, images,
+QR codes, barcodes, feed, cut, and unsupported commands. Unsupported
+commands stop interpretation; arbitrary trailing bytes are not treated
+as text. Cut is kept as device metadata and does not add visible
+content to an office page.
 
 ## Simulation modes
 
@@ -34,13 +47,14 @@ spoolers.
 
 ## Local history
 
-Captured output is bounded and stored as development-oriented local
-history. The UI can inspect or clear it. Diagnostics still avoid
-including complete print contents by default.
+Captured page images and bounded diagnostics are stored as
+development-oriented local history. The UI can inspect or clear them.
+The history view does not display raw ESC/POS bytes by default.
 
 ## Automated tests
 
-Agent lifecycle tests use the virtual spooler to verify the required
-order: persistence, receipt acknowledgement, rendering, submission,
-result persistence, and result reporting. This keeps CI independent of
-platform printer drivers.
+Automated tests cover both profiles, the supported ESC/POS command
+subset, and ESC/POS-to-office-page compatibility. Agent lifecycle
+tests also verify the required order: persistence, receipt
+acknowledgement, rendering, submission, result persistence, and result
+reporting. CI does not need platform printer drivers.

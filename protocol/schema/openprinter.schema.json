@@ -188,6 +188,9 @@
                                   "cut": {
                                     "type": "boolean"
                                   },
+                                  "escPos": {
+                                    "type": "boolean"
+                                  },
                                   "mediaWidths": {
                                     "items": {
                                       "anyOf": [
@@ -210,6 +213,9 @@
                                     "type": "boolean"
                                   },
                                   "raster": {
+                                    "type": "boolean"
+                                  },
+                                  "systemDriver": {
                                     "type": "boolean"
                                   }
                                 },
@@ -304,6 +310,9 @@
                                   "cut": {
                                     "type": "boolean"
                                   },
+                                  "escPos": {
+                                    "type": "boolean"
+                                  },
                                   "mediaWidths": {
                                     "items": {
                                       "anyOf": [
@@ -326,6 +335,9 @@
                                     "type": "boolean"
                                   },
                                   "raster": {
+                                    "type": "boolean"
+                                  },
+                                  "systemDriver": {
                                     "type": "boolean"
                                   }
                                 },
@@ -426,6 +438,9 @@
                                   "cut": {
                                     "type": "boolean"
                                   },
+                                  "escPos": {
+                                    "type": "boolean"
+                                  },
                                   "mediaWidths": {
                                     "items": {
                                       "anyOf": [
@@ -448,6 +463,9 @@
                                     "type": "boolean"
                                   },
                                   "raster": {
+                                    "type": "boolean"
+                                  },
+                                  "systemDriver": {
                                     "type": "boolean"
                                   }
                                 },
@@ -593,6 +611,9 @@
                                   "cut": {
                                     "type": "boolean"
                                   },
+                                  "escPos": {
+                                    "type": "boolean"
+                                  },
                                   "mediaWidths": {
                                     "items": {
                                       "anyOf": [
@@ -615,6 +636,9 @@
                                     "type": "boolean"
                                   },
                                   "raster": {
+                                    "type": "boolean"
+                                  },
+                                  "systemDriver": {
                                     "type": "boolean"
                                   }
                                 },
@@ -709,6 +733,9 @@
                                   "cut": {
                                     "type": "boolean"
                                   },
+                                  "escPos": {
+                                    "type": "boolean"
+                                  },
                                   "mediaWidths": {
                                     "items": {
                                       "anyOf": [
@@ -731,6 +758,9 @@
                                     "type": "boolean"
                                   },
                                   "raster": {
+                                    "type": "boolean"
+                                  },
+                                  "systemDriver": {
                                     "type": "boolean"
                                   }
                                 },
@@ -831,6 +861,9 @@
                                   "cut": {
                                     "type": "boolean"
                                   },
+                                  "escPos": {
+                                    "type": "boolean"
+                                  },
                                   "mediaWidths": {
                                     "items": {
                                       "anyOf": [
@@ -853,6 +886,9 @@
                                     "type": "boolean"
                                   },
                                   "raster": {
+                                    "type": "boolean"
+                                  },
+                                  "systemDriver": {
                                     "type": "boolean"
                                   }
                                 },
@@ -966,6 +1002,9 @@
                                   "cut": {
                                     "type": "boolean"
                                   },
+                                  "escPos": {
+                                    "type": "boolean"
+                                  },
                                   "mediaWidths": {
                                     "items": {
                                       "anyOf": [
@@ -988,6 +1027,9 @@
                                     "type": "boolean"
                                   },
                                   "raster": {
+                                    "type": "boolean"
+                                  },
+                                  "systemDriver": {
                                     "type": "boolean"
                                   }
                                 },
@@ -1082,6 +1124,9 @@
                                   "cut": {
                                     "type": "boolean"
                                   },
+                                  "escPos": {
+                                    "type": "boolean"
+                                  },
                                   "mediaWidths": {
                                     "items": {
                                       "anyOf": [
@@ -1104,6 +1149,9 @@
                                     "type": "boolean"
                                   },
                                   "raster": {
+                                    "type": "boolean"
+                                  },
+                                  "systemDriver": {
                                     "type": "boolean"
                                   }
                                 },
@@ -1204,6 +1252,9 @@
                                   "cut": {
                                     "type": "boolean"
                                   },
+                                  "escPos": {
+                                    "type": "boolean"
+                                  },
                                   "mediaWidths": {
                                     "items": {
                                       "anyOf": [
@@ -1226,6 +1277,9 @@
                                     "type": "boolean"
                                   },
                                   "raster": {
+                                    "type": "boolean"
+                                  },
+                                  "systemDriver": {
                                     "type": "boolean"
                                   }
                                 },

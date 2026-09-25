@@ -10,6 +10,9 @@ platform I/O.
 - Keep stable OPPA printer IDs separate from mutable discovery fingerprints.
 - Model system queues, raw network endpoints, USB descriptors, and virtual
   printers as validated tagged values.
+- Keep a connection independent from a submission mode (`Driver` or
+  `Raw(PrinterLanguage)`) and from the profile used to emulate a virtual
+  printer.
 - Preserve provenance when multiple discovery providers observe one device.
 - Define the async discovery/capability backend contract.
 
@@ -20,7 +23,9 @@ configuration to `oppa-storage`.
 
 ## Primary APIs
 
-- `PrinterConnection`, `PrinterFingerprint`, and `PrinterRef`
+- `PrinterConnection`, `PrinterLanguage`, `SubmissionMode`, and
+  `VirtualPrinterProfile`
+- `PrinterFingerprint` and `PrinterRef`
 - `DiscoveredPrinter` and `ProviderMetadata`
 - `PrinterCapabilities` and `PrinterAvailability`
 - `PrinterBackend`

@@ -72,6 +72,12 @@ pub enum PrinterAvailability {
 pub struct PrinterCapabilities {
     /// Receipt widths accepted by this backend.
     pub media_widths: Vec<ReceiptWidth>,
+    /// Whether an installed operating-system printer driver is available.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub system_driver: Option<bool>,
+    /// Whether the selected printer mode is explicitly configured for ESC/POS.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub esc_pos: Option<bool>,
     /// Whether raster documents are supported.
     pub raster: bool,
     /// Whether a cut operation is supported.

@@ -9,6 +9,7 @@ inventory changes.
 - Operating-system queues (`lpstat` on Unix and `Get-Printer` on Windows),
   reporting online/offline/degraded availability from the queue state
   (`enabled`/`disabled` on Unix, `PrinterStatus` and `WorkOffline` on Windows)
+  and advertising driver-based printing without claiming ESC/POS support
 - Manually configured raw TCP printers, with a bounded TCP reachability probe
   that reports online/offline (no bytes are written)
 - Mutable in-process virtual printers
@@ -28,7 +29,9 @@ claimed in this initial implementation.
 
 The crate depends on `oppa-printer` domain types. Stable identity remains a
 storage concern: fingerprints are evidence and are not treated as permanent
-IDs.
+IDs. Discovery reports a system queue as a driver path; a local explicit raw
+language choice belongs to printer configuration and is not inferred from the
+queue name.
 
 ## Development
 
