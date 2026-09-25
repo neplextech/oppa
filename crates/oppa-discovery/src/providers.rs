@@ -13,6 +13,30 @@ use crate::{DiscoveryError, DiscoveryProvider, DiscoveryResult};
 /// Upper bound for one manual network-printer reachability probe.
 const NETWORK_PROBE_TIMEOUT: Duration = Duration::from_secs(2);
 
+/// Windows process flag that prevents console applications from opening a
+/// console window when launched by the desktop app.
+#[cfg(any(windows, test))]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+#[cfg(any(windows, test))]
+trait ProcessCreationFlags {
+    fn set_creation_flags(&mut self, flags: u32);
+}
+
+#[cfg(windows)]
+impl ProcessCreationFlags for Command {
+    fn set_creation_flags(&mut self, flags: u32) {
+        use std::os::windows::process::CommandExt;
+
+        self.as_std_mut().creation_flags(flags);
+    }
+}
+
+#[cfg(any(windows, test))]
+fn configure_hidden_console<C: ProcessCreationFlags>(command: &mut C) {
+    command.set_creation_flags(CREATE_NO_WINDOW);
+}
+
 /// One manually configured raw TCP printer.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ManualNetworkPrinter {
@@ -254,6 +278,7 @@ fn platform_queue_command() -> Command {
         "-Command",
         "Get-Printer | ForEach-Object { \"$($_.Name)`t$($_.DriverName)`t$($_.PortName)`t$($_.PrinterStatus)`t$($_.WorkOffline)\" }",
     ]);
+    configure_hidden_console(&mut command);
     command
 }
 
@@ -419,6 +444,27 @@ fn windows_availability(status: &str, work_offline: &str) -> PrinterAvailability
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[derive(Default)]
+    struct RecordingProcessCommand {
+        creation_flags: Option<u32>,
+    }
+
+    impl ProcessCreationFlags for RecordingProcessCommand {
+        fn set_creation_flags(&mut self, flags: u32) {
+            self.creation_flags = Some(flags);
+        }
+    }
+
+    #[test]
+    fn background_processes_suppress_windows_console_creation() {
+        let mut command = RecordingProcessCommand::default();
+
+        configure_hidden_console(&mut command);
+
+        assert_eq!(command.creation_flags, Some(CREATE_NO_WINDOW));
+        assert_eq!(command.creation_flags, Some(0x0800_0000));
+    }
 
     #[test]
     fn lpstat_parser_joins_queue_and_device_lines() {
