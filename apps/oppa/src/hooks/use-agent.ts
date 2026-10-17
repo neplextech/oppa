@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { agentClient } from '@/lib/agent-client';
 import { isVirtualPrinter } from '@/lib/types';
 import type {
+  PdfPrintSettings,
   AgentStatus,
   Diagnostics,
   DiscoveredServiceSummary,
@@ -145,6 +146,10 @@ export function useAgent() {
       },
       sendTestPrint: async (printerId: string) => {
         const created = await run(`test-${printerId}`, () => agentClient.sendTestPrint(printerId));
+        setJobs((current) => [created, ...current]);
+      },
+      sendTestPdf: async (printerId: string, file: File, settings: PdfPrintSettings) => {
+        const created = await run(`test-${printerId}`, () => agentClient.sendTestPdf(printerId, file, settings));
         setJobs((current) => [created, ...current]);
       },
       reconnect: async () => {

@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    ReceiptWidth, Validate, ValidationError,
+    ReceiptWidth, StandardPaperSize, Validate, ValidationError,
     validation::{validate_identifier, validate_string},
 };
 
@@ -86,6 +86,45 @@ pub struct PrinterCapabilities {
     pub qr: bool,
     /// Whether linear barcode rendering is supported.
     pub barcode: bool,
+    /// Document families this printer accepts. Absent means receipts only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub document_formats: Option<Vec<DocumentFormat>>,
+    /// Standard paper sizes this printer can select. Absent means unknown.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub paper_sizes: Option<Vec<StandardPaperSize>>,
+    /// Whether custom media sizes, such as label stock, can be requested.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub custom_paper_size: Option<bool>,
+    /// Print options this printer honours for PDF documents.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub print_options: Option<PrintOptionsCapability>,
+}
+
+/// Document families that a printer backend can accept.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DocumentFormat {
+    /// Structured receipt primitives rendered by OPPA.
+    Receipt,
+    /// Portable Document Format delivered by reference.
+    Pdf,
+}
+
+/// PDF print options a backend can honour. Each flag is explicit so a
+/// missing capability is never inferred from a missing key.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PrintOptionsCapability {
+    /// Number of copies.
+    pub copies: bool,
+    /// Duplex (two-sided) printing.
+    pub duplex: bool,
+    /// Page orientation.
+    pub orientation: bool,
+    /// Fit, actual-size, and percentage scaling.
+    pub scaling: bool,
+    /// Page-range selection.
+    pub page_ranges: bool,
 }
 
 impl Validate for PrinterCapabilities {
@@ -101,6 +140,36 @@ impl Validate for PrinterCapabilities {
                 "mediaWidths",
                 "must not contain duplicate widths",
             ));
+        }
+        if let Some(formats) = &self.document_formats {
+            if formats.is_empty() || formats.len() > 2 {
+                return Err(ValidationError::new(
+                    "documentFormats",
+                    "must contain between 1 and 2 formats",
+                ));
+            }
+            if formats.len() == 2 && formats[0] == formats[1] {
+                return Err(ValidationError::new(
+                    "documentFormats",
+                    "must not contain duplicate formats",
+                ));
+            }
+        }
+        if let Some(sizes) = &self.paper_sizes {
+            if sizes.len() > 4 {
+                return Err(ValidationError::new(
+                    "paperSizes",
+                    "must contain at most 4 standard sizes",
+                ));
+            }
+            for (index, size) in sizes.iter().enumerate() {
+                if sizes[..index].contains(size) {
+                    return Err(ValidationError::new(
+                        format!("paperSizes.{index}"),
+                        "must not contain duplicate sizes",
+                    ));
+                }
+            }
         }
         Ok(())
     }

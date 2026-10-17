@@ -13,6 +13,7 @@ mod document;
 mod error;
 mod job;
 mod message;
+mod pdf;
 mod printer;
 mod validation;
 
@@ -28,7 +29,8 @@ pub use codec::{
     encode_protocol_message, encode_server_message,
 };
 pub use document::{
-    BarcodeFormat, ImageMediaType, PrintDocument, PrintSection, ReceiptWidth, TextAlignment,
+    BarcodeFormat, ImageMediaType, JobDocument, PrintDocument, PrintSection, ReceiptWidth,
+    TextAlignment,
 };
 pub use error::{ProtocolError, ValidationError};
 pub use job::PrintJob;
@@ -39,8 +41,15 @@ pub use message::{
     OpenPrinterBrandMetadata, PrinterInventory, PrinterInventoryChanged, ProtocolMessage,
     ProtocolVersion, RequestPrinterInventory, ServerHello, ServerMessage, ServerMessageKind,
 };
+pub use pdf::{
+    CustomPaperSize, Duplex, MAX_COPIES, MAX_CUSTOM_PAPER_MM, MAX_PAGE_RANGE_BYTES,
+    MAX_SCALE_PERCENT, MIN_COPIES, MIN_CUSTOM_PAPER_MM, MIN_SCALE_PERCENT, Orientation, PaperSize,
+    PdfDocument, PdfFormat, PdfSource, PrintSettings, Scaling, StandardPaperSize,
+    validate_document_url, validate_page_ranges,
+};
 pub use printer::{
-    PrinterAvailability, PrinterCapabilities, PrinterConnection, PrinterDescriptor, PrinterKind,
+    DocumentFormat, PrintOptionsCapability, PrinterAvailability, PrinterCapabilities,
+    PrinterConnection, PrinterDescriptor, PrinterKind,
 };
 pub use validation::{Metadata, Validate};
 
@@ -64,3 +73,9 @@ pub const MAX_IMAGE_BASE64_LENGTH: usize = 1_398_104;
 
 /// Maximum number of opaque string metadata entries carried by a job.
 pub const MAX_METADATA_ENTRIES: usize = 32;
+
+/// Maximum PDF size accepted for one job, in bytes.
+pub const MAX_PDF_DOCUMENT_BYTES: u64 = 20 * 1024 * 1024;
+
+/// Maximum UTF-8 length of a PDF retrieval URL.
+pub const MAX_PDF_URL_BYTES: usize = 2_048;

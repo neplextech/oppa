@@ -108,6 +108,39 @@ const result = await session.sendJob({
 
 `sendJob` handing a frame to a live transport is not durable server storage. Keep the job in application-owned storage until the agent acknowledgement and apply application retry policy outside this SDK.
 
+## Job documents
+
+A PDF job is sent with `document: { format: 'pdf', source, settings }`. The
+`source` is an HTTPS URL plus `sha256` and `byteLength`; the bytes are never
+placed in the message. Send PDF jobs only to printers whose `documentFormats`
+include `pdf`.
+
+Your document endpoint must authenticate the agent. Use
+`verifyDocumentRequest` with the agent's registered public key:
+
+```ts
+import { verifyDocumentRequest } from '@openprinter/server';
+
+const result = verifyDocumentRequest({
+  method: request.method,
+  pathAndQuery: request.url,
+  agentId: request.headers['x-openprinter-agent-id'],
+  jobId: request.headers['x-openprinter-job-id'],
+  timestampMs: Number(request.headers['x-openprinter-timestamp']),
+  signature: request.headers['x-openprinter-signature'],
+  sha256,
+  publicKey,
+});
+if (!result.ok) {
+  response.statusCode = 403;
+  return response.end();
+}
+```
+
+Also confirm that the job belongs to the authenticated agent before serving the
+bytes. The verifier checks the method, a five-minute clock window, and the
+signature over the canonical payload described in the protocol documentation.
+
 ## Credential revocation and failures
 
 Call `revokeCredential(agentId, keyId)` to revoke a paired public credential. Future authentication attempts receive a bounded machine-readable rejection and the gateway closes. Discovery, pairing, authentication, handshake, transport, callback, heartbeat, and message sizes all have explicit validation or timeouts.

@@ -5,6 +5,7 @@ members = [
   "crates/oppa-auth",
   "crates/oppa-core",
   "crates/oppa-discovery",
+  "crates/oppa-documents",
   "crates/oppa-platform",
   "crates/oppa-printer",
   "crates/oppa-product",

@@ -12,6 +12,7 @@ rust-version.workspace = true
 async-trait.workspace = true
 oppa-core = { path = "../oppa-core" }
 oppa-printer = { path = "../oppa-printer" }
+oppa-documents = { path = "../oppa-documents" }
 oppa-protocol = { path = "../oppa-protocol" }
 oppa-renderer = { path = "../oppa-renderer" }
 oppa-spooler = { path = "../oppa-spooler" }
@@ -25,6 +26,7 @@ tracing.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
+sha2.workspace = true
 tempfile.workspace = true
 
 [lints]

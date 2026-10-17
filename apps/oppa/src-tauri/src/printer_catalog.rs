@@ -16,15 +16,17 @@ use oppa_discovery::{
     SystemQueueProvider, VirtualPrinterDefinition, VirtualPrinterProvider,
 };
 use oppa_printer::{
-    DiscoveredPrinter, PrinterAvailability, PrinterCapabilities as DomainPrinterCapabilities,
-    PrinterConnection, PrinterFingerprint, PrinterLanguage, PrinterRef, ProviderMetadata,
-    SubmissionMode, VirtualPrinterProfile,
+    DiscoveredPrinter, PdfCapabilities as DomainPdfCapabilities, PrinterAvailability,
+    PrinterCapabilities as DomainPrinterCapabilities, PrinterConnection, PrinterFingerprint,
+    PrinterLanguage, PrinterRef, ProviderMetadata, StandardPaper, SubmissionMode,
+    VirtualPrinterProfile,
 };
 use oppa_product::ProductFeatures;
 use oppa_protocol::{
+    DocumentFormat as ProtocolDocumentFormat, PrintOptionsCapability,
     PrinterAvailability as ProtocolAvailability, PrinterCapabilities as ProtocolCapabilities,
     PrinterConnection as ProtocolConnection, PrinterDescriptor, PrinterKind as ProtocolPrinterKind,
-    ReceiptWidth,
+    ReceiptWidth, StandardPaperSize,
 };
 use oppa_renderer::{RenderedDocument, encode_raster_page_preview_png};
 use oppa_spooler::VirtualSubmission;
@@ -38,9 +40,10 @@ use crate::{
     error::CommandError,
     models::{
         CatalogPrinter, ConfigurePrinterChanges, DiscoveryProviderStatus, DocumentType,
-        ManualPrinterInput, PersistedCatalog, PrinterCapabilities, PrinterConnectionType,
-        PrinterOutputModes, PrinterReceiptFeatures, PrinterSummary, VirtualOutput,
-        VirtualOutputDiagnostics, VirtualOutputFormat, VirtualPrinterInput, VirtualPrinterMode,
+        ManualPrinterInput, PdfCapabilities, PdfRoute, PersistedCatalog, PrinterCapabilities,
+        PrinterConnectionType, PrinterOutputModes, PrinterReceiptFeatures, PrinterSummary,
+        VirtualOutput, VirtualOutputDiagnostics, VirtualOutputFormat, VirtualPrinterInput,
+        VirtualPrinterMode,
     },
     virtual_spooler::PerPrinterVirtualSpooler,
 };
@@ -701,7 +704,11 @@ impl PrinterCatalog {
             if capabilities.raster {
                 types.push(DocumentType::Raster);
             }
+            if capabilities.pdf.is_some() {
+                types.push(DocumentType::Pdf);
+            }
             PrinterCapabilities {
+                pdf: capabilities.pdf.as_ref().map(desktop_pdf_capabilities),
                 widths: capabilities.receipt_widths_mm.clone(),
                 document_types: types,
                 output_modes: PrinterOutputModes {
@@ -795,6 +802,15 @@ fn virtual_output((index, submission): (usize, VirtualSubmission)) -> VirtualOut
         RenderedDocument::Native(document) => (
             VirtualOutputFormat::Structured,
             format!("Native document ({})", document.media_type),
+            None,
+        ),
+        RenderedDocument::Pdf(document) => (
+            VirtualOutputFormat::Pdf,
+            format!(
+                "PDF · {} page(s) in document · {} selected",
+                document.page_count,
+                document.selected_pages.len()
+            ),
             None,
         ),
     };
@@ -1084,7 +1100,86 @@ fn protocol_capabilities(
         cut: capabilities.cut,
         qr: capabilities.qr_code,
         barcode: capabilities.barcode,
+        document_formats: Some(protocol_document_formats(capabilities)),
+        paper_sizes: capabilities
+            .pdf
+            .as_ref()
+            .filter(|pdf| !pdf.paper_sizes.is_empty())
+            .map(|pdf| {
+                pdf.paper_sizes
+                    .iter()
+                    .copied()
+                    .map(protocol_paper_size)
+                    .collect()
+            }),
+        custom_paper_size: capabilities.pdf.as_ref().map(|pdf| pdf.custom_paper),
+        print_options: capabilities.pdf.as_ref().map(|pdf| PrintOptionsCapability {
+            copies: true,
+            duplex: pdf.duplex,
+            orientation: true,
+            scaling: true,
+            page_ranges: true,
+        }),
     })
+}
+
+/// Lists receipt support plus PDF support when the route is available.
+fn protocol_document_formats(
+    capabilities: &DomainPrinterCapabilities,
+) -> Vec<ProtocolDocumentFormat> {
+    let mut formats = vec![ProtocolDocumentFormat::Receipt];
+    if capabilities.pdf.is_some() {
+        formats.push(ProtocolDocumentFormat::Pdf);
+    }
+    formats
+}
+
+fn protocol_paper_size(paper: StandardPaper) -> StandardPaperSize {
+    match paper {
+        StandardPaper::A4 => StandardPaperSize::A4,
+        StandardPaper::A5 => StandardPaperSize::A5,
+        StandardPaper::Letter => StandardPaperSize::Letter,
+        StandardPaper::Legal => StandardPaperSize::Legal,
+    }
+}
+
+fn desktop_pdf_capabilities(pdf: &DomainPdfCapabilities) -> PdfCapabilities {
+    PdfCapabilities {
+        route: if pdf.native {
+            PdfRoute::Native
+        } else {
+            PdfRoute::Raster
+        },
+        paper_sizes: pdf
+            .paper_sizes
+            .iter()
+            .map(|paper| match paper {
+                StandardPaper::A4 => "A4",
+                StandardPaper::A5 => "A5",
+                StandardPaper::Letter => "Letter",
+                StandardPaper::Legal => "Legal",
+            })
+            .map(str::to_owned)
+            .collect(),
+        custom_paper: pdf.custom_paper,
+        duplex: pdf.duplex,
+    }
+}
+
+/// Raster PDF routes can size pages to any standard or custom paper, but
+/// duplex needs a device mode that the GDI path does not set.
+fn raster_pdf_capabilities() -> DomainPdfCapabilities {
+    DomainPdfCapabilities {
+        native: false,
+        duplex: false,
+        custom_paper: true,
+        paper_sizes: vec![
+            StandardPaper::A4,
+            StandardPaper::A5,
+            StandardPaper::Letter,
+            StandardPaper::Legal,
+        ],
+    }
 }
 
 fn protocol_fingerprint(printer: &CatalogPrinter) -> Option<String> {
@@ -1160,6 +1255,7 @@ fn receipt_capabilities() -> DomainPrinterCapabilities {
         qr_code: true,
         barcode: true,
         cancellation: true,
+        pdf: None,
     }
 }
 
@@ -1173,6 +1269,7 @@ fn virtual_capabilities(width: u16) -> DomainPrinterCapabilities {
         qr_code: true,
         barcode: true,
         cancellation: true,
+        pdf: None,
     }
 }
 
@@ -1195,6 +1292,7 @@ fn system_driver_capabilities() -> DomainPrinterCapabilities {
         qr_code: true,
         barcode: true,
         cancellation: true,
+        pdf: Some(raster_pdf_capabilities()),
     }
 }
 

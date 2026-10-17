@@ -19,6 +19,15 @@ provider becomes a diagnostic `ProviderFailure`; it does not crash the agent or
 discard healthy results from other providers. USB and mDNS discovery are not
 claimed in this initial implementation.
 
+## CUPS queue options
+
+Unix system queues are enriched with `lpoptions -p <queue> -l`. The parser
+reads PPD-style keys (`PageSize`, `Duplex`) and IPP-style keys (`media`,
+`sides`) and reports only the paper sizes and duplex modes it finds. A failed
+or timed-out query reports native PDF submission without claiming media or
+duplex support. Windows queues advertise the rasterized PDF route, and
+virtual printers advertise PDF only through their configured profiles.
+
 ## Primary APIs
 
 - `DiscoveryProvider`

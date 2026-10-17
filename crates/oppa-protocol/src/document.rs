@@ -3,7 +3,7 @@ use std::fmt;
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
 
 use crate::{
-    MAX_DOCUMENT_SECTIONS, MAX_IMAGE_BASE64_LENGTH, Validate, ValidationError,
+    MAX_DOCUMENT_SECTIONS, MAX_IMAGE_BASE64_LENGTH, PdfDocument, Validate, ValidationError,
     validation::{validate_base64, validate_string},
 };
 
@@ -211,5 +211,68 @@ impl Validate for PrintDocument {
                 .map_err(|error| error.at(format!("sections.{index}")))?;
         }
         Ok(())
+    }
+}
+
+/// Document content carried by a print job.
+///
+/// Structured receipts keep their original wire shape, so existing servers
+/// and SDKs continue to work unchanged. A PDF document is identified by its
+/// `format` member, which receipts never contain.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum JobDocument {
+    /// Structured receipt primitives rendered by OPPA.
+    Receipt(PrintDocument),
+    /// A retrievable, integrity-checked PDF with print settings.
+    Pdf(PdfDocument),
+}
+
+impl JobDocument {
+    /// Returns the stable document-family name used in diagnostics.
+    #[must_use]
+    pub const fn format_name(&self) -> &'static str {
+        match self {
+            Self::Receipt(_) => "receipt",
+            Self::Pdf(_) => "pdf",
+        }
+    }
+}
+
+impl Validate for JobDocument {
+    fn validate(&self) -> Result<(), ValidationError> {
+        match self {
+            Self::Receipt(document) => document.validate(),
+            Self::Pdf(document) => document.validate(),
+        }
+    }
+}
+
+impl Serialize for JobDocument {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match self {
+            Self::Receipt(document) => document.serialize(serializer),
+            Self::Pdf(document) => document.serialize(serializer),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for JobDocument {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = serde_json::Value::deserialize(deserializer)?;
+        if value.get("format").is_some() {
+            serde_json::from_value(value)
+                .map(Self::Pdf)
+                .map_err(de::Error::custom)
+        } else {
+            serde_json::from_value(value)
+                .map(Self::Receipt)
+                .map_err(de::Error::custom)
+        }
     }
 }

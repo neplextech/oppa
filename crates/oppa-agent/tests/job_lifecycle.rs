@@ -8,8 +8,8 @@ use oppa_agent::{
 use oppa_core::{JobState, PrintJobId, PrinterId};
 use oppa_printer::{PrinterConnection, PrinterRef, SubmissionMode, VirtualPrinterProfile};
 use oppa_protocol::{
-    AgentMessage, AgentMessageKind, PrintDocument, PrintJob, PrintSection, ProtocolVersion,
-    ReceiptWidth, ServerMessage, ServerMessageKind,
+    AgentMessage, AgentMessageKind, JobDocument, PrintDocument, PrintJob, PrintSection,
+    ProtocolVersion, ReceiptWidth, ServerMessage, ServerMessageKind,
 };
 use oppa_spooler::{SpoolerRegistry, VirtualSimulation, VirtualSpooler};
 use oppa_storage::{
@@ -224,14 +224,14 @@ fn print_job_message(message_id: &str, job_id: &str, idempotency_key: &str) -> S
             idempotency_key: idempotency_key.to_owned(),
             printer_id: PRINTER_ID.to_owned(),
             created_at: "2026-07-28T09:59:00Z".to_owned(),
-            document: PrintDocument {
+            document: JobDocument::Receipt(PrintDocument {
                 width: ReceiptWidth::Mm80,
                 sections: vec![PrintSection::Text {
                     value: "Durable receipt".to_owned(),
                     align: None,
                     bold: Some(true),
                 }],
-            },
+            }),
             metadata: None,
         }),
     }

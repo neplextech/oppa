@@ -50,9 +50,84 @@ an output representation:
 
 `oppa-spooler` owns submission. Keeping the two boundaries separate
 makes it possible to test layout without printer hardware and to
-reject an output format unsupported by a target transport. Raster and
-native-document representations are explicit extension boundaries, but
-the initial renderer does not emit them yet.
+reject an output format unsupported by a target transport. PDF
+documents use the same boundary: the renderer validates and rasterizes
+them, and the spooler chooses the submission route.
+
+## PDF documents
+
+A job can reference a PDF instead of a receipt. The job's `document`
+member is a PDF when it has a `format` value of `"pdf"`; receipts keep
+their original shape.
+
+```ts
+const document = {
+  format: 'pdf',
+  source: {
+    type: 'url',
+    url: 'https://documents.example.com/v1/documents/label-123',
+    sha256: '9f2c7e1a…', // lowercase hex digest of the exact bytes
+    byteLength: 48213,
+  },
+  settings: {
+    copies: 2,
+    paper: { widthMm: 50, heightMm: 30 }, // or 'a4', 'a5', 'letter', 'legal'
+    orientation: 'landscape',
+    scaling: 'fit', // or 'actual', or { percent: 80 }
+    pageRanges: '1-2,4',
+    duplex: 'simplex', // or 'long-edge', 'short-edge'
+  },
+} as const;
+```
+
+PDF bytes never travel inside a protocol message. The agent retrieves
+them over HTTPS with its own signed request, verifies the declared
+length and digest, and only then renders them. Plain HTTP is accepted
+only for loopback development hosts. See [Protocol](/docs/protocol)
+for the retrieval and signature contract.
+
+### Routes
+
+| Printer route                | How the PDF is submitted                                                                                              | Duplex                                                          |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| CUPS queue (macOS and Linux) | Native `lp` submission. CUPS filters the PDF and applies copies, media, orientation, sides, page ranges, and scaling. | Only when the queue offers it                                   |
+| Windows queue                | OPPA rasterizes the selected pages and sends them through the existing GDI path.                                      | Not supported; the job fails with `document.option_unsupported` |
+| Virtual office printer       | OPPA rasterizes pages for the inspector.                                                                              | Not applicable                                                  |
+
+Receipt-only printers, including raw ESC/POS network printers, reject
+PDF jobs with `document.format_unsupported`. Route a PDF to a
+driver-mode printer instead.
+
+### Settings and defaults
+
+- `copies`: 1 to 99. Defaults to 1.
+- `paper`: a standard size or custom millimetres from 10 to 1000, for
+  label stock. Defaults to each page's own size.
+- `orientation`: `portrait` or `landscape`. Defaults to the document's
+  own orientation.
+- `scaling`: `actual` (default), `fit` (shrink to fit, never enlarge),
+  or `{ percent }` from 10 to 400.
+- `pageRanges`: for example `1-3,5`. Ranges must ascend and start
+  at 1. Defaults to every page.
+- `duplex`: defaults to `simplex`.
+
+### Limits
+
+PDFs are capped at 20 MB, 2,000 pages in the source document, 200
+output pages after copies, and 42 million pixels per rendered page.
+Rasterized output is capped at 64 MiB. Encrypted files are rejected
+because OPPA cannot ask for a password. The renderer parses files with
+a pure-Rust engine, so no native PDF library has to be installed for
+rasterization.
+
+### Platform requirements
+
+- macOS: CUPS is part of the operating system.
+- Linux: install CUPS with its PDF filters (`cups-filters`). Without
+  them, `lp` cannot convert PDFs and the job fails with the CUPS
+  error.
+- Windows: no additional runtime is required; pages are rasterized
+  inside OPPA.
 
 ## Unicode
 

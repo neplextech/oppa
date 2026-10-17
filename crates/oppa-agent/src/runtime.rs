@@ -1,10 +1,12 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use oppa_core::PrintJobId;
+use oppa_core::{PrintJobId, PrinterId};
+use oppa_documents::DocumentFetcher;
 use oppa_printer::SubmissionReceipt;
 use oppa_protocol::{
-    AgentMessage, AgentMessageKind, PrintJob, ServerMessage, ServerMessageKind, Validate,
+    AgentMessage, AgentMessageKind, PrintJob, PrintSettings, ServerMessage, ServerMessageKind,
+    Validate,
 };
 use oppa_renderer::DocumentRenderer;
 use oppa_spooler::SpoolerRegistry;
@@ -126,6 +128,7 @@ pub struct AgentBuilder {
     renderer: DocumentRenderer,
     spoolers: Option<Arc<SpoolerRegistry>>,
     reporter: Option<Arc<dyn OutboundReporter>>,
+    documents: Option<Arc<dyn DocumentFetcher>>,
     handle: AgentHandle,
 }
 
@@ -137,6 +140,7 @@ impl Default for AgentBuilder {
             renderer: DocumentRenderer::default(),
             spoolers: None,
             reporter: None,
+            documents: None,
             handle: AgentHandle::new(AgentSnapshot::default()),
         }
     }
@@ -184,6 +188,16 @@ impl AgentBuilder {
         self
     }
 
+    /// Supplies the authenticated retriever for PDF documents referenced by jobs.
+    ///
+    /// Without a fetcher the agent still accepts receipts, and PDF jobs fail
+    /// with a clear, non-retryable error.
+    #[must_use]
+    pub fn document_fetcher(mut self, documents: Arc<dyn DocumentFetcher>) -> Self {
+        self.documents = Some(documents);
+        self
+    }
+
     /// Reuses an existing lifecycle handle and its subscriptions.
     #[must_use]
     pub fn handle(mut self, handle: AgentHandle) -> Self {
@@ -212,6 +226,7 @@ impl AgentBuilder {
             printers,
             self.renderer,
             spoolers,
+            self.documents,
             self.handle.clone(),
         ));
         Ok(Agent {
@@ -261,6 +276,25 @@ impl Agent {
     ) -> Result<SubmissionReceipt, LocalTestPrintError> {
         let _flow = self.flow_lock.lock().await;
         self.processor.submit_local_test(job).await
+    }
+
+    /// Submits a host-selected PDF as a local test without durable job state.
+    ///
+    /// # Errors
+    ///
+    /// Returns a bounded error when the printer cannot receive PDFs, the file is
+    /// invalid or over its limits, or the spooler rejects submission.
+    pub async fn submit_local_pdf(
+        &self,
+        job_id: &PrintJobId,
+        printer_id: &PrinterId,
+        bytes: Vec<u8>,
+        settings: &PrintSettings,
+    ) -> Result<SubmissionReceipt, LocalTestPrintError> {
+        let _flow = self.flow_lock.lock().await;
+        self.processor
+            .submit_local_pdf(job_id, printer_id, bytes, settings)
+            .await
     }
 
     /// Dispatches a print-job or cancellation server message.

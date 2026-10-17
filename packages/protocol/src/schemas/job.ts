@@ -2,6 +2,7 @@ import { Type, type Static } from '@sinclair/typebox';
 
 import { IdentifierSchema, MetadataSchema, TimestampSchema } from './common.js';
 import { PrintDocumentSchema } from './document.js';
+import { PdfDocumentSchema } from './pdf.js';
 
 /**
  * A concrete, idempotent delivery request for one OPPA printer.
@@ -15,7 +16,8 @@ export const PrintJobSchema = Type.Object(
     idempotencyKey: Type.String({ minLength: 1, maxLength: 256 }),
     printerId: IdentifierSchema,
     createdAt: TimestampSchema,
-    document: PrintDocumentSchema,
+    /** A structured receipt, or a PDF referenced by URL with integrity metadata. */
+    document: Type.Union([PrintDocumentSchema, PdfDocumentSchema]),
     metadata: Type.Optional(MetadataSchema),
   },
   {

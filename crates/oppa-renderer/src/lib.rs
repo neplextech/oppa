@@ -31,6 +31,7 @@ pub use oppa_protocol::ReceiptWidth;
 
 pub mod escpos;
 pub mod page;
+pub mod pdf;
 
 pub use escpos::{
     EscPosDiagnostics, EscPosInterpretation, EscPosInterpreter, UnsupportedEscPosCommand,
@@ -39,6 +40,11 @@ pub use page::{
     PageRenderOptions, PrintLayout, ReceiptElement, ReceiptImage, encode_raster_page_png,
     encode_raster_page_preview_png, render_escpos_for_page, render_layout_page,
     render_layout_receipt,
+};
+pub use pdf::{
+    DEFAULT_PDF_RASTER_DPI, MAX_PDF_PAGES, MAX_PDF_PIXELS_PER_PAGE, MAX_PDF_RASTER_BYTES,
+    MAX_PDF_RASTER_OUTPUT_PAGES, PdfPrintDocument, PdfRasterOptions, rasterize_pdf,
+    resolve_page_selection, validate_pdf,
 };
 
 /// Default maximum number of bytes emitted for one rendered document.
@@ -61,6 +67,8 @@ pub enum RenderedDocument {
     Native(NativePrintDocument),
     /// Structured virtual-printer output and readable preview.
     Virtual(VirtualPrintDocument),
+    /// Validated PDF bytes with the print settings that accompany them.
+    Pdf(PdfPrintDocument),
 }
 
 impl RenderedDocument {
@@ -72,6 +80,7 @@ impl RenderedDocument {
             Self::Raster(_) => "raster",
             Self::Native(_) => "native",
             Self::Virtual(_) => "virtual",
+            Self::Pdf(_) => "pdf",
         }
     }
 
@@ -83,6 +92,7 @@ impl RenderedDocument {
             Self::Raster(document) => document.pages.iter().map(|page| page.data.len()).sum(),
             Self::Native(document) => document.data.len(),
             Self::Virtual(document) => document.preview_lines.iter().map(String::len).sum(),
+            Self::Pdf(document) => document.bytes.len(),
         }
     }
 }
@@ -231,6 +241,27 @@ impl DocumentRenderer {
         Ok(Self { limits })
     }
 
+    /// Validates a PDF and its print settings for a PDF-capable backend.
+    ///
+    /// The PDF path has its own size bound, so `max_output_bytes` does not
+    /// apply to the document bytes. Rasterization happens later, only for
+    /// backends that cannot submit PDF natively.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the settings are invalid or the PDF fails
+    /// validation, is encrypted, or exceeds a page or size limit.
+    pub fn render_pdf(
+        &self,
+        bytes: Vec<u8>,
+        settings: &oppa_protocol::PrintSettings,
+    ) -> RendererResult<RenderedDocument> {
+        settings
+            .validate()
+            .map_err(|error| RendererError::InvalidDocument(error.to_string()))?;
+        Ok(RenderedDocument::Pdf(pdf::validate_pdf(bytes, settings)?))
+    }
+
     /// Validates and renders a structured document.
     pub fn render(
         &self,
@@ -313,6 +344,31 @@ pub enum RendererError {
     /// A barcode could not be represented as a safe graphical barcode.
     #[error("barcode cannot be rendered: {0}")]
     BarcodeRender(String),
+    /// The PDF bytes are not a parseable document.
+    #[error("PDF document is invalid: {0}")]
+    InvalidPdf(String),
+    /// Encrypted PDFs are rejected because OPPA cannot prompt for a password.
+    #[error("encrypted PDF documents are not supported; remove the password protection and retry")]
+    EncryptedPdf,
+    /// A PDF exceeded a size, page-count, or memory bound.
+    #[error("PDF {limit} is {actual}; the maximum is {maximum}")]
+    PdfLimitExceeded {
+        /// Name of the exceeded bound.
+        limit: &'static str,
+        /// Observed value.
+        actual: u64,
+        /// Configured maximum.
+        maximum: u64,
+    },
+    /// A requested page range is invalid for this document.
+    #[error("page range is invalid: {0}")]
+    InvalidPageRange(String),
+    /// The PDF parser or renderer failed on this document.
+    #[error("PDF rendering failed: {0}")]
+    PdfRender(String),
+    /// Rasterization did not finish before the configured deadline.
+    #[error("PDF rasterization did not finish within its time limit")]
+    RasterizationTimedOut,
     /// An ESC/POS stream could not be safely interpreted.
     #[error("ESC/POS command stream is unsupported or malformed at byte {offset}: {reason}")]
     InvalidEscPos {

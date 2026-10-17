@@ -24,8 +24,9 @@ use oppa_printer::{
 #[cfg(unix)]
 use oppa_renderer::encode_raster_page_png;
 use oppa_renderer::{
-    EscPosDiagnostics, EscPosInterpreter, PageRenderOptions, RasterDocument, RasterPage,
-    ReceiptWidth, RenderedDocument, render_escpos_for_page, render_layout_receipt,
+    EscPosDiagnostics, EscPosInterpreter, PageRenderOptions, PdfPrintDocument, PdfRasterOptions,
+    RasterDocument, RasterPage, ReceiptWidth, RenderedDocument, rasterize_pdf,
+    render_escpos_for_page, render_layout_receipt,
 };
 use thiserror::Error;
 use tokio::{
@@ -37,9 +38,17 @@ use tokio::{
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
+mod pdf;
+
 /// Default upper bound for one spooler submission payload.
 pub const DEFAULT_MAX_SUBMISSION_BYTES: usize = 4 * 1024 * 1024;
 const DEFAULT_MAX_VIRTUAL_HISTORY: usize = 20;
+/// Bytes of rendered output and previews retained by virtual-printer history.
+const MAX_VIRTUAL_HISTORY_BYTES: usize = 64 * 1024 * 1024;
+/// Resolution for the virtual printer's inspectable PDF previews.
+const VIRTUAL_PREVIEW_DPI: u16 = 100;
+/// Time limit for rasterizing one PDF preview on a virtual printer.
+const VIRTUAL_PREVIEW_DEADLINE: Duration = Duration::from_secs(30);
 
 /// Borrowed submission inputs passed to a concrete spooler.
 pub struct SubmissionRequest<'a> {
@@ -240,6 +249,12 @@ enum SystemQueuePayload {
         document: RasterDocument,
         compatibility: Option<EscPosDiagnostics>,
     },
+    /// The validated PDF is handed to CUPS, which applies its PDF filters.
+    #[cfg(unix)]
+    NativePdf(PdfPrintDocument),
+    /// The PDF is rasterized and submitted as device pages on Windows.
+    #[cfg(windows)]
+    RasterPdf(PdfPrintDocument),
 }
 
 fn prepare_system_queue_submission(
@@ -247,6 +262,9 @@ fn prepare_system_queue_submission(
     document: &RenderedDocument,
     max_submission_bytes: usize,
 ) -> SpoolerResult<SystemQueuePayload> {
+    if let RenderedDocument::Pdf(pdf_document) = document {
+        return prepare_pdf_submission(printer, pdf_document);
+    }
     let payload = match printer.submission_mode {
         SubmissionMode::Raw(PrinterLanguage::EscPos) => {
             SystemQueuePayload::RawEscPos(raw_bytes(document)?.to_vec())
@@ -264,9 +282,49 @@ fn prepare_system_queue_submission(
         SystemQueuePayload::DriverPages { document, .. } => {
             document.pages.iter().map(|page| page.data.len()).sum()
         }
+        #[cfg(unix)]
+        SystemQueuePayload::NativePdf(_) => 0,
+        #[cfg(windows)]
+        SystemQueuePayload::RasterPdf(_) => 0,
     };
     enforce_size(byte_len, max_submission_bytes)?;
     Ok(payload)
+}
+
+fn prepare_pdf_submission(
+    printer: &PrinterRef,
+    document: &PdfPrintDocument,
+) -> SpoolerResult<SystemQueuePayload> {
+    if printer.submission_mode != SubmissionMode::Driver {
+        return Err(SpoolerError::InvalidSubmissionMode(
+            "PDF documents require driver submission mode".to_owned(),
+        ));
+    }
+    #[cfg(unix)]
+    {
+        enforce_size(
+            document.bytes.len(),
+            oppa_protocol::MAX_PDF_DOCUMENT_BYTES as usize,
+        )?;
+        Ok(SystemQueuePayload::NativePdf(document.clone()))
+    }
+    #[cfg(windows)]
+    {
+        if document.settings.duplex() != oppa_protocol::Duplex::Simplex {
+            return Err(SpoolerError::UnsupportedOption(
+                "duplex PDF printing is not available on Windows; the driver's default device mode is used"
+                    .to_owned(),
+            ));
+        }
+        Ok(SystemQueuePayload::RasterPdf(document.clone()))
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        let _ = document;
+        Err(SpoolerError::BackendUnavailable(
+            "PDF submission is not implemented on this platform".to_owned(),
+        ))
+    }
 }
 
 fn driver_pages(
@@ -318,6 +376,9 @@ async fn submit_system_queue(
             document,
             compatibility,
         } => submit_cups_driver(queue_name, &document, compatibility, deadline, cancellation).await,
+        SystemQueuePayload::NativePdf(document) => {
+            pdf::submit_cups_pdf(queue_name, &document, deadline, cancellation).await
+        }
     }
 }
 
@@ -335,6 +396,9 @@ async fn submit_system_queue(
             document,
             compatibility,
         } => windows_print_driver(&queue_name, &document, compatibility),
+        SystemQueuePayload::RasterPdf(document) => {
+            pdf::windows_print_pdf(&queue_name, &document, deadline)
+        }
     });
     tokio::select! {
         () = cancellation.cancelled() => Err(SpoolerError::Cancelled),
@@ -654,6 +718,19 @@ pub struct VirtualSubmission {
     pub preview: VirtualPreview,
 }
 
+impl VirtualSubmission {
+    /// Approximate bytes this entry keeps alive in virtual-printer history.
+    fn retained_bytes(&self) -> usize {
+        self.document.byte_len()
+            + self
+                .preview
+                .pages
+                .iter()
+                .map(|page| page.data.len())
+                .sum::<usize>()
+    }
+}
+
 /// Interpreted output produced by one virtual printer profile.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VirtualPreview {
@@ -667,6 +744,7 @@ pub struct VirtualPreview {
 struct VirtualState {
     simulation: VirtualSimulation,
     history: VecDeque<VirtualSubmission>,
+    retained_bytes: usize,
 }
 
 /// In-process spooler used for development, tests, and receipt inspection.
@@ -704,14 +782,25 @@ impl VirtualSpooler {
 
     /// Clears retained output without altering simulation behavior.
     pub async fn clear_history(&self) {
-        self.state.lock().await.history.clear();
+        let mut state = self.state.lock().await;
+        state.history.clear();
+        state.retained_bytes = 0;
     }
 
     async fn record(&self, submission: VirtualSubmission) {
         let mut state = self.state.lock().await;
-        while state.history.len() >= self.max_history {
-            state.history.pop_front();
+        let size = submission.retained_bytes();
+        while !state.history.is_empty()
+            && (state.history.len() >= self.max_history
+                || state.retained_bytes.saturating_add(size) > MAX_VIRTUAL_HISTORY_BYTES)
+        {
+            if let Some(evicted) = state.history.pop_front() {
+                state.retained_bytes = state
+                    .retained_bytes
+                    .saturating_sub(evicted.retained_bytes());
+            }
         }
+        state.retained_bytes = state.retained_bytes.saturating_add(size);
         state.history.push_back(submission);
     }
 }
@@ -738,7 +827,17 @@ impl Spooler for VirtualSpooler {
         cancellation: &CancellationToken,
     ) -> SpoolerResult<SubmissionReceipt> {
         enforce_size(request.document.byte_len(), self.max_submission_bytes)?;
-        let preview = virtual_preview(request.printer, request.document)?;
+        let preview = {
+            let printer = request.printer.clone();
+            let document = request.document.clone();
+            tokio::task::spawn_blocking(move || virtual_preview(&printer, &document))
+                .await
+                .map_err(|error| {
+                    SpoolerError::BackendUnavailable(format!(
+                        "preview worker did not finish: {error}"
+                    ))
+                })??
+        };
         let simulation = {
             let mut state = self.state.lock().await;
             let current = state.simulation;
@@ -859,6 +958,20 @@ fn virtual_preview(
                         escpos: Some(diagnostics),
                     })
                 }
+                RenderedDocument::Pdf(document) => {
+                    let raster = rasterize_pdf(
+                        document,
+                        PdfRasterOptions {
+                            dpi: VIRTUAL_PREVIEW_DPI,
+                            deadline: Some(std::time::Instant::now() + VIRTUAL_PREVIEW_DEADLINE),
+                        },
+                    )
+                    .map_err(|error| SpoolerError::DocumentRender(error.to_string()))?;
+                    Ok(VirtualPreview {
+                        pages: raster.pages,
+                        escpos: None,
+                    })
+                }
                 other => Err(SpoolerError::UnsupportedDocument {
                     backend: "virtual system driver device",
                     document: other.kind(),
@@ -951,6 +1064,9 @@ pub enum SpoolerError {
     /// Spooler limits were invalid.
     #[error("invalid spooler configuration: {0}")]
     InvalidConfiguration(String),
+    /// The backend cannot honour a requested printing option.
+    #[error("printing option is not supported by this backend: {0}")]
+    UnsupportedOption(String),
 }
 
 /// Result alias for spooler operations.

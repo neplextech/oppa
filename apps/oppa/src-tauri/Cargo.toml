@@ -22,6 +22,7 @@ oppa-agent = { path = "../../../crates/oppa-agent" }
 oppa-auth = { path = "../../../crates/oppa-auth" }
 oppa-core = { path = "../../../crates/oppa-core" }
 oppa-discovery = { path = "../../../crates/oppa-discovery" }
+oppa-documents = { path = "../../../crates/oppa-documents" }
 oppa-platform = { path = "../../../crates/oppa-platform" }
 oppa-printer = { path = "../../../crates/oppa-printer" }
 oppa-product = { path = "../../../crates/oppa-product" }

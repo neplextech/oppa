@@ -312,6 +312,43 @@ pub struct PrinterCapabilities {
     pub barcode: bool,
     /// Whether cancellation is supported before backend acceptance.
     pub cancellation: bool,
+    /// PDF document support, present only when the backend can accept PDFs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pdf: Option<PdfCapabilities>,
+}
+
+/// Standard paper names understood by OPPA's document pipeline.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum StandardPaper {
+    /// ISO A4, 210 × 297 mm.
+    A4,
+    /// ISO A5, 148 × 210 mm.
+    A5,
+    /// North American Letter, 8.5 × 11 in.
+    Letter,
+    /// North American Legal, 8.5 × 14 in.
+    Legal,
+}
+
+/// PDF support advertised by a printer backend.
+///
+/// Each field reflects a property the backend verified or is structurally
+/// guaranteed to provide. Unknown media or duplex support is reported as
+/// unsupported rather than guessed.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PdfCapabilities {
+    /// Whether the PDF is handed to the platform's own PDF pipeline. When
+    /// false, OPPA rasterizes pages before submission.
+    pub native: bool,
+    /// Whether two-sided printing is available through this route.
+    pub duplex: bool,
+    /// Whether custom media sizes, such as label stock, can be requested.
+    pub custom_paper: bool,
+    /// Standard paper sizes the printer offers. Empty means unknown.
+    #[serde(default)]
+    pub paper_sizes: Vec<StandardPaper>,
 }
 
 /// One provider's observation retained during deduplication.

@@ -1,0 +1,35 @@
+{
+  "protocolVersion": "1",
+  "messageId": "msg_print_job_pdf_001",
+  "sentAt": "2026-07-28T10:03:00Z",
+  "type": "server.print_job",
+  "payload": {
+    "jobId": "job_pdf_label_001",
+    "idempotencyKey": "label_001_v1",
+    "printerId": "printer_office_001",
+    "createdAt": "2026-07-28T10:02:58Z",
+    "document": {
+      "format": "pdf",
+      "source": {
+        "type": "url",
+        "url": "https://documents.example.com/v1/documents/doc_label_001",
+        "sha256": "9f2c7e1a4b8d03e5f6a7b8c9d0e1f2a34b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e",
+        "byteLength": 0
+      },
+      "settings": {
+        "copies": 2,
+        "paper": {
+          "widthMm": 50,
+          "heightMm": 30
+        },
+        "orientation": "landscape",
+        "scaling": "fit",
+        "pageRanges": "1-2,4",
+        "duplex": "simplex"
+      }
+    },
+    "metadata": {
+      "route": "shipping"
+    }
+  }
+}

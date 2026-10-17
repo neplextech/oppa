@@ -2,6 +2,7 @@ import { Type, type Static } from '@sinclair/typebox';
 
 import { IdentifierSchema, ShortStringSchema } from './common.js';
 import { ReceiptWidthSchema } from './document.js';
+import { StandardPaperSizeSchema } from './pdf.js';
 
 /** How OPPA addresses a printer locally. */
 export const PrinterConnectionSchema = Type.Union([
@@ -42,6 +43,36 @@ export const PrinterCapabilitiesSchema = Type.Object(
     cut: Type.Boolean(),
     qr: Type.Boolean(),
     barcode: Type.Boolean(),
+    /** Document families accepted. Absent means receipts only. */
+    documentFormats: Type.Optional(
+      Type.Array(Type.Union([Type.Literal('receipt'), Type.Literal('pdf')]), {
+        minItems: 1,
+        maxItems: 2,
+        uniqueItems: true,
+      }),
+    ),
+    /** Standard paper sizes the printer can select. Absent means unknown. */
+    paperSizes: Type.Optional(
+      Type.Array(StandardPaperSizeSchema, {
+        maxItems: 4,
+        uniqueItems: true,
+      }),
+    ),
+    /** Whether custom media sizes, such as label stock, can be requested. */
+    customPaperSize: Type.Optional(Type.Boolean()),
+    /** PDF print options honoured by the printer. */
+    printOptions: Type.Optional(
+      Type.Object(
+        {
+          copies: Type.Boolean(),
+          duplex: Type.Boolean(),
+          orientation: Type.Boolean(),
+          scaling: Type.Boolean(),
+          pageRanges: Type.Boolean(),
+        },
+        { additionalProperties: false },
+      ),
+    ),
   },
   { additionalProperties: false },
 );

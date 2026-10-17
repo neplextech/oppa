@@ -6,6 +6,7 @@ mod commands;
 mod connection;
 mod desktop;
 mod diagnostics;
+mod documents;
 mod error;
 mod job_ledger;
 mod models;
@@ -133,6 +134,7 @@ pub fn run() {
             commands::clear_virtual_history,
             commands::set_virtual_printer_sound,
             commands::send_test_print,
+            commands::send_test_pdf,
             commands::list_recent_jobs,
             commands::clear_jobs,
             commands::clear_logs,
