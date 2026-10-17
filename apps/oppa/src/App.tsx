@@ -304,6 +304,7 @@ export default function App() {
           onAddManual={actions.addManualPrinter}
           onRemove={actions.removePrinter}
           onTest={actions.sendTestPrint}
+          onTestPdf={actions.sendTestPdf}
         />
       );
       break;

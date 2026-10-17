@@ -354,6 +354,6 @@ mod tests {
         invalid.pages[0].data.clear();
         let error = print_with_api(&mut api, "Office", &invalid).expect_err("invalid page");
         assert_eq!(error.stage, PrintStage::DrawPage);
-        assert!(api.events.is_empty());
+        assert_eq!(api.events, [] as [&str; 0]);
     }
 }

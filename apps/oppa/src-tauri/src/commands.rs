@@ -133,6 +133,18 @@ pub async fn send_test_print(
 }
 
 #[tauri::command]
+pub async fn send_test_pdf(
+    service: State<'_, Arc<DesktopService>>,
+    printer_id: String,
+    pdf_base64: String,
+    settings: Option<oppa_protocol::PrintSettings>,
+) -> Result<JobSummary, CommandError> {
+    service
+        .send_test_pdf(&printer_id, &pdf_base64, settings.unwrap_or_default())
+        .await
+}
+
+#[tauri::command]
 pub async fn list_recent_jobs(
     service: State<'_, Arc<DesktopService>>,
 ) -> Result<Vec<JobSummary>, CommandError> {

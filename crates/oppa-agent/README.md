@@ -10,6 +10,9 @@ integrating-application routing rules. A host supplies a `JobRepository`, `Print
 
 ## Primary APIs
 
+- `AgentBuilder::document_fetcher` supplies the authenticated PDF retriever.
+- `Agent::submit_local_pdf` validates and submits a local PDF test.
+
 - `AgentBuilder` assembles the runtime from explicit infrastructure boundaries.
 - `Agent` dispatches print and cancellation messages, drains pending work, and performs startup
   recovery.
@@ -84,6 +87,25 @@ Local UI test prints must use `Agent::submit_local_test`, not the durable server
 accepts a protocol `PrintJob` so it can reuse the same validation, printer resolution, renderer, and
 spooler boundaries, but it intentionally creates no server-job row, outbox row, job event, or
 outbound protocol report. A host may keep separate desktop-only test history.
+
+## PDF jobs
+
+A job whose `document` is a PDF follows the same receive, durable-storage,
+and acknowledgement order as a receipt. Before a job is claimed for
+submission, the agent:
+
+1. retrieves the bytes through the configured `DocumentFetcher`, which
+   verifies length and digest
+2. validates the PDF and its settings on a blocking thread
+3. checks that the selected printer can receive a PDF
+4. submits through the spooler route for that platform
+
+A retrieval or validation failure is persisted as `failed` with a `document.*`
+code, so an uncertain submitting state is never created. Without a configured
+fetcher, receipts still work and PDF jobs fail with `document.fetch_unavailable`.
+
+`Agent::submit_local_pdf` tests a host-selected file without durable job state
+or outbound reports. The bytes are not stored or transmitted.
 
 ## Dependency role
 

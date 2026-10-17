@@ -49,6 +49,33 @@ export const MAX_IMAGE_BASE64_LENGTH = 1_398_104;
 /** Maximum number of opaque string metadata entries carried by a job. */
 export const MAX_METADATA_ENTRIES = 32;
 
+/** Maximum PDF size accepted for one job, in bytes. */
+export const MAX_PDF_DOCUMENT_BYTES = 20 * 1024 * 1024;
+
+/** Maximum UTF-8 length of a PDF retrieval URL. */
+export const MAX_PDF_URL_BYTES = 2_048;
+
+/** Maximum UTF-8 length of a page-range expression. */
+export const MAX_PDF_PAGE_RANGE_BYTES = 256;
+
+/** Minimum number of copies accepted for one job. */
+export const MIN_COPIES = 1;
+
+/** Maximum number of copies accepted for one job. */
+export const MAX_COPIES = 99;
+
+/** Minimum custom paper dimension in millimetres, sized for small labels. */
+export const MIN_CUSTOM_PAPER_MM = 10;
+
+/** Maximum custom paper dimension in millimetres. */
+export const MAX_CUSTOM_PAPER_MM = 1_000;
+
+/** Minimum explicit scale percentage. */
+export const MIN_SCALE_PERCENT = 10;
+
+/** Maximum explicit scale percentage. */
+export const MAX_SCALE_PERCENT = 400;
+
 /**
  * Public protocol limits for queueing, transport, and UI diagnostics.
  *
@@ -60,4 +87,6 @@ export const PROTOCOL_LIMITS = Object.freeze({
   maxPrintersPerInventory: MAX_PRINTERS_PER_INVENTORY,
   maxImageBase64Length: MAX_IMAGE_BASE64_LENGTH,
   maxMetadataEntries: MAX_METADATA_ENTRIES,
+  maxPdfDocumentBytes: MAX_PDF_DOCUMENT_BYTES,
+  maxPdfUrlBytes: MAX_PDF_URL_BYTES,
 });

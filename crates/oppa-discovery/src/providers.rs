@@ -8,6 +8,8 @@ use oppa_printer::{
 };
 use tokio::{net::TcpStream, process::Command, sync::RwLock};
 
+#[cfg(unix)]
+use crate::cups::{CupsQueueOptions, query_cups_options};
 use crate::{DiscoveryError, DiscoveryProvider, DiscoveryResult};
 
 /// Upper bound for one manual network-printer reachability probe.
@@ -192,6 +194,7 @@ fn receipt_capabilities() -> PrinterCapabilities {
         qr_code: true,
         barcode: true,
         cancellation: true,
+        pdf: None,
     }
 }
 
@@ -205,6 +208,28 @@ fn system_driver_capabilities() -> PrinterCapabilities {
         qr_code: true,
         barcode: true,
         cancellation: true,
+        pdf: None,
+    }
+}
+
+/// Windows queues receive PDFs as rasterized pages through GDI. Pages are sized
+/// to the requested paper, while the driver supplies the paper actually loaded.
+#[cfg(windows)]
+fn windows_queue_capabilities() -> PrinterCapabilities {
+    use oppa_printer::{PdfCapabilities, StandardPaper};
+    PrinterCapabilities {
+        pdf: Some(PdfCapabilities {
+            native: false,
+            duplex: false,
+            custom_paper: true,
+            paper_sizes: vec![
+                StandardPaper::A4,
+                StandardPaper::A5,
+                StandardPaper::Letter,
+                StandardPaper::Legal,
+            ],
+        }),
+        ..system_driver_capabilities()
     }
 }
 
@@ -258,8 +283,46 @@ impl DiscoveryProvider for SystemQueueProvider {
         let output = String::from_utf8(output.stdout).map_err(|error| {
             DiscoveryError::InvalidData(format!("printer query returned non-UTF-8 output: {error}"))
         })?;
-        parse_platform_queues(&output)
+        let mut printers = parse_platform_queues(&output)?;
+        self.describe_pdf_routes(&mut printers).await;
+        Ok(printers)
     }
+}
+
+impl SystemQueueProvider {
+    /// Adds PDF route details to each queue. Failed option queries advertise
+    /// native PDF submission with no claimed media or duplex support.
+    #[cfg(unix)]
+    async fn describe_pdf_routes(&self, printers: &mut [DiscoveredPrinter]) {
+        let queues: Vec<Option<String>> = printers
+            .iter()
+            .map(|printer| match &printer.connection {
+                PrinterConnection::SystemQueue { queue_name } => Some(queue_name.clone()),
+                _ => None,
+            })
+            .collect();
+        let deadline = self.command_timeout;
+        let options = futures_util::future::join_all(queues.iter().map(|queue| async move {
+            match queue {
+                Some(queue) => query_cups_options(queue, deadline)
+                    .await
+                    .unwrap_or_default(),
+                None => CupsQueueOptions::default(),
+            }
+        }))
+        .await;
+        for (printer, (queue, options)) in printers.iter_mut().zip(queues.iter().zip(options)) {
+            if queue.is_none() {
+                continue;
+            }
+            if let Some(capabilities) = printer.capabilities.as_mut() {
+                capabilities.pdf = Some(options.pdf_capabilities());
+            }
+        }
+    }
+
+    #[cfg(not(unix))]
+    async fn describe_pdf_routes(&self, _printers: &mut [DiscoveredPrinter]) {}
 }
 
 #[cfg(unix)]
@@ -408,7 +471,7 @@ fn parse_windows_printers(output: &str) -> DiscoveryResult<Vec<DiscoveredPrinter
                 ..PrinterFingerprint::default()
             },
             availability: windows_availability(fields[3], fields[4]),
-            capabilities: Some(system_driver_capabilities()),
+            capabilities: Some(windows_queue_capabilities()),
             providers: vec![ProviderMetadata {
                 provider: "system-queue".to_owned(),
                 provider_id: Some(fields[0].to_owned()),

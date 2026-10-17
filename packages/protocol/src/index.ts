@@ -10,6 +10,8 @@ export * from './schemas/auth.js';
 export * from './schemas/common.js';
 /** Structured print document schemas and inferred TypeScript types. */
 export * from './schemas/document.js';
+/** PDF document references, print settings, and page-range validation. */
+export * from './schemas/pdf.js';
 /** Concrete print job schema and inferred TypeScript type. */
 export * from './schemas/job.js';
 /** Versioned agent/server message schemas and inferred TypeScript types. */

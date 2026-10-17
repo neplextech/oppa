@@ -6,17 +6,19 @@ use std::{
     time::{Duration, Instant},
 };
 
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 use chrono::Utc;
 use oppa_agent::{Agent, AgentBuilder, AgentHandle, AgentSnapshot, AgentState, ProcessOutcome};
 use oppa_auth::{AgentKeyManager, PairingClient};
-use oppa_core::Timestamp;
+use oppa_core::{PrintJobId, Timestamp};
 use oppa_platform::{
     AppPaths, BrowserOpener, CredentialStore, KeyringCredentialStore, SystemBrowser, platform_info,
     resolve_app_paths,
 };
 use oppa_product::{ProductConfig, embedded_product};
 use oppa_protocol::{
-    AgentMessageKind, PrintDocument, PrintJob, PrintSection, ReceiptWidth, TextAlignment,
+    AgentMessageKind, JobDocument, MAX_PDF_DOCUMENT_BYTES, PrintDocument, PrintJob, PrintSection,
+    PrintSettings, ReceiptWidth, TextAlignment,
 };
 use oppa_spooler::{RawTcpSpooler, SpoolerRegistry, SystemQueueSpooler};
 use oppa_storage::{DEFAULT_MAX_PENDING_JOBS, JobRepository, SqliteStorage};
@@ -30,6 +32,7 @@ use crate::{
         ConnectionControl, OutboundChannelReporter, OutboundRequest, run_connection_supervisor,
     },
     diagnostics::DiagnosticLog,
+    documents::{DocumentIdentity, PairedDocumentFetcher, SharedDocumentIdentity},
     error::{CommandError, sanitize},
     job_ledger::JobLedger,
     models::{
@@ -70,6 +73,7 @@ pub struct DesktopService {
     pub(crate) agent_id: RwLock<Option<String>>,
     pub(crate) server_configuration: RwLock<OpenPrinterServerConfiguration>,
     pub(crate) connection: RwLock<Option<OpenPrinterConnection>>,
+    pub(crate) document_identity: SharedDocumentIdentity,
     pub(crate) connection_state: RwLock<OpenPrinterConnectionState>,
     pub(crate) connected_service: RwLock<Option<ConnectedServiceSummary>>,
     pub(crate) shutdown: CancellationToken,
@@ -233,6 +237,13 @@ impl DesktopService {
             Arc::clone(&virtual_spooler);
         spoolers.register(virtual_spooler_for_registry);
 
+        let document_identity: SharedDocumentIdentity =
+            Arc::new(RwLock::new(connection.as_ref().map(|connection| {
+                DocumentIdentity {
+                    agent_id: connection.agent_id.clone(),
+                    credential_ref: connection.credential_ref.clone(),
+                }
+            })));
         let (outbound_sender, outbound_receiver) =
             mpsc::channel::<OutboundRequest>(OUTBOUND_CHANNEL_CAPACITY);
         let reporter = Arc::new(OutboundChannelReporter::new(outbound_sender));
@@ -242,6 +253,10 @@ impl DesktopService {
                 .printer_resolver(catalog.resolver())
                 .spooler_registry(Arc::new(spoolers))
                 .outbound_reporter(reporter)
+                .document_fetcher(Arc::new(PairedDocumentFetcher::new(
+                    key_manager.clone(),
+                    Arc::clone(&document_identity),
+                )))
                 .handle(handle)
                 .build()
                 .map_err(|error| CommandError::internal(error.to_string()))?,
@@ -263,6 +278,7 @@ impl DesktopService {
             agent_id: RwLock::new(agent_id.clone()),
             server_configuration: RwLock::new(server_configuration),
             connection: RwLock::new(connection),
+            document_identity,
             connection_state: RwLock::new(if agent_id.is_some() {
                 OpenPrinterConnectionState::Paired
             } else if migrated_legacy || has_stored_configuration {
@@ -457,6 +473,10 @@ impl DesktopService {
             ));
         }
         *self.agent_id.write().await = Some(connection.agent_id.clone());
+        *self.document_identity.write().await = Some(DocumentIdentity {
+            agent_id: connection.agent_id.clone(),
+            credential_ref: connection.credential_ref.clone(),
+        });
         *self.connection.write().await = Some(connection);
         *self.connection_state.write().await = OpenPrinterConnectionState::Paired;
         self.agent.handle().set_active_errors(Vec::new()).await;
@@ -618,7 +638,7 @@ impl DesktopService {
             idempotency_key,
             printer_id: printer.reference.id.to_string(),
             created_at: now,
-            document: test_document(width, &self.product.product_name),
+            document: JobDocument::Receipt(test_document(width, &self.product.product_name)),
             metadata: None,
         };
         match self.agent.submit_local_test(&job).await {
@@ -660,6 +680,103 @@ impl DesktopService {
             .into_iter()
             .find(|job| job.id == job_id)
             .ok_or_else(|| CommandError::internal("Test job disappeared from local history."))
+    }
+
+    /// Submits a host-selected PDF as a local test and records it in job history.
+    ///
+    /// The file travels once over local IPC and is validated by the agent before
+    /// any device sees it. Its bytes are never written to the job ledger.
+    pub async fn send_test_pdf(
+        &self,
+        printer_id: &str,
+        pdf_base64: &str,
+        settings: PrintSettings,
+    ) -> Result<JobSummary, CommandError> {
+        let maximum_encoded = MAX_PDF_DOCUMENT_BYTES.div_ceil(3) * 4;
+        if pdf_base64.len() as u64 > maximum_encoded {
+            return Err(CommandError::new(
+                "document.limit_exceeded",
+                format!(
+                    "PDF files must be {} MB or smaller.",
+                    MAX_PDF_DOCUMENT_BYTES / (1024 * 1024)
+                ),
+            ));
+        }
+        let bytes = STANDARD
+            .decode(pdf_base64)
+            .map_err(|_| CommandError::invalid("The selected file could not be read."))?;
+        let printer = self.catalog.get(printer_id).await?;
+        if !self.catalog.is_active(&printer) {
+            return Err(CommandError::new(
+                "feature_unavailable",
+                "This printer connection is disabled in the current product build.",
+            ));
+        }
+        if !printer.reference.enabled {
+            return Err(CommandError::invalid("Printer is disabled."));
+        }
+
+        let job_id = format!("job_pdf_test_{}", Uuid::new_v4());
+        let now = Timestamp::now().to_string();
+        let summary = JobSummary {
+            id: job_id.clone(),
+            printer_id: printer.reference.id.to_string(),
+            printer_name: printer.reference.display_name.clone(),
+            idempotency_key: format!("pdf_test_{}", Uuid::new_v4()),
+            state: DesktopJobState::Received,
+            received_at: now.clone(),
+            updated_at: now.clone(),
+            attempts: 0,
+            error: None,
+        };
+        self.jobs.insert(summary).await?;
+        self.emit(JOBS_CHANGED_EVENT);
+
+        let local_job_id = PrintJobId::new(job_id.clone())
+            .map_err(|error| CommandError::internal(error.to_string()))?;
+        match self
+            .agent
+            .submit_local_pdf(&local_job_id, &printer.reference.id, bytes, &settings)
+            .await
+        {
+            Ok(_) => {
+                self.jobs
+                    .update(
+                        &job_id,
+                        DesktopJobState::Submitted,
+                        None,
+                        Some(1),
+                        Timestamp::now().to_string(),
+                    )
+                    .await?;
+                self.log
+                    .info("job", format!("Local PDF test job {job_id} was accepted."));
+            }
+            Err(error) => {
+                let message = sanitize(error.message());
+                self.jobs
+                    .update(
+                        &job_id,
+                        DesktopJobState::Failed,
+                        Some(message.clone()),
+                        Some(1),
+                        Timestamp::now().to_string(),
+                    )
+                    .await?;
+                self.log.warn("job", &message);
+                self.emit(JOBS_CHANGED_EVENT);
+                self.emit(PRINTERS_CHANGED_EVENT);
+                return Err(CommandError::new(error.code(), message));
+            }
+        }
+        self.emit(JOBS_CHANGED_EVENT);
+        self.emit(PRINTERS_CHANGED_EVENT);
+        self.jobs
+            .list()
+            .await
+            .into_iter()
+            .find(|job| job.id == job_id)
+            .ok_or_else(|| CommandError::internal("PDF test job disappeared from local history."))
     }
 
     pub async fn list_recent_jobs(&self) -> Vec<JobSummary> {
@@ -918,6 +1035,7 @@ impl DesktopService {
     }
 
     async fn forget_connection(&self) -> Result<(), CommandError> {
+        *self.document_identity.write().await = None;
         if let Some(connection) = self.connection.write().await.take() {
             self.key_manager
                 .delete(&connection.credential_ref)

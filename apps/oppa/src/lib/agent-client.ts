@@ -4,6 +4,7 @@ import { listen } from '@tauri-apps/api/event';
 import type {
   AgentStatus,
   DeepLinkPairing,
+  PdfPrintSettings,
   DiscoveredServiceSummary,
   Diagnostics,
   JobSummary,
@@ -97,11 +98,17 @@ const demoPrinters: PrinterSummary[] = [
     isVirtual: false,
     capabilities: {
       widths: [80],
-      documentTypes: ['driver', 'raster'],
+      documentTypes: ['driver', 'raster', 'pdf'],
       supportsSystemDriver: true,
       supportsEscPos: false,
       supportsCut: false,
       supportsQr: true,
+      pdf: {
+        route: 'native',
+        paperSizes: ['A4', 'A5', 'Letter'],
+        customPaper: true,
+        duplex: true,
+      },
     },
     submissionMode: { type: 'driver' },
   },
@@ -245,6 +252,40 @@ function isTauri(): boolean {
 
 async function command<T>(name: string, args?: Record<string, unknown>): Promise<T> {
   return invoke<T>(name, args);
+}
+
+/** Encodes a selected file for one local IPC call without exceeding the document limit. */
+async function fileToBase64(file: File): Promise<string> {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  let binary = '';
+  const chunkSize = 0x8000;
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
+  }
+  return btoa(binary);
+}
+
+/**
+ * Converts form state into the protocol's `PrintSettings` JSON.
+ *
+ * Omitted fields use protocol defaults, so an untouched form sends only the copy count and scaling.
+ */
+export function toProtocolPrintSettings(settings: PdfPrintSettings): Record<string, unknown> {
+  const paper =
+    settings.paper === 'default'
+      ? undefined
+      : settings.paper === 'custom'
+        ? { widthMm: settings.customWidthMm, heightMm: settings.customHeightMm }
+        : settings.paper;
+  const pageRanges = settings.pageRanges.trim();
+  return {
+    copies: settings.copies,
+    paper,
+    orientation: settings.orientation === 'auto' ? undefined : settings.orientation,
+    scaling: settings.scaling,
+    duplex: settings.duplex,
+    pageRanges: pageRanges === '' ? undefined : pageRanges,
+  };
 }
 
 export const agentClient = {
@@ -428,6 +469,29 @@ export const agentClient = {
     return listen<string>('oppa://printer-sound', ({ payload }) => {
       onSound(payload);
     });
+  },
+
+  async sendTestPdf(printerId: string, file: File, settings: PdfPrintSettings): Promise<JobSummary> {
+    if (isTauri()) {
+      return command('send_test_pdf', {
+        printerId,
+        pdfBase64: await fileToBase64(file),
+        settings: toProtocolPrintSettings(settings),
+      });
+    }
+    const printer = demoPrinters.find((candidate) => candidate.id === printerId);
+    const createdAt = new Date().toISOString();
+    return {
+      id: `job_pdf_test_${Date.now()}`,
+      printerId,
+      printerName: printer?.displayName ?? 'Printer',
+      idempotencyKey: `pdf_test_${crypto.randomUUID()}`,
+      state: 'submitted',
+      receivedAt: createdAt,
+      updatedAt: createdAt,
+      attempts: 1,
+      error: null,
+    };
   },
 
   async sendTestPrint(printerId: string): Promise<JobSummary> {

@@ -187,3 +187,18 @@ pub(crate) fn validate_base64(value: &str, path: &str) -> Result<(), ValidationE
     }
     Ok(())
 }
+
+pub(crate) fn validate_sha256(value: &str, path: impl Into<String>) -> Result<(), ValidationError> {
+    let path = path.into();
+    if value.len() != 64
+        || !value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    {
+        return Err(ValidationError::new(
+            path,
+            "must be 64 lowercase hexadecimal characters",
+        ));
+    }
+    Ok(())
+}

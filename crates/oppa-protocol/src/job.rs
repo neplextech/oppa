@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    Metadata, PrintDocument, Validate, ValidationError,
+    JobDocument, Metadata, Validate, ValidationError,
     validation::{validate_identifier, validate_metadata, validate_string, validate_timestamp},
 };
 
@@ -20,8 +20,8 @@ pub struct PrintJob {
     pub printer_id: String,
     /// UTC creation time supplied by the durable host queue.
     pub created_at: String,
-    /// Printer-independent structured content.
-    pub document: PrintDocument,
+    /// Printer-independent content: a structured receipt or a PDF reference.
+    pub document: JobDocument,
     /// Optional bounded application-owned routing context.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub metadata: Option<Metadata>,

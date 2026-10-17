@@ -2,13 +2,15 @@ use std::{collections::HashMap, sync::Arc};
 
 use async_trait::async_trait;
 use oppa_core::{IdentifierError, JobState, PrintJobId, PrinterId, Timestamp};
+use oppa_documents::DocumentFetcher;
 use oppa_printer::{
     PrinterConnection, PrinterLanguage, PrinterRef, SubmissionMode, SubmissionReceipt,
     VirtualPrinterProfile,
 };
 use oppa_protocol::{
-    AgentMessage, AgentMessageKind, FailureDetail, JobFailed, JobReceived, JobStatus, JobSubmitted,
-    PrintJob, ProtocolVersion, ServerMessage, ServerMessageKind, Validate, ValidationError,
+    AgentMessage, AgentMessageKind, FailureDetail, JobDocument, JobFailed, JobReceived, JobStatus,
+    JobSubmitted, PdfDocument, PrintDocument, PrintJob, PrintSettings, ProtocolVersion,
+    ServerMessage, ServerMessageKind, Validate, ValidationError,
 };
 use oppa_renderer::{
     DocumentRenderer, PageRenderOptions, RenderTarget, RenderedDocument, RendererError,
@@ -356,6 +358,7 @@ pub struct JobProcessor {
     printers: Arc<dyn PrinterResolver>,
     renderer: DocumentRenderer,
     spoolers: Arc<SpoolerRegistry>,
+    documents: Option<Arc<dyn DocumentFetcher>>,
     handle: AgentHandle,
     active: Mutex<HashMap<PrintJobId, CancellationToken>>,
     drain_lock: Mutex<()>,
@@ -363,12 +366,16 @@ pub struct JobProcessor {
 
 impl JobProcessor {
     /// Creates a processor from explicit infrastructure boundaries.
+    ///
+    /// `documents` retrieves PDF jobs. When absent, PDF jobs fail with a
+    /// non-retryable `document.fetch_unavailable` error and receipts still work.
     #[must_use]
     pub fn new(
         repository: Arc<dyn JobRepository>,
         printers: Arc<dyn PrinterResolver>,
         renderer: DocumentRenderer,
         spoolers: Arc<SpoolerRegistry>,
+        documents: Option<Arc<dyn DocumentFetcher>>,
         handle: AgentHandle,
     ) -> Self {
         Self {
@@ -376,6 +383,7 @@ impl JobProcessor {
             printers,
             renderer,
             spoolers,
+            documents,
             handle,
             active: Mutex::new(HashMap::new()),
             drain_lock: Mutex::new(()),
@@ -493,16 +501,63 @@ impl JobProcessor {
             .resolve_enabled_printer(&printer_id)
             .await
             .map_err(LocalTestPrintError::from_failure)?;
+        let JobDocument::Receipt(document) = &job.document else {
+            return Err(LocalTestPrintError::from_failure(JobFailure::new(
+                "job.local_test_unsupported",
+                "local test jobs accept structured receipts; use submit_local_pdf for PDF files",
+                false,
+            )));
+        };
         let rendered = self
-            .render(job, &printer)
+            .render_receipt(document, &printer)
             .map_err(LocalTestPrintError::from_failure)?;
+        self.submit_rendered_local(&job_id, &printer, &rendered)
+            .await
+    }
+
+    /// Validates and submits a host-selected PDF file as a local test.
+    ///
+    /// The bytes are never persisted or transmitted. The same validation,
+    /// settings, and spooler routing apply as for a server PDF job, but no
+    /// durable job state or outbound report is created.
+    ///
+    /// # Errors
+    ///
+    /// Returns a bounded error when the printer cannot receive PDFs, the file
+    /// is invalid or over its limits, or the spooler rejects submission.
+    pub async fn submit_local_pdf(
+        &self,
+        job_id: &PrintJobId,
+        printer_id: &PrinterId,
+        bytes: Vec<u8>,
+        settings: &PrintSettings,
+    ) -> Result<SubmissionReceipt, LocalTestPrintError> {
+        let printer = self
+            .resolve_enabled_printer(printer_id)
+            .await
+            .map_err(LocalTestPrintError::from_failure)?;
+        pdf_route(&printer).map_err(LocalTestPrintError::from_failure)?;
+        let rendered = self
+            .render_pdf_bytes(bytes, settings.clone())
+            .await
+            .map_err(LocalTestPrintError::from_failure)?;
+        self.submit_rendered_local(job_id, &printer, &rendered)
+            .await
+    }
+
+    async fn submit_rendered_local(
+        &self,
+        job_id: &PrintJobId,
+        printer: &PrinterRef,
+        rendered: &RenderedDocument,
+    ) -> Result<SubmissionReceipt, LocalTestPrintError> {
         let cancellation = CancellationToken::new();
         self.spoolers
             .submit(
                 SubmissionRequest {
-                    job_id: &job_id,
-                    printer: &printer,
-                    document: &rendered,
+                    job_id,
+                    printer,
+                    document: rendered,
                 },
                 &cancellation,
             )
@@ -641,7 +696,11 @@ impl JobProcessor {
             }
         };
 
-        let rendered = match self.render(&job, &printer) {
+        let rendered = match &job.document {
+            JobDocument::Receipt(document) => self.render_receipt(document, &printer),
+            JobDocument::Pdf(document) => self.render_pdf_job(&stored, document, &printer).await,
+        };
+        let rendered = match rendered {
             Ok(rendered) => rendered,
             Err(failure) => {
                 return self.persist_failure(&stored, &job, failure).await;
@@ -684,11 +743,59 @@ impl JobProcessor {
         Ok(printer)
     }
 
-    fn render(&self, job: &PrintJob, printer: &PrinterRef) -> Result<RenderedDocument, JobFailure> {
+    fn render_receipt(
+        &self,
+        document: &PrintDocument,
+        printer: &PrinterRef,
+    ) -> Result<RenderedDocument, JobFailure> {
         let target = printer_render_target(printer)?;
         self.renderer
-            .render(&job.document, target)
+            .render(document, target)
             .map_err(|error| renderer_failure(&error))
+    }
+
+    /// Retrieves, verifies, and validates a PDF job before any submission claim.
+    ///
+    /// Fetching happens before the job is claimed for submission, so a failed
+    /// retrieval never leaves a job in an uncertain submitting state.
+    async fn render_pdf_job(
+        &self,
+        stored: &StoredPrintJob,
+        document: &PdfDocument,
+        printer: &PrinterRef,
+    ) -> Result<RenderedDocument, JobFailure> {
+        pdf_route(printer)?;
+        let fetcher = self.documents.as_ref().ok_or_else(|| {
+            JobFailure::new(
+                "document.fetch_unavailable",
+                "this agent is not configured to retrieve PDF documents",
+                false,
+            )
+        })?;
+        let bytes = fetcher
+            .fetch_pdf(stored.id.as_str(), &document.source)
+            .await
+            .map_err(|error| JobFailure::new(error.code(), error.to_string(), error.retryable()))?;
+        self.render_pdf_bytes(bytes, document.settings.clone().unwrap_or_default())
+            .await
+    }
+
+    async fn render_pdf_bytes(
+        &self,
+        bytes: Vec<u8>,
+        settings: PrintSettings,
+    ) -> Result<RenderedDocument, JobFailure> {
+        let renderer = self.renderer;
+        tokio::task::spawn_blocking(move || renderer.render_pdf(bytes, &settings))
+            .await
+            .map_err(|error| {
+                JobFailure::new(
+                    "document.render_failed",
+                    format!("PDF validation did not finish: {error}"),
+                    true,
+                )
+            })?
+            .map_err(|error| pdf_failure(&error))
     }
 
     async fn submit(
@@ -1000,6 +1107,47 @@ fn renderer_failure(error: &RendererError) -> JobFailure {
     JobFailure::new("render.failed", error.to_string(), retryable)
 }
 
+/// Accepts PDFs only where a native or rasterized driver route exists.
+///
+/// Raw ESC/POS printers and virtual receipt printers cannot accept a page
+/// document, so they fail clearly instead of receiving unintended bytes.
+fn pdf_route(printer: &PrinterRef) -> Result<(), JobFailure> {
+    match (&printer.connection, printer.submission_mode) {
+        (
+            PrinterConnection::SystemQueue { .. } | PrinterConnection::Virtual { .. },
+            SubmissionMode::Driver,
+        ) if matches!(
+            printer.virtual_profile,
+            None | Some(VirtualPrinterProfile::SystemDriverPage { .. })
+        ) =>
+        {
+            Ok(())
+        }
+        _ => Err(JobFailure::new(
+            "document.format_unsupported",
+            format!(
+                "PDF documents need a system printer queue or a virtual office printer in driver mode; {} cannot print PDFs. Send a structured receipt or select a document printer.",
+                printer.display_name
+            ),
+            false,
+        )),
+    }
+}
+
+fn pdf_failure(error: &RendererError) -> JobFailure {
+    let (code, retryable) = match error {
+        RendererError::InvalidPdf(_) => ("document.invalid", false),
+        RendererError::EncryptedPdf => ("document.encrypted", false),
+        RendererError::PdfLimitExceeded { .. } => ("document.limit_exceeded", false),
+        RendererError::InvalidPageRange(_) => ("document.page_range_invalid", false),
+        RendererError::InvalidDocument(_) => ("document.settings_invalid", false),
+        RendererError::RasterizationTimedOut => ("document.processing_timeout", true),
+        RendererError::PdfRender(_) => ("document.render_failed", false),
+        _ => ("render.failed", false),
+    };
+    JobFailure::new(code, error.to_string(), retryable)
+}
+
 fn recovery_aware_failure(stored: &StoredPrintJob, failure: JobFailure) -> JobFailure {
     if stored.recovery_count == 0 {
         return failure;
@@ -1015,6 +1163,9 @@ fn recovery_aware_failure(stored: &StoredPrintJob, failure: JobFailure) -> JobFa
 }
 
 fn spooler_failure(error: &SpoolerError) -> JobFailure {
+    if let SpoolerError::UnsupportedOption(_) = error {
+        return JobFailure::new("document.option_unsupported", error.to_string(), false);
+    }
     let retryable = matches!(
         error,
         SpoolerError::BackendUnavailable(_)

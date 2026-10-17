@@ -28,6 +28,18 @@ universally known to be physically printed.
 `PrinterDescriptor::capabilities` is optional. `None` represents capabilities that discovery could
 not determine and must be preferred over guessed media widths or feature support.
 
+## Document representations
+
+`JobDocument` is either a structured `PrintDocument` (the receipt shape from
+earlier releases, unchanged on the wire) or a `PdfDocument` with
+`format: "pdf"`. `PdfDocument` carries a `PdfSource::Url` with a validated
+HTTPS or loopback URL, a SHA-256 digest, and an exact byte length, plus
+optional `PrintSettings`. Bytes never travel in a message.
+
+`PrinterCapabilities` gains optional `document_formats`, `paper_sizes`,
+`custom_paper_size`, and `print_options` fields. Absent fields mean receipt-only
+behavior and are never inferred.
+
 ## Source of truth and development
 
 The TypeBox schemas in `../../packages/protocol/src/schemas` are canonical. Their deterministic JSON

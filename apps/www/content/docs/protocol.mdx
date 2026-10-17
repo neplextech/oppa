@@ -62,6 +62,103 @@ metadata counts, bounded text and image payloads, valid identifiers,
 and known discriminators. Unknown fields are rejected where they would
 weaken the remote command boundary.
 
+## Document representations
+
+A print job's `document` is either a structured receipt or a PDF
+reference. A PDF is identified by `format: "pdf"`, which a receipt
+never contains, so the receipt shape from earlier releases is
+unchanged.
+
+A PDF reference has:
+
+- `source`: `{ type: "url", url, sha256, byteLength }`. The URL must
+  be absolute HTTPS, or HTTP on `localhost` or `127.0.0.1`.
+  Credentials, fragments, and whitespace are rejected. `sha256` is 64
+  lowercase hex characters, and `byteLength` is 1 to 20,971,520.
+- `settings`: optional print settings described in
+  [Print Documents](/docs/print-documents).
+
+Bytes never appear in a message. Keeping them out of the WebSocket
+frame bounds memory use and lets the agent verify integrity before
+rendering.
+
+### Document retrieval
+
+The agent sends `GET` to the job's URL with these headers:
+
+| Header                    | Value                                |
+| ------------------------- | ------------------------------------ |
+| `X-OpenPrinter-Agent-Id`  | The agent identity from pairing      |
+| `X-OpenPrinter-Job-Id`    | The job identity                     |
+| `X-OpenPrinter-Timestamp` | Unix time in milliseconds            |
+| `X-OpenPrinter-Signature` | Unpadded base64url Ed25519 signature |
+
+The signed payload is these LF-separated lines:
+
+```text
+OPENPRINTER-DOCUMENT-V1
+GET
+<path and query exactly as requested>
+<agent id>
+<job id>
+<timestamp in milliseconds>
+<lowercase hex SHA-256>
+```
+
+Servers verify the signature with the agent's registered public key
+and reject timestamps more than five minutes from their own clock. The
+`@openprinter/server` package provides `verifyDocumentRequest`. The
+agent never sends a bearer secret, and the credential never leaves
+secure storage.
+
+The agent refuses redirects, rejects a body whose length or digest
+differs from the job, and stops at the declared byte length.
+
+### Document failure codes
+
+| Code                            | Retryable | Meaning                                                      |
+| ------------------------------- | --------- | ------------------------------------------------------------ |
+| `document.fetch_failed`         | yes       | Transport failure, timeout, or server error                  |
+| `document.not_found`            | no        | The server no longer has the document                        |
+| `document.refused`              | no        | The server rejected the authenticated request                |
+| `document.authorization_failed` | no        | The agent credential could not sign the request              |
+| `document.integrity_failed`     | no        | Length or digest differed from the job                       |
+| `document.fetch_unavailable`    | no        | The agent has no document retrieval configured               |
+| `document.invalid`              | no        | The bytes are not a readable PDF                             |
+| `document.encrypted`            | no        | The PDF is password protected                                |
+| `document.limit_exceeded`       | no        | Size, page, or pixel limits were exceeded                    |
+| `document.page_range_invalid`   | no        | A selected page does not exist                               |
+| `document.settings_invalid`     | no        | A setting is out of range                                    |
+| `document.processing_timeout`   | yes       | Rasterization exceeded its time limit                        |
+| `document.format_unsupported`   | no        | The printer cannot receive PDFs                              |
+| `document.option_unsupported`   | no        | The printer cannot honour a requested option, such as duplex |
+
+## Capability advertisement
+
+Printer descriptors advertise what the printer can accept in the
+optional `capabilities` object:
+
+- `documentFormats`: `receipt` and/or `pdf`
+- `paperSizes`: standard sizes the printer offers, when known
+- `customPaperSize`: whether custom media, such as label stock, is
+  available
+- `printOptions`: explicit booleans for `copies`, `duplex`,
+  `orientation`, `scaling`, and `pageRanges`
+
+A server should send a PDF job only to a printer whose
+`documentFormats` include `pdf`. An agent that receives a PDF it
+cannot route fails the job with a non-retryable code instead of
+guessing.
+
+### Compatibility
+
+Document capabilities are additive optional fields. Earlier agents
+never send them, and absent fields mean receipt-only behavior. Servers
+built from earlier schemas reject unknown fields, so they reject an
+inventory that includes `documentFormats` or the other new capability
+fields. Upgrade `@openprinter/protocol` and the server SDK before
+connecting agents from this release to such a server.
+
 ## Delivery states
 
 Use **received**, **submitted**, and **failed** for agent

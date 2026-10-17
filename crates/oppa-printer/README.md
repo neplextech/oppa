@@ -34,6 +34,13 @@ configuration to `oppa-storage`.
 This is a low-level crate depending only on `oppa-core` and serialization/error
 support.
 
+## PDF capabilities
+
+`PrinterCapabilities::pdf` is present only when a backend can accept PDF
+documents. `PdfCapabilities` records whether the route is native or rasterized,
+whether duplex and custom media are available, and which standard paper sizes
+are known. Unknown values stay unknown.
+
 ## Development
 
 ```bash

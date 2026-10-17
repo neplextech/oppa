@@ -8,6 +8,7 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+mod cups;
 mod manager;
 mod providers;
 

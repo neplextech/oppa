@@ -8,8 +8,8 @@ use oppa_agent::{
 use oppa_core::{JobState, PrintJobId, PrinterId};
 use oppa_printer::{PrinterConnection, PrinterRef, SubmissionMode, VirtualPrinterProfile};
 use oppa_protocol::{
-    AgentMessage, AgentMessageKind, PrintDocument, PrintJob, PrintSection, ProtocolVersion,
-    ReceiptWidth, ServerMessage, ServerMessageKind,
+    AgentMessage, AgentMessageKind, JobDocument, PrintDocument, PrintJob, PrintSection,
+    ProtocolVersion, ReceiptWidth, ServerMessage, ServerMessageKind,
 };
 use oppa_spooler::{SpoolerRegistry, VirtualSimulation, VirtualSpooler};
 use oppa_storage::{
@@ -224,14 +224,14 @@ fn print_job_message(message_id: &str, job_id: &str, idempotency_key: &str) -> S
             idempotency_key: idempotency_key.to_owned(),
             printer_id: PRINTER_ID.to_owned(),
             created_at: "2026-07-28T09:59:00Z".to_owned(),
-            document: PrintDocument {
+            document: JobDocument::Receipt(PrintDocument {
                 width: ReceiptWidth::Mm80,
                 sections: vec![PrintSection::Text {
                     value: "Durable receipt".to_owned(),
                     align: None,
                     bold: Some(true),
                 }],
-            },
+            }),
             metadata: None,
         }),
     }
@@ -261,13 +261,14 @@ async fn persists_before_receipt_and_terminal_reports() {
         harness.reporter.message_types().await,
         ["agent.job_received", "agent.job_submitted"]
     );
-    assert!(
+    assert_eq!(
         harness
             .storage
             .pending_outbound_statuses(DEFAULT_OUTBOUND_STATUS_BATCH_SIZE)
             .await
             .unwrap()
-            .is_empty(),
+            .len(),
+        0,
         "one successful report must acknowledge exactly one terminal outbox row"
     );
     assert!(
@@ -315,8 +316,8 @@ async fn local_test_submission_never_creates_server_job_or_outbox_state() {
 
     assert_eq!(receipt.backend, "virtual");
     assert_eq!(harness.spooler.history().await.len(), 1);
-    assert!(harness.reporter.messages().await.is_empty());
-    assert!(harness.storage.pending().await.unwrap().is_empty());
+    assert_eq!(harness.reporter.messages().await.len(), 0);
+    assert_eq!(harness.storage.pending().await.unwrap().len(), 0);
     assert!(
         !harness
             .storage
@@ -324,13 +325,14 @@ async fn local_test_submission_never_creates_server_job_or_outbox_state() {
             .await
             .unwrap()
     );
-    assert!(
+    assert_eq!(
         harness
             .storage
             .pending_outbound_statuses(DEFAULT_OUTBOUND_STATUS_BATCH_SIZE)
             .await
             .unwrap()
-            .is_empty()
+            .len(),
+        0
     );
 }
 
@@ -356,7 +358,7 @@ async fn exact_and_idempotency_duplicates_never_resubmit() {
             ..
         }
     ));
-    assert!(duplicate.outcomes.is_empty());
+    assert_eq!(duplicate.outcomes.len(), 0);
 
     let conflict = harness
         .agent
@@ -374,7 +376,7 @@ async fn exact_and_idempotency_duplicates_never_resubmit() {
             ..
         }
     ));
-    assert!(conflict.outcomes.is_empty());
+    assert_eq!(conflict.outcomes.len(), 0);
 
     assert_eq!(harness.spooler.history().await.len(), 1);
     assert_eq!(
@@ -486,7 +488,7 @@ async fn cooperatively_cancels_an_active_virtual_submission() {
             .await
             .unwrap()
     );
-    assert!(harness.spooler.history().await.is_empty());
+    assert_eq!(harness.spooler.history().await.len(), 0);
     assert_eq!(
         harness.reporter.message_types().await,
         ["agent.job_received"]
@@ -525,7 +527,7 @@ async fn reconnect_resends_a_lost_receipt_before_processing_pending_work() {
             panic!("expected a reporting failure");
         };
         assert!(matches!(message.kind, AgentMessageKind::JobReceived(_)));
-        assert!(spooler.history().await.is_empty());
+        assert_eq!(spooler.history().await.len(), 0);
         assert_eq!(storage.pending().await.unwrap().len(), 1);
     }
 
@@ -607,16 +609,17 @@ async fn restart_replays_each_terminal_outbox_status_once_then_acknowledges_it()
         harness.reporter.message_types().await,
         ["agent.job_submitted"]
     );
-    assert!(
+    assert_eq!(
         harness
             .storage
             .pending_outbound_statuses(DEFAULT_OUTBOUND_STATUS_BATCH_SIZE)
             .await
             .unwrap()
-            .is_empty()
+            .len(),
+        0
     );
-    assert!(harness.agent.recover().await.unwrap().outcomes.is_empty());
-    assert!(harness.spooler.history().await.is_empty());
+    assert_eq!(harness.agent.recover().await.unwrap().outcomes.len(), 0);
+    assert_eq!(harness.spooler.history().await.len(), 0);
 }
 
 #[tokio::test]

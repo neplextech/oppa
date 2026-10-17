@@ -1,0 +1,28 @@
+[package]
+name = "oppa-documents"
+description = "Authenticated, bounded, and integrity-checked PDF retrieval for OPPA"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+readme = "README.md"
+
+[dependencies]
+async-trait.workspace = true
+base64.workspace = true
+oppa-auth = { path = "../oppa-auth" }
+oppa-protocol = { path = "../oppa-protocol" }
+reqwest.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+url.workspace = true
+
+[dev-dependencies]
+oppa-platform = { path = "../oppa-platform" }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "net", "io-util"] }
+
+[lints]
+workspace = true

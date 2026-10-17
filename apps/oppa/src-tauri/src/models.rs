@@ -103,6 +103,8 @@ pub struct PrinterCapabilities {
     pub output_modes: PrinterOutputModes,
     #[serde(flatten)]
     pub receipt_features: PrinterReceiptFeatures,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pdf: Option<PdfCapabilities>,
 }
 
 /// Printer output modes exposed by the desktop catalog.
@@ -129,6 +131,28 @@ pub enum DocumentType {
     Raster,
     Driver,
     Virtual,
+    Pdf,
+}
+
+/// How PDF pages reach the operating system for a printer.
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PdfRoute {
+    /// The platform's own PDF pipeline receives the file.
+    Native,
+    /// OPPA rasterizes pages and submits them as device pages.
+    Raster,
+}
+
+/// PDF options a printer offers, shown in the printer details.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PdfCapabilities {
+    pub route: PdfRoute,
+    /// Standard paper names the printer offers, such as `A4`. Empty means unknown.
+    pub paper_sizes: Vec<String>,
+    pub custom_paper: bool,
+    pub duplex: bool,
 }
 
 /// Printer projection. Virtual-only fields are omitted for physical printers.
@@ -216,6 +240,7 @@ pub enum VirtualOutputFormat {
     Structured,
     EscPos,
     Raster,
+    Pdf,
 }
 
 /// Persisted host-owned printer metadata.
@@ -427,6 +452,7 @@ mod tests {
                 supports_cut: false,
                 supports_qr: true,
             },
+            pdf: None,
         })
         .expect("capabilities serialize");
 

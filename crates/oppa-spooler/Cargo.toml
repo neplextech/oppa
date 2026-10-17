@@ -9,6 +9,7 @@ readme = "README.md"
 [dependencies]
 async-trait = "0.1.91"
 oppa-core = { path = "../oppa-core" }
+oppa-protocol = { path = "../oppa-protocol" }
 oppa-printer = { path = "../oppa-printer" }
 oppa-renderer = { path = "../oppa-renderer" }
 tempfile.workspace = true
@@ -23,6 +24,5 @@ printers = "2.3"
 
 [dev-dependencies]
 base64.workspace = true
-oppa-protocol = { path = "../oppa-protocol" }
 image = { version = "0.25.8", default-features = false, features = ["png"] }
 tokio = { version = "1.53.1", features = ["macros", "rt-multi-thread"] }

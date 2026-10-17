@@ -29,6 +29,15 @@ OPPA_PRODUCT_DIR=products/default pnpm oppa:build
 The plain Vite development command uses safe demonstration data when Tauri internals are absent.
 The Tauri build uses the real Rust command service.
 
+## PDF test prints
+
+The printer details panel shows which PDF route a printer uses, the paper sizes
+it offers, and whether custom media and duplex are available. The PDF test form
+selects a file of up to 20 MB and sends it once over local IPC. The agent
+validates the file and submits it as a local test, without storing it in the
+job ledger or sending it to a server. Duplex and custom sizes appear only when
+the printer reports them.
+
 ## Security boundary
 
 The frontend receives only typed status, printer, job, and sanitized diagnostic objects. It is not

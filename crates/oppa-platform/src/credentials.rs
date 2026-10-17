@@ -33,6 +33,7 @@ impl fmt::Debug for SecretValue {
 }
 
 /// Secure credential storage used by local key and secret-owning layers.
+#[allow(clippy::double_must_use)]
 #[async_trait]
 pub trait CredentialStore: Send + Sync {
     /// Stores or replaces a secret for a logical account.

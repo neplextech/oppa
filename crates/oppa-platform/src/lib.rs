@@ -94,6 +94,7 @@ pub enum PowerEvent {
 }
 
 /// Sleep/wake event boundary implemented by a desktop or service host.
+#[allow(clippy::double_must_use)]
 #[async_trait::async_trait]
 pub trait PowerEventSource: Send + Sync {
     /// Waits for the next operating-system power lifecycle event.

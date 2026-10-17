@@ -19,6 +19,16 @@ application stores queued job
   → OPPA reports the result
 ```
 
+## PDF retrieval
+
+For a PDF job the agent retrieves and verifies the document after it
+durably stores the job and acknowledges `received`, and before it
+claims the job for submission. A retrieval failure is therefore
+reported as `failed` with a `document.*` code and never leaves the job
+in an uncertain submitting state. Retrieval is repeated on recovery;
+the job's stored payload contains only the URL and digest, never the
+bytes or a credential.
+
 ## Acknowledgement invariant
 
 `job-received` must not be emitted until the local transaction

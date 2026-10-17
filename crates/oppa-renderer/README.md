@@ -28,6 +28,32 @@ driver boundary.
 The interpreter deliberately supports only the command subset emitted by the current OPPA renderer.
 Unknown commands stop interpretation so trailing binary data is never mistaken for printable text.
 
+## PDF documents
+
+`validate_pdf` and `DocumentRenderer::render_pdf` accept untrusted PDF bytes
+and return `RenderedDocument::Pdf` only after checking the header, parsing
+the file with a memory-safe pure-Rust engine, rejecting encrypted or
+malformed files, and resolving the page selection. Validation never
+produces device output, and PDF bytes are passed through unmodified for
+native submission.
+
+`rasterize_pdf` converts selected pages to one-bit device pages. It applies
+the same settings as native submission: copies repeat the selection, page
+orientation and paper size are honoured, and `fit`, `actual`, or percentage
+scaling places each page on the target paper. Labels use custom millimetre
+sizes at the requested DPI. Output is 300 DPI by default, between 72 and 600.
+
+Limits are checked before work starts and between pages:
+
+- 20 MB input, 2,000 source pages, and 200 output pages after copies
+- 42 million pixels per rendered or composed page
+- 64 MiB packed raster output
+- an optional deadline checked between pages
+
+Parser and renderer panics are caught at this boundary and reported as
+`PdfRender`. Rasterization runs on the caller's thread; the spooler moves it
+to a blocking worker.
+
 ## Image safety limits
 
 Image limits are installed on the PNG or JPEG decoder before pixel decompression:

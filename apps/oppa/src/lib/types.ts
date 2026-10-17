@@ -63,14 +63,57 @@ export type VirtualPrinterProfile =
   | { type: 'esc-pos-receipt'; widthMm: 58 | 80 }
   | { type: 'system-driver-page'; pageWidthMm: number; pageHeightMm: number; dpi: number };
 
+/** How a printer receives PDF pages: the platform's pipeline, or pages OPPA rasterized. */
+export type PdfRoute = 'native' | 'raster';
+
+/** PDF support advertised for one printer. */
+export interface PdfCapabilities {
+  route: PdfRoute;
+  /** Standard paper names the printer offers, such as `A4`. Empty means unknown. */
+  paperSizes: string[];
+  customPaper: boolean;
+  duplex: boolean;
+}
+
 export interface PrinterCapabilities {
   widths: Array<58 | 80>;
-  documentTypes: Array<'esc_pos' | 'raster' | 'driver' | 'native' | 'virtual'>;
+  documentTypes: Array<'esc_pos' | 'raster' | 'driver' | 'native' | 'virtual' | 'pdf'>;
   supportsSystemDriver: boolean;
   supportsEscPos: boolean;
   supportsCut: boolean;
   supportsQr: boolean;
+  pdf?: PdfCapabilities;
 }
+
+/** Paper choice in the PDF test form. `default` keeps each page's own size. */
+export type PdfPaperChoice = 'default' | 'a4' | 'a5' | 'letter' | 'legal' | 'custom';
+
+/** Print settings edited in the PDF test form. */
+export interface PdfPrintSettings {
+  copies: number;
+  paper: PdfPaperChoice;
+  customWidthMm: number;
+  customHeightMm: number;
+  orientation: 'auto' | 'portrait' | 'landscape';
+  scaling: 'fit' | 'actual';
+  duplex: 'simplex' | 'long-edge' | 'short-edge';
+  pageRanges: string;
+}
+
+/** Form defaults that match the protocol defaults. */
+export const DEFAULT_PDF_PRINT_SETTINGS: PdfPrintSettings = {
+  copies: 1,
+  paper: 'default',
+  customWidthMm: 50,
+  customHeightMm: 30,
+  orientation: 'auto',
+  scaling: 'actual',
+  duplex: 'simplex',
+  pageRanges: '',
+};
+
+/** Largest PDF accepted from the desktop form. Mirrors the agent's document limit. */
+export const MAX_TEST_PDF_BYTES = 20 * 1024 * 1024;
 
 export interface PrinterSummary {
   id: string;
@@ -154,7 +197,7 @@ export interface VirtualOutput {
   id: string;
   jobId: string;
   createdAt: string;
-  format: 'structured' | 'esc_pos' | 'raster';
+  format: 'structured' | 'esc_pos' | 'raster' | 'pdf';
   preview: string;
   byteLength: number;
   imageDataUrl?: string;
