@@ -1,7 +1,7 @@
 use std::{
     collections::VecDeque,
     sync::{Arc, atomic::Ordering},
-    time::Duration,
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use async_trait::async_trait;
@@ -11,14 +11,16 @@ use oppa_agent::{
 };
 use oppa_core::Timestamp;
 use oppa_protocol::{
-    AgentHeartbeat, AgentHello, AgentMessage, AgentMessageKind, GatewayAuthenticationResponse,
-    GatewayAuthenticationServerMessage, PrinterInventory, ProtocolVersion, ServerMessage,
-    ServerMessageKind,
+    AgentHeartbeat, AgentHello, AgentMessage, AgentMessageKind, CacheUpdate,
+    GatewayAuthenticationResponse, GatewayAuthenticationServerMessage, HandshakePlanner,
+    LegacyServerRecord, PrinterInventory, ProtocolVersion, ServerMessage, ServerMessageKind,
+    project_inventory,
 };
 use oppa_transport::{
     AgentTransport, BackoffPolicy, ReconnectBackoff, TransportConfig, TransportError,
     WebSocketTransport,
 };
+use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, oneshot};
 use uuid::Uuid;
 
@@ -32,6 +34,63 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(12);
 const SERVER_HELLO_TIMEOUT: Duration = Duration::from_secs(20);
 const IDLE_TIMEOUT: Duration = Duration::from_secs(90);
 const OUTBOUND_BUFFER_CAPACITY: usize = 256;
+/// Setting that remembers which paired server accepted only the base protocol.
+const PROTOCOL_NEGOTIATION_SETTING: &str = "openprinter-protocol-negotiation-v1";
+
+/// Persisted form of [`LegacyServerRecord`], keyed by the paired server identity.
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct StoredNegotiation {
+    server_id: String,
+    legacy_until_ms: u64,
+}
+
+/// Negotiation state for one connection: what the hello offered and what the server selected.
+struct ConnectionNegotiation {
+    offered: Vec<ProtocolVersion>,
+    selected: Option<ProtocolVersion>,
+}
+
+fn now_millis() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |duration| {
+            u64::try_from(duration.as_millis()).unwrap_or(u64::MAX)
+        })
+}
+
+async fn load_legacy_record(
+    service: &DesktopService,
+    server_id: &str,
+) -> Option<LegacyServerRecord> {
+    let value = service
+        .storage
+        .setting(PROTOCOL_NEGOTIATION_SETTING)
+        .await
+        .ok()??;
+    let stored: StoredNegotiation = serde_json::from_value(value).ok()?;
+    (stored.server_id == server_id).then_some(LegacyServerRecord {
+        legacy_until_ms: stored.legacy_until_ms,
+    })
+}
+
+async fn store_cache_update(service: &DesktopService, server_id: &str, update: CacheUpdate) {
+    let value = match update {
+        CacheUpdate::Unchanged => return,
+        CacheUpdate::Clear => serde_json::Value::Null,
+        CacheUpdate::Store(record) => serde_json::json!(StoredNegotiation {
+            server_id: server_id.to_owned(),
+            legacy_until_ms: record.legacy_until_ms,
+        }),
+    };
+    if let Err(error) = service
+        .storage
+        .set_setting(PROTOCOL_NEGOTIATION_SETTING, &value)
+        .await
+    {
+        service.log.warn("transport", error.to_string());
+    }
+}
 
 /// Host request that needs confirmation from the connection actor.
 pub struct OutboundRequest {
@@ -93,6 +152,8 @@ pub async fn run_connection_supervisor(
     };
     let mut automatic_reconnect = true;
     let mut retry_after = None;
+    // Planned across attempts of one reconnect cycle, so a rejected extended offer can fall back at once.
+    let mut handshake: Option<HandshakePlanner> = None;
 
     loop {
         if service.shutdown.is_cancelled() {
@@ -322,7 +383,15 @@ pub async fn run_connection_supervisor(
             }
         }
 
-        let hello = hello_message(&service, &connection.agent_id);
+        let planner = if let Some(planner) = handshake.take() {
+            planner
+        } else {
+            let record = load_legacy_record(&service, &connection.server_id).await;
+            HandshakePlanner::new(record, now_millis())
+        };
+        let offered = planner.offered().to_vec();
+        handshake = Some(planner);
+        let hello = hello_message(&service, &connection.agent_id, &offered);
         let hello_message_id = hello.message_id.clone();
         if let Err(error) = transport.send(hello).await {
             let _provider_operation = service.provider_operation.lock().await;
@@ -344,6 +413,10 @@ pub async fn run_connection_supervisor(
         );
 
         let mut handshaken = false;
+        let mut negotiation = ConnectionNegotiation {
+            offered,
+            selected: None,
+        };
         let mut awaiting_handshake = VecDeque::new();
         let mut connection_ended = false;
         let hello_timeout = tokio::time::sleep(SERVER_HELLO_TIMEOUT);
@@ -392,7 +465,14 @@ pub async fn run_connection_supervisor(
                             if service.provider_generation.load(Ordering::Acquire) != provider_generation {
                                 automatic_reconnect = false;
                                 connection_ended = true;
-                            } else if let Err(error) = send_inventory(&service, &mut transport, None).await {
+                            } else if let Err(error) = send_inventory(
+                                &service,
+                                &mut transport,
+                                None,
+                                negotiation.selected.unwrap_or(ProtocolVersion::BASE),
+                            )
+                            .await
+                            {
                                 service.set_connection_error(error.to_string()).await;
                                 retry_after = next_retry_delay(&mut backoff);
                                 if retry_after.is_none() {
@@ -457,6 +537,7 @@ pub async fn run_connection_supervisor(
                                 &mut awaiting_handshake,
                                 gateway_endpoint.as_str(),
                                 provider_generation,
+                                &mut negotiation,
                             )
                             .await
                             {
@@ -476,6 +557,13 @@ pub async fn run_connection_supervisor(
                             }
                             if !was_handshaken && handshaken {
                                 backoff.reset();
+                                // The handshake completed, so the next reconnect cycle plans from a fresh state.
+                                if let (Some(planner), Some(selected)) =
+                                    (handshake.take(), negotiation.selected)
+                                {
+                                    let update = planner.on_accepted(selected, now_millis());
+                                    store_cache_update(&service, &connection.server_id, update).await;
+                                }
                             }
                         }
                         Err(error) => {
@@ -487,9 +575,18 @@ pub async fn run_connection_supervisor(
                                 continue;
                             }
                             let retryable = error.is_retryable();
+                            // A connection that ends after an extended hello but before server.hello is how a
+                            // base-only server refuses that hello. Retry at once with the base offer. A timeout
+                            // never reaches this branch, so it cannot trigger a fallback.
+                            let fell_back = !handshaken
+                                && handshake
+                                    .as_mut()
+                                    .is_some_and(HandshakePlanner::on_closed_before_hello);
                             service.set_connection_error(error.to_string()).await;
                             reject_pending(&mut awaiting_handshake, &error.to_string());
-                            if retryable {
+                            if fell_back {
+                                retry_after = Some(Duration::ZERO);
+                            } else if retryable {
                                 retry_after = backoff
                                     .next_delay()
                                     .ok()
@@ -540,6 +637,7 @@ async fn handle_server_message(
     awaiting_handshake: &mut VecDeque<OutboundRequest>,
     gateway_url: &str,
     provider_generation: u64,
+    negotiation: &mut ConnectionNegotiation,
 ) -> MessageDisposition {
     let _provider_operation = service.provider_operation.lock().await;
     if service.provider_generation.load(Ordering::Acquire) != provider_generation {
@@ -554,6 +652,17 @@ async fn handle_server_message(
             .await;
         return MessageDisposition::Reconnect { delay: None };
     }
+    if *handshaken
+        && message.protocol_version == ProtocolVersion::EXTENDED
+        && negotiation.selected != Some(ProtocolVersion::EXTENDED)
+    {
+        service
+            .set_connection_error(
+                "Gateway used an extended protocol version that was not negotiated.",
+            )
+            .await;
+        return MessageDisposition::Reconnect { delay: None };
+    }
     match &message.kind {
         ServerMessageKind::Hello(hello) => {
             if *handshaken || message.correlation_id.as_deref() != Some(hello_message_id) {
@@ -562,6 +671,19 @@ async fn handle_server_message(
                     .await;
                 return MessageDisposition::Reconnect { delay: None };
             }
+            // The server must select a version the agent offered in this attempt.
+            if !negotiation
+                .offered
+                .contains(&hello.selected_protocol_version)
+            {
+                service
+                    .set_connection_error(
+                        "Gateway selected a protocol version the agent did not offer.",
+                    )
+                    .await;
+                return MessageDisposition::Reconnect { delay: None };
+            }
+            negotiation.selected = Some(hello.selected_protocol_version);
             *handshaken = true;
             *service.last_connection_at.write().await = Some(Timestamp::now().to_string());
             *service.connected_service.write().await = Some(ConnectedServiceSummary {
@@ -583,7 +705,9 @@ async fn handle_server_message(
                 ),
             );
 
-            if let Err(error) = send_inventory(service, transport, None).await {
+            if let Err(error) =
+                send_inventory(service, transport, None, hello.selected_protocol_version).await
+            {
                 service.set_connection_error(error.to_string()).await;
                 return MessageDisposition::Reconnect { delay: None };
             }
@@ -656,8 +780,13 @@ async fn handle_server_message(
             }
         }
         ServerMessageKind::RequestPrinterInventory(_) => {
-            if let Err(error) =
-                send_inventory(service, transport, Some(message.message_id.clone())).await
+            if let Err(error) = send_inventory(
+                service,
+                transport,
+                Some(message.message_id.clone()),
+                negotiation.selected.unwrap_or(ProtocolVersion::BASE),
+            )
+            .await
             {
                 service.set_connection_error(error.to_string()).await;
                 MessageDisposition::Reconnect { delay: None }
@@ -669,7 +798,14 @@ async fn handle_server_message(
             if let Err(error) = service.refresh_printers().await {
                 service.log.warn("discovery", error.to_string());
             }
-            if let Err(error) = send_inventory(service, transport, None).await {
+            if let Err(error) = send_inventory(
+                service,
+                transport,
+                None,
+                negotiation.selected.unwrap_or(ProtocolVersion::BASE),
+            )
+            .await
+            {
                 service.set_connection_error(error.to_string()).await;
                 MessageDisposition::Reconnect { delay: None }
             } else {
@@ -821,23 +957,29 @@ fn desktop_job_state(state: oppa_core::JobState) -> DesktopJobState {
     }
 }
 
-fn hello_message(service: &DesktopService, agent_id: &str) -> AgentMessage {
+fn hello_message(
+    service: &DesktopService,
+    agent_id: &str,
+    offered: &[ProtocolVersion],
+) -> AgentMessage {
     envelope(
         AgentMessageKind::Hello(AgentHello {
             agent_id: agent_id.to_owned(),
             agent_version: env!("CARGO_PKG_VERSION").to_owned(),
             product_id: service.product.product_id.to_string(),
             product_version: env!("CARGO_PKG_VERSION").to_owned(),
-            supported_protocol_versions: vec![ProtocolVersion::CURRENT],
+            supported_protocol_versions: offered.to_vec(),
         }),
         None,
     )
 }
 
+/// Sends the printer inventory projected for the negotiated protocol version.
 async fn send_inventory(
     service: &DesktopService,
     transport: &mut WebSocketTransport,
     correlation_id: Option<String>,
+    version: ProtocolVersion,
 ) -> Result<(), TransportError> {
     let printers = service
         .catalog
@@ -848,16 +990,17 @@ async fn send_inventory(
         .send(envelope(
             AgentMessageKind::PrinterInventory(PrinterInventory {
                 revision: service.catalog.revision(),
-                printers,
+                printers: project_inventory(&printers, version),
             }),
             correlation_id,
         ))
         .await
 }
 
+/// Labels each envelope with the lowest protocol version its content needs.
 fn envelope(kind: AgentMessageKind, correlation_id: Option<String>) -> AgentMessage {
     AgentMessage {
-        protocol_version: ProtocolVersion::CURRENT,
+        protocol_version: kind.required_protocol_version(),
         message_id: format!("message_{}", Uuid::new_v4()),
         sent_at: Timestamp::now().to_string(),
         correlation_id,

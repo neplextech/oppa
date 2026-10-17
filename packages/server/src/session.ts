@@ -5,17 +5,21 @@ import {
   decodeAgentMessage,
   decodeBase64Url,
   decodeGatewayAuthenticationResponse,
+  EXTENDED_PROTOCOL_VERSION,
   encodeBase64Url,
   encodeGatewayAuthenticationServerMessage,
   encodeServerMessage,
   OPENPRINTER_SIGNATURE_ALGORITHM,
   PROTOCOL_VERSION,
   ProtocolError,
+  requiredProtocolVersion,
+  selectProtocolVersion,
   type AgentMessage,
   type GatewayAuthenticationChallenge,
   type GatewayAuthenticationFailureCode,
   type PrintJob,
   type PrinterDescriptor,
+  type ProtocolVersionName,
 } from '@openprinter/protocol';
 
 import {
@@ -91,6 +95,7 @@ export class OpenPrinterSessionImplementation<Metadata> implements OpenPrinterSe
   #challengeConsumed = false;
   #authenticationTimer: ReturnType<typeof setTimeout> | null = null;
   #hello: AgentMessageOf<'agent.hello'>['payload'] | null = null;
+  #protocolVersion: ProtocolVersionName = PROTOCOL_VERSION;
   #connectedAtMs: number | null = null;
   #lastSeenAtMs = Date.now();
   #lastHeartbeatAtMs = this.#lastSeenAtMs;
@@ -143,7 +148,17 @@ export class OpenPrinterSessionImplementation<Metadata> implements OpenPrinterSe
   }
 
   public async send(message: OpenPrinterApplicationMessage): Promise<DeliveryResult> {
-    const encoded = encodeServerMessage(message);
+    // Each envelope carries the lowest version its content needs. Extended content is refused
+    // in a session that did not negotiate the extended protocol, so the peer never receives it.
+    const protocolVersion = requiredProtocolVersion(message);
+    if (
+      this.#state === 'connected' &&
+      protocolVersion === EXTENDED_PROTOCOL_VERSION &&
+      this.#protocolVersion !== EXTENDED_PROTOCOL_VERSION
+    ) {
+      return this.#deliveryFailure('protocol-version-unsupported', false);
+    }
+    const encoded = encodeServerMessage({ ...message, protocolVersion });
     const encodedBytes = utf8ByteLength(encoded);
     if (encodedBytes > this.#resolved.maxMessageBytes) {
       throw new ProtocolError(
@@ -414,10 +429,22 @@ export class OpenPrinterSessionImplementation<Metadata> implements OpenPrinterSe
 
     let message: AgentMessage;
     try {
-      message = decodeAgentMessage(input);
+      message = decodeAgentMessage(input, { supportedVersions: this.#resolved.protocolVersions });
     } catch (error) {
       const protocolError = error instanceof Error ? error : new Error('The agent message was invalid.');
       await this.#protocolViolation(protocolErrorCode(error), protocolError);
+      return;
+    }
+
+    if (
+      message.protocolVersion === EXTENDED_PROTOCOL_VERSION &&
+      this.#state === 'connected' &&
+      this.#protocolVersion !== EXTENDED_PROTOCOL_VERSION
+    ) {
+      await this.#protocolViolation(
+        'unsupported-protocol-version',
+        new Error('The agent used an extended protocol version that was not negotiated.'),
+      );
       return;
     }
 
@@ -450,7 +477,8 @@ export class OpenPrinterSessionImplementation<Metadata> implements OpenPrinterSe
       return;
     }
 
-    if (!hello.payload.supportedProtocolVersions.includes(PROTOCOL_VERSION)) {
+    const selected = selectProtocolVersion(this.#resolved.protocolVersions, hello.payload.supportedProtocolVersions);
+    if (selected === null) {
       await this.#protocolViolation(
         'unsupported-protocol-version',
         new Error('The peers do not share a supported protocol version.'),
@@ -467,8 +495,9 @@ export class OpenPrinterSessionImplementation<Metadata> implements OpenPrinterSe
         serverVersion: this.#resolved.serverVersion,
         brand: this.#resolved.brand,
         sessionId: this.sessionId,
-        supportedProtocolVersions: [PROTOCOL_VERSION],
-        selectedProtocolVersion: PROTOCOL_VERSION,
+        // Lists only the selected version, which keeps the handshake readable by base-protocol agents.
+        supportedProtocolVersions: [selected],
+        selectedProtocolVersion: selected,
         heartbeatIntervalMs: this.#resolved.heartbeatIntervalMs,
         maxMessageBytes: this.#resolved.maxMessageBytes,
       },
@@ -482,6 +511,7 @@ export class OpenPrinterSessionImplementation<Metadata> implements OpenPrinterSe
 
     this.#clearHandshakeTimer();
     const now = Date.now();
+    this.#protocolVersion = selected;
     this.#hello = hello.payload;
     this.#connectedAtMs = now;
     this.#lastHeartbeatAtMs = now;
@@ -890,18 +920,19 @@ export class OpenPrinterSessionImplementation<Metadata> implements OpenPrinterSe
       sessionId: this.sessionId,
       ...(identity.metadata === undefined ? {} : { metadata: identity.metadata }),
       hello: structuredClone(this.#hello),
+      protocolVersion: this.#protocolVersion,
       connectedAt: new Date(this.#connectedAtMs).toISOString(),
       lastSeenAt: new Date(this.#lastSeenAtMs).toISOString(),
       printerRevision: this.#printerRevision,
     };
   }
 
-  #deliveryFailure(reason: DeliveryFailure['reason']): DeliveryFailure {
+  #deliveryFailure(reason: DeliveryFailure['reason'], retryable = true): DeliveryFailure {
     return {
       ok: false,
       agentId: this.#identity?.agentId ?? 'unauthenticated',
       reason,
-      retryable: true,
+      retryable,
     };
   }
 

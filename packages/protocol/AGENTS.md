@@ -12,7 +12,13 @@ must remain bounded, and codecs must reject unsupported versions
 before routing. Never add secrets, local filesystem paths, commands,
 scripts, or generic proxy requests to the protocol.
 
-Protocol version `"1"` is a string. Discovery, pairing, and gateway
+Protocol version `"1"` is the base protocol. Version `"2"` adds PDF
+jobs and printer document capabilities, and peers negotiate it during
+the hello exchange. Handshake frames always use envelope version
+`"1"`. Other envelopes use the lowest version their content needs, so
+receipts stay byte-compatible with base-protocol peers. Keep
+`requiredProtocolVersion` in `src/versioning.ts` in sync with the Rust
+`required_protocol_version` methods. Discovery, pairing, and gateway
 authentication schemas are part of the canonical contract. The
 protocol may model a public Ed25519 JWK and opaque challenge frames,
 but private-key generation, storage, and signing belong outside this

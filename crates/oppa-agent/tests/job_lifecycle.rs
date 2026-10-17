@@ -215,7 +215,7 @@ fn virtual_printer() -> PrinterRef {
 
 fn print_job_message(message_id: &str, job_id: &str, idempotency_key: &str) -> ServerMessage {
     ServerMessage {
-        protocol_version: ProtocolVersion::CURRENT,
+        protocol_version: ProtocolVersion::V1,
         message_id: message_id.to_owned(),
         sent_at: "2026-07-28T10:00:00Z".to_owned(),
         correlation_id: None,

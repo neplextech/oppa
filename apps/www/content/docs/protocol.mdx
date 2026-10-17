@@ -135,7 +135,7 @@ differs from the job, and stops at the declared byte length.
 
 ## Capability advertisement
 
-Printer descriptors advertise what the printer can accept in the
+Printer descriptors may advertise what the printer can accept in the
 optional `capabilities` object:
 
 - `documentFormats`: `receipt` and/or `pdf`
@@ -145,19 +145,60 @@ optional `capabilities` object:
 - `printOptions`: explicit booleans for `copies`, `duplex`,
   `orientation`, `scaling`, and `pageRanges`
 
-A server should send a PDF job only to a printer whose
-`documentFormats` include `pdf`. An agent that receives a PDF it
-cannot route fails the job with a non-retryable code instead of
-guessing.
+These fields are part of protocol version 2. An agent sends them only
+in a session that negotiated version 2. A server should send a PDF job
+only to a printer whose `documentFormats` include `pdf`. An agent that
+receives a PDF it cannot route fails the job with a non-retryable code
+instead of guessing.
 
-### Compatibility
+## Protocol versions and negotiation
 
-Document capabilities are additive optional fields. Earlier agents
-never send them, and absent fields mean receipt-only behavior. Servers
-built from earlier schemas reject unknown fields, so they reject an
-inventory that includes `documentFormats` or the other new capability
-fields. Upgrade `@openprinter/protocol` and the server SDK before
-connecting agents from this release to such a server.
+Protocol version `"1"` is the base protocol, and it is unchanged from
+earlier releases. Protocol version `"2"` adds PDF print jobs and
+printer document capabilities. Peers negotiate the version during the
+hello exchange, and independent upgrades are supported in both
+directions:
+
+| Agent           | Server          | Result                                                                                                |
+| --------------- | --------------- | ----------------------------------------------------------------------------------------------------- |
+| Earlier release | Any             | Base protocol, identical to earlier releases                                                          |
+| Current release | Earlier release | Base protocol. The agent's extended hello is refused, and the agent retries once with the base offer. |
+| Current release | Current release | Version 2 negotiated. Document capabilities and PDF jobs are exchanged.                               |
+
+The rules that make this safe:
+
+- **Handshake frames use envelope version `"1"`.** `agent.hello`
+  offers `supportedProtocolVersions`. Current agents offer
+  `["2", "1"]`, and earlier agents offer `["1"]`. `server.hello` lists
+  only the selected version in `supportedProtocolVersions` and names
+  it in `selectedProtocolVersion`. An earlier agent therefore receives
+  exactly the reply it expects.
+- **Every other message uses the lowest version its content needs.**
+  Receipts, reports, heartbeats, and base-protocol inventory use
+  `"1"`. A PDF job or a printer with document capabilities uses `"2"`.
+- **Receivers enforce both rules.** A `"1"` envelope that carries
+  version-2 content is rejected. A `"2"` envelope is rejected unless
+  version 2 was negotiated in that session. A server never sends
+  version-2 content to a session that negotiated version 1; `sendJob`
+  returns `protocol-version-unsupported` instead.
+- **Earlier servers close a rejected extended hello without
+  replying.** The agent treats a connection that closes after its
+  hello and before `server.hello` as a refusal. It retries once with
+  the base offer, and after a successful base handshake it remembers
+  the server for 24 hours. During that time it does not offer the
+  extended protocol again, so a server upgrade is picked up within a
+  day without re-pairing. A timeout waiting for `server.hello` is not
+  treated as a refusal.
+- **Base-only sessions never carry extended fields.** The agent
+  removes document capabilities from its inventory before sending it,
+  so an earlier server receives the same inventory it always did.
+- **Agents never infer support from version strings.** The only
+  evidence is the explicit `selectedProtocolVersion` in
+  `server.hello`.
+
+Servers can restrict the versions they accept with the
+`protocolVersions` option. Use `["1"]` to serve only base-protocol
+agents; `"1"` is always required.
 
 ## Delivery states
 

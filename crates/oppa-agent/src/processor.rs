@@ -9,8 +9,8 @@ use oppa_printer::{
 };
 use oppa_protocol::{
     AgentMessage, AgentMessageKind, FailureDetail, JobDocument, JobFailed, JobReceived, JobStatus,
-    JobSubmitted, PdfDocument, PrintDocument, PrintJob, PrintSettings, ProtocolVersion,
-    ServerMessage, ServerMessageKind, Validate, ValidationError,
+    JobSubmitted, PdfDocument, PrintDocument, PrintJob, PrintSettings, ServerMessage,
+    ServerMessageKind, Validate, ValidationError,
 };
 use oppa_renderer::{
     DocumentRenderer, PageRenderOptions, RenderTarget, RenderedDocument, RendererError,
@@ -1064,7 +1064,7 @@ fn agent_message(
     kind: AgentMessageKind,
 ) -> Result<AgentMessage, ValidationError> {
     let message = AgentMessage {
-        protocol_version: ProtocolVersion::CURRENT,
+        protocol_version: kind.required_protocol_version(),
         message_id: format!("msg_{}", Uuid::new_v4().simple()),
         sent_at: Timestamp::now().to_string(),
         correlation_id: Some(correlation_id.to_owned()),

@@ -127,6 +127,35 @@ pub struct PrintOptionsCapability {
     pub page_ranges: bool,
 }
 
+impl PrinterCapabilities {
+    /// Returns whether any capability introduced by the extended protocol is present.
+    #[must_use]
+    pub const fn uses_extended_protocol(&self) -> bool {
+        self.document_formats.is_some()
+            || self.paper_sizes.is_some()
+            || self.custom_paper_size.is_some()
+            || self.print_options.is_some()
+    }
+}
+
+impl PrinterDescriptor {
+    /// Returns a copy without extended-protocol capabilities.
+    ///
+    /// A session that negotiated only the base protocol receives inventory projected this way, so
+    /// the peer never sees fields it cannot decode.
+    #[must_use]
+    pub fn without_extended_capabilities(&self) -> Self {
+        let mut projected = self.clone();
+        if let Some(capabilities) = projected.capabilities.as_mut() {
+            capabilities.document_formats = None;
+            capabilities.paper_sizes = None;
+            capabilities.custom_paper_size = None;
+            capabilities.print_options = None;
+        }
+        projected
+    }
+}
+
 impl Validate for PrinterCapabilities {
     fn validate(&self) -> Result<(), ValidationError> {
         if self.media_widths.is_empty() || self.media_widths.len() > 2 {

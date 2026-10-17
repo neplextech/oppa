@@ -3,7 +3,10 @@ import {
   OPENPRINTER_DISCOVERY_PATH,
   OPENPRINTER_GATEWAY_PATH,
   OPENPRINTER_PAIRING_PATH,
+  PROTOCOL_VERSION,
+  PROTOCOL_VERSIONS,
   type OpenPrinterBrandMetadata,
+  type ProtocolVersionName,
 } from '@openprinter/protocol';
 
 import { OpenPrinterServerConfigurationError } from './errors.js';
@@ -20,6 +23,7 @@ const encoder = new TextEncoder();
 /** Validated server configuration shared by all accepted sessions. */
 export interface ResolvedOpenPrinterServerOptions {
   readonly authenticationTimeoutMs: number;
+  readonly protocolVersions: readonly ProtocolVersionName[];
   readonly brand: OpenPrinterBrandMetadata;
   readonly callbackTimeoutMs: number;
   readonly handshakeTimeoutMs: number;
@@ -65,6 +69,15 @@ export function validateOptions<Metadata>(
   const heartbeatIntervalMs = options.heartbeatIntervalMs ?? 15_000;
   const heartbeatTimeoutMs = options.heartbeatTimeoutMs ?? 45_000;
   const maxMessageBytes = options.maxMessageBytes ?? MAX_WIRE_MESSAGE_BYTES;
+  const protocolVersions = options.protocolVersions ?? PROTOCOL_VERSIONS;
+  if (!protocolVersions.includes(PROTOCOL_VERSION) || new Set(protocolVersions).size !== protocolVersions.length) {
+    throw new OpenPrinterServerConfigurationError(
+      'protocolVersions must list each version once and include "1", which every agent can use.',
+    );
+  }
+  if (protocolVersions.some((version) => !PROTOCOL_VERSIONS.includes(version))) {
+    throw new OpenPrinterServerConfigurationError('protocolVersions contains an unknown protocol version.');
+  }
   const serverId = options.serverId ?? 'openprinter-server';
   const serverVersion = options.serverVersion ?? '0.1.0';
   const transportTimeoutMs = options.transportTimeoutMs ?? 10_000;
@@ -100,6 +113,7 @@ export function validateOptions<Metadata>(
   return {
     brand,
     authenticationTimeoutMs,
+    protocolVersions,
     callbackTimeoutMs,
     challengeTtlMs,
     handshakeTimeoutMs,

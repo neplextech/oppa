@@ -43,8 +43,16 @@
                     },
                     "supportedProtocolVersions": {
                       "items": {
-                        "const": "1",
-                        "type": "string"
+                        "anyOf": [
+                          {
+                            "const": "1",
+                            "type": "string"
+                          },
+                          {
+                            "const": "2",
+                            "type": "string"
+                          }
+                        ]
                       },
                       "maxItems": 8,
                       "minItems": 1,
@@ -62,8 +70,16 @@
                   "type": "object"
                 },
                 "protocolVersion": {
-                  "const": "1",
-                  "type": "string"
+                  "anyOf": [
+                    {
+                      "const": "1",
+                      "type": "string"
+                    },
+                    {
+                      "const": "2",
+                      "type": "string"
+                    }
+                  ]
                 },
                 "sentAt": {
                   "maxLength": 30,
@@ -115,8 +131,16 @@
                   "type": "object"
                 },
                 "protocolVersion": {
-                  "const": "1",
-                  "type": "string"
+                  "anyOf": [
+                    {
+                      "const": "1",
+                      "type": "string"
+                    },
+                    {
+                      "const": "2",
+                      "type": "string"
+                    }
+                  ]
                 },
                 "sentAt": {
                   "maxLength": 30,
@@ -767,8 +791,16 @@
                   "type": "object"
                 },
                 "protocolVersion": {
-                  "const": "1",
-                  "type": "string"
+                  "anyOf": [
+                    {
+                      "const": "1",
+                      "type": "string"
+                    },
+                    {
+                      "const": "2",
+                      "type": "string"
+                    }
+                  ]
                 },
                 "sentAt": {
                   "maxLength": 30,
@@ -2022,8 +2054,16 @@
                   "type": "object"
                 },
                 "protocolVersion": {
-                  "const": "1",
-                  "type": "string"
+                  "anyOf": [
+                    {
+                      "const": "1",
+                      "type": "string"
+                    },
+                    {
+                      "const": "2",
+                      "type": "string"
+                    }
+                  ]
                 },
                 "sentAt": {
                   "maxLength": 30,
@@ -2094,8 +2134,16 @@
                   "type": "object"
                 },
                 "protocolVersion": {
-                  "const": "1",
-                  "type": "string"
+                  "anyOf": [
+                    {
+                      "const": "1",
+                      "type": "string"
+                    },
+                    {
+                      "const": "2",
+                      "type": "string"
+                    }
+                  ]
                 },
                 "sentAt": {
                   "maxLength": 30,
@@ -2174,8 +2222,16 @@
                   "type": "object"
                 },
                 "protocolVersion": {
-                  "const": "1",
-                  "type": "string"
+                  "anyOf": [
+                    {
+                      "const": "1",
+                      "type": "string"
+                    },
+                    {
+                      "const": "2",
+                      "type": "string"
+                    }
+                  ]
                 },
                 "sentAt": {
                   "maxLength": 30,
@@ -2273,8 +2329,16 @@
                   "type": "object"
                 },
                 "protocolVersion": {
-                  "const": "1",
-                  "type": "string"
+                  "anyOf": [
+                    {
+                      "const": "1",
+                      "type": "string"
+                    },
+                    {
+                      "const": "2",
+                      "type": "string"
+                    }
+                  ]
                 },
                 "sentAt": {
                   "maxLength": 30,
@@ -2407,8 +2471,16 @@
                   "type": "object"
                 },
                 "protocolVersion": {
-                  "const": "1",
-                  "type": "string"
+                  "anyOf": [
+                    {
+                      "const": "1",
+                      "type": "string"
+                    },
+                    {
+                      "const": "2",
+                      "type": "string"
+                    }
+                  ]
                 },
                 "sentAt": {
                   "maxLength": 30,
@@ -2480,8 +2552,16 @@
                       "type": "integer"
                     },
                     "selectedProtocolVersion": {
-                      "const": "1",
-                      "type": "string"
+                      "anyOf": [
+                        {
+                          "const": "1",
+                          "type": "string"
+                        },
+                        {
+                          "const": "2",
+                          "type": "string"
+                        }
+                      ]
                     },
                     "serverId": {
                       "maxLength": 128,
@@ -2502,8 +2582,16 @@
                     },
                     "supportedProtocolVersions": {
                       "items": {
-                        "const": "1",
-                        "type": "string"
+                        "anyOf": [
+                          {
+                            "const": "1",
+                            "type": "string"
+                          },
+                          {
+                            "const": "2",
+                            "type": "string"
+                          }
+                        ]
                       },
                       "maxItems": 8,
                       "minItems": 1,
@@ -2524,8 +2612,16 @@
                   "type": "object"
                 },
                 "protocolVersion": {
-                  "const": "1",
-                  "type": "string"
+                  "anyOf": [
+                    {
+                      "const": "1",
+                      "type": "string"
+                    },
+                    {
+                      "const": "2",
+                      "type": "string"
+                    }
+                  ]
                 },
                 "sentAt": {
                   "maxLength": 30,
@@ -2572,8 +2668,16 @@
                   "type": "object"
                 },
                 "protocolVersion": {
-                  "const": "1",
-                  "type": "string"
+                  "anyOf": [
+                    {
+                      "const": "1",
+                      "type": "string"
+                    },
+                    {
+                      "const": "2",
+                      "type": "string"
+                    }
+                  ]
                 },
                 "sentAt": {
                   "maxLength": 30,
@@ -3048,8 +3152,16 @@
                   "type": "object"
                 },
                 "protocolVersion": {
-                  "const": "1",
-                  "type": "string"
+                  "anyOf": [
+                    {
+                      "const": "1",
+                      "type": "string"
+                    },
+                    {
+                      "const": "2",
+                      "type": "string"
+                    }
+                  ]
                 },
                 "sentAt": {
                   "maxLength": 30,
@@ -3101,8 +3213,16 @@
                   "type": "object"
                 },
                 "protocolVersion": {
-                  "const": "1",
-                  "type": "string"
+                  "anyOf": [
+                    {
+                      "const": "1",
+                      "type": "string"
+                    },
+                    {
+                      "const": "2",
+                      "type": "string"
+                    }
+                  ]
                 },
                 "sentAt": {
                   "maxLength": 30,
@@ -3139,8 +3259,16 @@
                   "type": "object"
                 },
                 "protocolVersion": {
-                  "const": "1",
-                  "type": "string"
+                  "anyOf": [
+                    {
+                      "const": "1",
+                      "type": "string"
+                    },
+                    {
+                      "const": "2",
+                      "type": "string"
+                    }
+                  ]
                 },
                 "sentAt": {
                   "maxLength": 30,
@@ -3202,8 +3330,16 @@
                   "type": "object"
                 },
                 "protocolVersion": {
-                  "const": "1",
-                  "type": "string"
+                  "anyOf": [
+                    {
+                      "const": "1",
+                      "type": "string"
+                    },
+                    {
+                      "const": "2",
+                      "type": "string"
+                    }
+                  ]
                 },
                 "sentAt": {
                   "maxLength": 30,
@@ -3265,8 +3401,16 @@
                   "type": "object"
                 },
                 "protocolVersion": {
-                  "const": "1",
-                  "type": "string"
+                  "anyOf": [
+                    {
+                      "const": "1",
+                      "type": "string"
+                    },
+                    {
+                      "const": "2",
+                      "type": "string"
+                    }
+                  ]
                 },
                 "sentAt": {
                   "maxLength": 30,
