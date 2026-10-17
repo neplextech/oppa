@@ -1,6 +1,6 @@
 import { Type, type Static } from '@sinclair/typebox';
 
-import { MAX_METADATA_ENTRIES, PROTOCOL_VERSION } from '../constants.js';
+import { MAX_METADATA_ENTRIES, PROTOCOL_VERSIONS } from '../constants.js';
 
 /** A stable opaque identifier used on the wire. */
 export const IdentifierSchema = Type.String({
@@ -62,8 +62,8 @@ export const JobStatusSchema = Type.Union([
 /** A lifecycle status that never implies verified physical output. */
 export type JobStatus = Static<typeof JobStatusSchema>;
 
-/** The singleton protocol version schema used by every v1 envelope. */
-export const ProtocolVersionSchema = Type.Literal(PROTOCOL_VERSION);
+/** A protocol version named in an envelope or a hello negotiation list. */
+export const ProtocolVersionSchema = Type.Union(PROTOCOL_VERSIONS.map((version) => Type.Literal(version)));
 
 /** TypeScript representation of the current protocol version. */
 export type ProtocolVersion = Static<typeof ProtocolVersionSchema>;

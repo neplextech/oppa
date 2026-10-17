@@ -56,8 +56,8 @@ pub enum ProtocolError {
     UnsupportedProtocolVersion {
         /// Primitive version value rendered without the rest of the payload.
         received: String,
-        /// Versions understood by this crate.
-        supported: &'static [&'static str],
+        /// Versions understood by the decoder that rejected the envelope.
+        supported: Vec<&'static str>,
     },
     /// Serialization failed after semantic validation.
     Encoding(String),

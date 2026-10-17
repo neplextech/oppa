@@ -139,7 +139,7 @@ fn pdf_job_message(
     settings: Option<PrintSettings>,
 ) -> ServerMessage {
     ServerMessage {
-        protocol_version: oppa_protocol::ProtocolVersion::CURRENT,
+        protocol_version: oppa_protocol::ProtocolVersion::V2,
         message_id: format!("msg_{job_id}"),
         sent_at: "2026-07-28T10:00:00Z".to_owned(),
         correlation_id: None,

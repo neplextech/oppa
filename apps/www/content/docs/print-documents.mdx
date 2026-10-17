@@ -56,6 +56,10 @@ them, and the spooler chooses the submission route.
 
 ## PDF documents
 
+PDF jobs require an agent that negotiated protocol version 2. Agents
+that only speak the base protocol still receive receipts. See
+[Protocol](/docs/protocol).
+
 A job can reference a PDF instead of a receipt. The job's `document`
 member is a PDF when it has a `format` value of `"pdf"`; receipts keep
 their original shape.

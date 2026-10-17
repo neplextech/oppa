@@ -146,8 +146,8 @@ fn every_invalid_fixture_is_rejected() {
                     result,
                     Err(ProtocolError::UnsupportedProtocolVersion {
                         received,
-                        supported: &["1"],
-                    }) if received == "99"
+                        supported,
+                    }) if received == "99" && supported == ["1", "2"]
                 ),
                 "{} must produce a version error",
                 path.display(),

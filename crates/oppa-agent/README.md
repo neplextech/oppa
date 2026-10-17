@@ -88,6 +88,13 @@ accepts a protocol `PrintJob` so it can reuse the same validation, printer resol
 spooler boundaries, but it intentionally creates no server-job row, outbox row, job event, or
 outbound protocol report. A host may keep separate desktop-only test history.
 
+## Protocol negotiation
+
+The agent's connection layer, not this crate, owns the hello exchange. It offers
+`[V2, V1]` and falls back once to `[V1]` when a server closes an extended hello
+without replying. See `oppa_protocol::HandshakePlanner`. `Agent` reports use the
+base envelope, and PDF jobs are received only in a negotiated version-2 session.
+
 ## PDF jobs
 
 A job whose `document` is a PDF follows the same receive, durable-storage,

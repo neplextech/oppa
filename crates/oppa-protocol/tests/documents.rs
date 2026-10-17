@@ -9,9 +9,15 @@ use serde_json::{Value, json};
 
 const SHA256: &str = "9f2c7e1a4b8d03e5f6a7b8c9d0e1f2a34b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e";
 
+/// Wraps a document in a print job, labelled with the lowest protocol version that covers it.
 fn job_with_document(document: Value) -> Value {
+    let version = if document.get("format").is_some() {
+        "2"
+    } else {
+        "1"
+    };
     json!({
-        "protocolVersion": "1",
+        "protocolVersion": version,
         "messageId": "msg_doc_001",
         "sentAt": "2026-07-28T10:02:00Z",
         "type": "server.print_job",

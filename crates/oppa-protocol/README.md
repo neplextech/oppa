@@ -40,6 +40,26 @@ optional `PrintSettings`. Bytes never travel in a message.
 `custom_paper_size`, and `print_options` fields. Absent fields mean receipt-only
 behavior and are never inferred.
 
+## Version negotiation
+
+`ProtocolVersion` is `V1` (the base protocol) or `V2` (PDF jobs and document
+capabilities). Handshake frames always use `V1`. Other envelopes use the lowest
+version their content needs, through `AgentMessageKind::required_protocol_version`
+and `ServerMessageKind::required_protocol_version`. Decoders reject a `V1`
+envelope that carries version-2 content.
+
+`decode_agent_message_for` and `decode_server_message_for` decode as a peer that
+understands only the supplied versions. A base-only peer uses
+`&[ProtocolVersion::BASE]`, which rejects an extended hello exactly as the
+original decoder did.
+
+`negotiation` contains the agent's `HandshakePlanner`, which decides each hello
+offer, falls back once to the base offer after a refused extended hello, and
+returns what to persist. It also contains `select_protocol_version` and
+`project_inventory`, which strips version-2 fields for base-only sessions.
+Tests in `tests/negotiation.rs` cover each combination of agent and server
+generation.
+
 ## Source of truth and development
 
 The TypeBox schemas in `../../packages/protocol/src/schemas` are canonical. Their deterministic JSON

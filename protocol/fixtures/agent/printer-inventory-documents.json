@@ -1,5 +1,5 @@
 {
-  "protocolVersion": "1",
+  "protocolVersion": "2",
   "messageId": "msg_inventory_documents_001",
   "correlationId": "msg_inventory_request_003",
   "sentAt": "2026-07-28T10:00:06Z",

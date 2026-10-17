@@ -3,30 +3,52 @@ use std::fmt;
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
 
 use crate::{
-    MAX_PRINTERS_PER_INVENTORY, MAX_WIRE_MESSAGE_BYTES, PROTOCOL_VERSION, PrintJob,
+    MAX_PRINTERS_PER_INVENTORY, MAX_WIRE_MESSAGE_BYTES, PrintJob, PrinterCapabilities,
     PrinterDescriptor, Validate, ValidationError,
     validation::{validate_brand_name, validate_identifier, validate_string, validate_timestamp},
 };
 
 const MAX_SAFE_INTEGER: u64 = 9_007_199_254_740_991;
 
-/// Validated OpenPrinter protocol version.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct ProtocolVersion;
+/// OpenPrinter protocol version named in an envelope or a hello negotiation list.
+///
+/// `V1` is the base protocol that every peer speaks. `V2` adds PDF print jobs and
+/// printer document capabilities. Handshake frames always use `V1`, and every other
+/// message uses the lowest version whose contract covers its content.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum ProtocolVersion {
+    /// The base protocol, identical to the original v1 wire contract.
+    V1,
+    /// The extended protocol: PDF print jobs and printer document capabilities.
+    V2,
+}
 
 impl ProtocolVersion {
-    /// Current protocol version used by new messages.
-    pub const CURRENT: Self = Self;
+    /// Version used by handshake frames and by messages without extended content.
+    pub const BASE: Self = Self::V1;
+    /// Version required for extended content. Peers negotiate it during the hello exchange.
+    pub const EXTENDED: Self = Self::V2;
+    /// Every version this crate can decode.
+    pub const SUPPORTED: &'static [Self] = &[Self::V1, Self::V2];
 
     /// Returns the stable string wire representation.
-    pub const fn get(self) -> &'static str {
-        PROTOCOL_VERSION
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::V1 => "1",
+            Self::V2 => "2",
+        }
     }
 }
 
 impl Default for ProtocolVersion {
     fn default() -> Self {
-        Self::CURRENT
+        Self::BASE
+    }
+}
+
+impl fmt::Display for ProtocolVersion {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.as_str())
     }
 }
 
@@ -35,7 +57,7 @@ impl Serialize for ProtocolVersion {
     where
         S: Serializer,
     {
-        serializer.serialize_str(PROTOCOL_VERSION)
+        serializer.serialize_str(self.as_str())
     }
 }
 
@@ -50,22 +72,81 @@ impl<'de> Deserialize<'de> for ProtocolVersion {
             type Value = ProtocolVersion;
 
             fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-                write!(formatter, "protocol version {PROTOCOL_VERSION}")
+                formatter.write_str("protocol version 1 or 2")
             }
 
             fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
             where
                 E: de::Error,
             {
-                if value == PROTOCOL_VERSION {
-                    Ok(ProtocolVersion)
-                } else {
-                    Err(E::custom(format!("unsupported protocol version {value}")))
+                match value {
+                    "1" => Ok(ProtocolVersion::V1),
+                    "2" => Ok(ProtocolVersion::V2),
+                    _ => Err(E::custom(format!("unsupported protocol version {value}"))),
                 }
             }
         }
 
         deserializer.deserialize_any(VersionVisitor)
+    }
+}
+
+/// Returns whether a printer descriptor carries any capability introduced by the extended protocol.
+fn descriptor_uses_extended_protocol(printer: &PrinterDescriptor) -> bool {
+    printer
+        .capabilities
+        .as_ref()
+        .is_some_and(PrinterCapabilities::uses_extended_protocol)
+}
+
+impl AgentMessageKind {
+    /// Returns the lowest protocol version whose contract covers this message.
+    ///
+    /// Envelopes should be labelled with this value, so receipts and reports stay on the base protocol.
+    #[must_use]
+    pub fn required_protocol_version(&self) -> ProtocolVersion {
+        required_version(self)
+    }
+}
+
+impl ServerMessageKind {
+    /// Returns the lowest protocol version whose contract covers this message.
+    #[must_use]
+    pub fn required_protocol_version(&self) -> ProtocolVersion {
+        required_server_version(self)
+    }
+}
+
+/// Lowest protocol version whose contract covers a message. Handshake frames, receipts,
+/// reports, and base-protocol inventory need only `V1`.
+pub(crate) fn required_version(kind: &AgentMessageKind) -> ProtocolVersion {
+    match kind {
+        AgentMessageKind::PrinterInventory(inventory)
+            if inventory
+                .printers
+                .iter()
+                .any(descriptor_uses_extended_protocol) =>
+        {
+            ProtocolVersion::EXTENDED
+        }
+        AgentMessageKind::PrinterInventoryChanged(changed)
+            if changed
+                .added
+                .iter()
+                .chain(&changed.updated)
+                .any(descriptor_uses_extended_protocol) =>
+        {
+            ProtocolVersion::EXTENDED
+        }
+        _ => ProtocolVersion::BASE,
+    }
+}
+
+/// Lowest protocol version whose contract covers a server message.
+pub(crate) fn required_server_version(kind: &ServerMessageKind) -> ProtocolVersion {
+    match kind {
+        ServerMessageKind::PrintJob(job) if job.document.is_pdf() => ProtocolVersion::EXTENDED,
+        _ => ProtocolVersion::BASE,
     }
 }
 
@@ -486,6 +567,11 @@ impl Validate for AgentMessage {
             }
             _ => {}
         }
+        validate_envelope_version(
+            self.protocol_version,
+            matches!(self.kind, AgentMessageKind::Hello(_)),
+            required_version(&self.kind),
+        )?;
         self.kind.validate()
     }
 }
@@ -536,6 +622,15 @@ impl Validate for ServerHello {
             &self.supported_protocol_versions,
             "supportedProtocolVersions",
         )?;
+        if !self
+            .supported_protocol_versions
+            .contains(&self.selected_protocol_version)
+        {
+            return Err(ValidationError::new(
+                "selectedProtocolVersion",
+                "must be one of the listed supported versions",
+            ));
+        }
         if !(5_000..=300_000).contains(&self.heartbeat_interval_ms) {
             return Err(ValidationError::new(
                 "heartbeatIntervalMs",
@@ -770,6 +865,11 @@ impl Validate for ServerMessage {
             }
             (_, false) => {}
         }
+        validate_envelope_version(
+            self.protocol_version,
+            matches!(self.kind, ServerMessageKind::Hello(_)),
+            required_server_version(&self.kind),
+        )?;
         self.kind.validate()
     }
 }
@@ -816,16 +916,43 @@ fn validate_envelope(
 }
 
 fn validate_versions(versions: &[ProtocolVersion], path: &str) -> Result<(), ValidationError> {
-    if versions.is_empty() || versions.len() > 8 {
+    if versions.is_empty() || versions.len() > ProtocolVersion::SUPPORTED.len() {
         return Err(ValidationError::new(
             path,
-            "must contain between 1 and 8 versions",
+            format!(
+                "must contain between 1 and {} versions",
+                ProtocolVersion::SUPPORTED.len()
+            ),
         ));
     }
-    if versions.len() > 1 {
+    for (index, version) in versions.iter().enumerate() {
+        if versions[..index].contains(version) {
+            return Err(ValidationError::new(
+                path,
+                "must not contain duplicate versions",
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Enforces the envelope-version rules: handshake frames use the base version, and content that
+/// needs the extended protocol must not be labelled with the base version.
+fn validate_envelope_version(
+    version: ProtocolVersion,
+    handshake: bool,
+    required: ProtocolVersion,
+) -> Result<(), ValidationError> {
+    if handshake && version != ProtocolVersion::BASE {
         return Err(ValidationError::new(
-            path,
-            "must not contain duplicate versions",
+            "protocolVersion",
+            "handshake frames must use protocol version 1",
+        ));
+    }
+    if version == ProtocolVersion::BASE && required == ProtocolVersion::EXTENDED {
+        return Err(ValidationError::new(
+            "protocolVersion",
+            "this content requires protocol version 2",
         ));
     }
     Ok(())

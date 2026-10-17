@@ -18,3 +18,5 @@ export * from './schemas/job.js';
 export * from './schemas/messages.js';
 /** Printer connection, capability, and descriptor schemas and types. */
 export * from './schemas/printer.js';
+/** Protocol version negotiation rules and projections shared by both peers. */
+export * from './versioning.js';
