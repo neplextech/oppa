@@ -223,7 +223,7 @@ async fn pdf_job_without_a_configured_fetcher_fails_without_submission() {
 
     let outcome = only_outcome(&result.outcomes);
     assert_eq!(failure_code(outcome), "document.fetch_unavailable");
-    assert!(harness.spooler.history().await.is_empty());
+    assert_eq!(harness.spooler.history().await.len(), 0);
 }
 
 #[tokio::test]
@@ -240,7 +240,7 @@ async fn integrity_failures_are_permanent_and_never_reach_the_spooler() {
 
     let outcome = only_outcome(&result.outcomes);
     assert_eq!(failure_code(outcome), "document.integrity_failed");
-    assert!(harness.spooler.history().await.is_empty());
+    assert_eq!(harness.spooler.history().await.len(), 0);
     assert!(
         harness
             .storage
@@ -293,7 +293,7 @@ async fn invalid_pdf_bytes_fail_validation_before_submission() {
 
     let outcome = only_outcome(&result.outcomes);
     assert_eq!(failure_code(outcome), "document.invalid");
-    assert!(harness.spooler.history().await.is_empty());
+    assert_eq!(harness.spooler.history().await.len(), 0);
 }
 
 #[tokio::test]
@@ -310,7 +310,7 @@ async fn receipt_only_printers_reject_pdf_jobs_with_an_actionable_error() {
 
     let outcome = only_outcome(&result.outcomes);
     assert_eq!(failure_code(outcome), "document.format_unsupported");
-    assert!(harness.spooler.history().await.is_empty());
+    assert_eq!(harness.spooler.history().await.len(), 0);
 }
 
 #[tokio::test]
@@ -358,8 +358,8 @@ async fn local_pdf_tests_are_submitted_without_durable_state_or_reports() {
         .expect("local PDF test must submit");
 
     assert_eq!(receipt.backend, "virtual");
-    assert!(harness.storage.pending().await.unwrap().is_empty());
-    assert!(harness.reporter.messages.lock().await.is_empty());
+    assert_eq!(harness.storage.pending().await.unwrap().len(), 0);
+    assert_eq!(harness.reporter.messages.lock().await.len(), 0);
     assert_eq!(harness.spooler.history().await.len(), 1);
 }
 
@@ -378,5 +378,5 @@ async fn local_pdf_tests_reject_non_pdf_content_before_submission() {
         .expect_err("plain text is not a PDF");
 
     assert_eq!(error.code(), "document.invalid");
-    assert!(harness.spooler.history().await.is_empty());
+    assert_eq!(harness.spooler.history().await.len(), 0);
 }

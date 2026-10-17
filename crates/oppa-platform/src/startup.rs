@@ -3,6 +3,7 @@ use async_trait::async_trait;
 use crate::{PlatformError, PlatformResult};
 
 /// Start-on-login integration boundary.
+#[allow(clippy::double_must_use)]
 #[async_trait]
 pub trait StartupManager: Send + Sync {
     /// Returns whether start-on-login is currently enabled.

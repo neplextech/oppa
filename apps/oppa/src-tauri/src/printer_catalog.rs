@@ -149,6 +149,8 @@ impl PrinterCatalog {
         self.revision.load(Ordering::Relaxed)
     }
 
+    // `fetch_update` is deprecated on newer toolchains, but its replacement needs Rust 1.95 and the workspace MSRV is 1.85.
+    #[allow(deprecated)]
     pub fn bump_revision(&self) -> u64 {
         self.revision
             .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {

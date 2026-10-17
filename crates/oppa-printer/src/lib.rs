@@ -551,6 +551,7 @@ pub type PrinterBackendResult<T> = Result<T, PrinterBackendError>;
 ///
 /// Submission lives in `oppa-spooler` so this leaf crate does not depend on
 /// renderer output types.
+#[allow(clippy::double_must_use)]
 #[async_trait]
 pub trait PrinterBackend: Send + Sync {
     /// Discovers printer observations available through this backend.

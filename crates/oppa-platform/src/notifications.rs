@@ -25,6 +25,7 @@ pub struct Notification {
 }
 
 /// Operating-system notification boundary.
+#[allow(clippy::double_must_use)]
 #[async_trait]
 pub trait NotificationService: Send + Sync {
     /// Shows a non-sensitive notification.
