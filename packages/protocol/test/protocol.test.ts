@@ -328,7 +328,7 @@ describe('runtime validation', () => {
       expect(error).toMatchObject({
         code: 'unsupported_protocol_version',
         receivedVersion: '99',
-        supportedVersions: ['1'],
+        supportedVersions: ['1', '2'],
       });
       expect(JSON.stringify(error)).not.toContain('server.heartbeat');
     }

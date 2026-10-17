@@ -13,6 +13,7 @@ mod document;
 mod error;
 mod job;
 mod message;
+mod negotiation;
 mod pdf;
 mod printer;
 mod validation;
@@ -25,8 +26,9 @@ pub use auth::{
     PairingResponse, PublicEd25519Jwk, SIGNATURE_ALGORITHM,
 };
 pub use codec::{
-    decode_agent_message, decode_protocol_message, decode_server_message, encode_agent_message,
-    encode_protocol_message, encode_server_message,
+    decode_agent_message, decode_agent_message_for, decode_protocol_message, decode_server_message,
+    decode_server_message_for, encode_agent_message, encode_protocol_message,
+    encode_server_message,
 };
 pub use document::{
     BarcodeFormat, ImageMediaType, JobDocument, PrintDocument, PrintSection, ReceiptWidth,
@@ -41,6 +43,10 @@ pub use message::{
     OpenPrinterBrandMetadata, PrinterInventory, PrinterInventoryChanged, ProtocolMessage,
     ProtocolVersion, RequestPrinterInventory, ServerHello, ServerMessage, ServerMessageKind,
 };
+pub use negotiation::{
+    CacheUpdate, HandshakePlanner, LEGACY_RETRY_INTERVAL_MS, LegacyServerRecord, project_inventory,
+    select_protocol_version,
+};
 pub use pdf::{
     CustomPaperSize, Duplex, MAX_COPIES, MAX_CUSTOM_PAPER_MM, MAX_PAGE_RANGE_BYTES,
     MAX_SCALE_PERCENT, MIN_COPIES, MIN_CUSTOM_PAPER_MM, MIN_SCALE_PERCENT, Orientation, PaperSize,
@@ -53,7 +59,8 @@ pub use printer::{
 };
 pub use validation::{Metadata, Validate};
 
-/// The only wire protocol version understood by this release.
+/// The base wire protocol version. Every peer understands it, and it is the only version used by
+/// authentication frames and discovery documents.
 pub const PROTOCOL_VERSION: &str = "1";
 
 /// Maximum UTF-8 size accepted by any protocol decoder.

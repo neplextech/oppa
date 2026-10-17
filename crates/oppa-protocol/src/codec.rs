@@ -2,11 +2,10 @@ use serde::Serialize;
 use serde_json::{Map, Value};
 
 use crate::{
-    AgentMessage, MAX_WIRE_MESSAGE_BYTES, PROTOCOL_VERSION, ProtocolError, ProtocolMessage,
-    ServerMessage, Validate, ValidationError,
+    AgentMessage, AgentMessageKind, MAX_WIRE_MESSAGE_BYTES, ProtocolError, ProtocolMessage,
+    ProtocolVersion, ServerMessage, ServerMessageKind, Validate, ValidationError,
 };
 
-const SUPPORTED_VERSIONS: &[&str] = &[PROTOCOL_VERSION];
 const JSON_SAFE_INTEGER: f64 = 9_007_199_254_740_991.0;
 const ENVELOPE_FIELDS: &[&str] = &[
     "protocolVersion",
@@ -19,25 +18,50 @@ const ENVELOPE_FIELDS: &[&str] = &[
 
 /// Decodes UTF-8 JSON and validates an agent-to-server message.
 pub fn decode_agent_message(input: &[u8]) -> Result<AgentMessage, ProtocolError> {
-    let value = decode_value(input)?;
+    decode_agent_message_for(input, ProtocolVersion::SUPPORTED)
+}
+
+/// Decodes an agent message as a peer that understands only `supported` versions would.
+///
+/// A base-only peer passes `&[ProtocolVersion::BASE]`. It then rejects a hello that offers the
+/// extended version and an envelope labelled with it, as the original v1 decoder did.
+pub fn decode_agent_message_for(
+    input: &[u8],
+    supported: &[ProtocolVersion],
+) -> Result<AgentMessage, ProtocolError> {
+    let value = decode_value(input, supported)?;
     validate_envelope_shape(&value)?;
     let message: AgentMessage = deserialize_message(value)?;
     message.validate()?;
+    if let AgentMessageKind::Hello(hello) = &message.kind {
+        ensure_offers_supported(&hello.supported_protocol_versions, supported)?;
+    }
     Ok(message)
 }
 
 /// Decodes UTF-8 JSON and validates a server-to-agent message.
 pub fn decode_server_message(input: &[u8]) -> Result<ServerMessage, ProtocolError> {
-    let value = decode_value(input)?;
+    decode_server_message_for(input, ProtocolVersion::SUPPORTED)
+}
+
+/// Decodes a server message as a peer that understands only `supported` versions would.
+pub fn decode_server_message_for(
+    input: &[u8],
+    supported: &[ProtocolVersion],
+) -> Result<ServerMessage, ProtocolError> {
+    let value = decode_value(input, supported)?;
     validate_envelope_shape(&value)?;
     let message: ServerMessage = deserialize_message(value)?;
     message.validate()?;
+    if let ServerMessageKind::Hello(hello) = &message.kind {
+        ensure_offers_supported(&hello.supported_protocol_versions, supported)?;
+    }
     Ok(message)
 }
 
 /// Decodes UTF-8 JSON and routes a validated message by its discriminator.
 pub fn decode_protocol_message(input: &[u8]) -> Result<ProtocolMessage, ProtocolError> {
-    let value = decode_value(input)?;
+    let value = decode_value(input, ProtocolVersion::SUPPORTED)?;
     validate_envelope_shape(&value)?;
     let message_type = value
         .get("type")
@@ -75,12 +99,27 @@ pub fn encode_protocol_message(message: &ProtocolMessage) -> Result<Vec<u8>, Pro
     }
 }
 
-fn decode_value(input: &[u8]) -> Result<Value, ProtocolError> {
+fn decode_value(input: &[u8], supported: &[ProtocolVersion]) -> Result<Value, ProtocolError> {
     enforce_size(input.len())?;
     let mut value: Value = serde_json::from_slice(input).map_err(|_| ProtocolError::InvalidJson)?;
     normalize_integral_numbers(&mut value);
-    assert_supported_version(&value)?;
+    assert_supported_version(&value, supported)?;
     Ok(value)
+}
+
+/// Rejects a handshake that lists a version the decoding peer does not support.
+fn ensure_offers_supported(
+    listed: &[ProtocolVersion],
+    supported: &[ProtocolVersion],
+) -> Result<(), ProtocolError> {
+    if listed.iter().all(|version| supported.contains(version)) {
+        return Ok(());
+    }
+    Err(ValidationError::new(
+        "supportedProtocolVersions",
+        "lists a protocol version this peer does not support",
+    )
+    .into())
 }
 
 fn normalize_integral_numbers(value: &mut Value) {
@@ -112,11 +151,17 @@ fn normalize_integral_numbers(value: &mut Value) {
     }
 }
 
-fn assert_supported_version(value: &Value) -> Result<(), ProtocolError> {
+fn assert_supported_version(
+    value: &Value,
+    supported: &[ProtocolVersion],
+) -> Result<(), ProtocolError> {
     let Some(version) = value.get("protocolVersion") else {
         return Ok(());
     };
-    if version == &Value::from(PROTOCOL_VERSION) {
+    if supported
+        .iter()
+        .any(|candidate| version == &Value::from(candidate.as_str()))
+    {
         return Ok(());
     }
 
@@ -130,7 +175,7 @@ fn assert_supported_version(value: &Value) -> Result<(), ProtocolError> {
     if let Some(received) = received {
         return Err(ProtocolError::UnsupportedProtocolVersion {
             received,
-            supported: SUPPORTED_VERSIONS,
+            supported: supported.iter().map(|version| version.as_str()).collect(),
         });
     }
     Ok(())

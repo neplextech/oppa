@@ -108,6 +108,14 @@ const result = await session.sendJob({
 
 `sendJob` handing a frame to a live transport is not durable server storage. Keep the job in application-owned storage until the agent acknowledgement and apply application retry policy outside this SDK.
 
+## Protocol versions
+
+`createOpenPrinterServer` accepts `protocolVersions`. The default is every
+version this SDK implements, `["2", "1"]`. The server selects the highest version
+the agent offers. Use `["1"]` to serve only base-protocol agents. Agents on the
+base protocol then negotiate `"1"` automatically, and PDF jobs are refused with
+`protocol-version-unsupported` for sessions without version 2.
+
 ## Job documents
 
 A PDF job is sent with `document: { format: 'pdf', source, settings }`. The

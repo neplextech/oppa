@@ -236,6 +236,12 @@ impl JobDocument {
             Self::Pdf(_) => "pdf",
         }
     }
+
+    /// Returns whether this document needs the extended protocol.
+    #[must_use]
+    pub const fn is_pdf(&self) -> bool {
+        matches!(self, Self::Pdf(_))
+    }
 }
 
 impl Validate for JobDocument {

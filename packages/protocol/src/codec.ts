@@ -1,7 +1,7 @@
 import type { TSchema } from '@sinclair/typebox';
 import { Value } from '@sinclair/typebox/value';
 
-import { MAX_AUTH_MESSAGE_BYTES, MAX_WIRE_MESSAGE_BYTES, PROTOCOL_VERSION } from './constants.js';
+import { MAX_AUTH_MESSAGE_BYTES, MAX_WIRE_MESSAGE_BYTES, PROTOCOL_VERSION, PROTOCOL_VERSIONS } from './constants.js';
 import {
   ProtocolError,
   ProtocolValidationError,
@@ -35,6 +35,7 @@ import {
   type ServerMessage,
 } from './schemas/messages.js';
 import { PrinterDescriptorSchema, type PrinterDescriptor } from './schemas/printer.js';
+import { requiredProtocolVersion, type ProtocolVersionName } from './versioning.js';
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder('utf-8', { fatal: true });
@@ -53,28 +54,93 @@ function normalizedIssues(schema: TSchema, value: unknown): ProtocolIssue[] {
   return issues;
 }
 
-function assertSupportedVersion(value: unknown): void {
+/** Options that restrict decoding to the protocol versions a peer understands. */
+export interface ProtocolDecodeOptions {
+  /**
+   * Versions this peer can read. Defaults to every version this package supports.
+   *
+   * A peer restricted to `["1"]` rejects any hello offering `"2"`, which is how base-protocol
+   * servers behave. Negotiating clients use this to test that legacy peers reject offers they cannot read.
+   */
+  readonly supportedVersions?: readonly ProtocolVersionName[];
+}
+
+function supportedVersionsOf(options: ProtocolDecodeOptions | undefined): readonly ProtocolVersionName[] {
+  return options?.supportedVersions ?? PROTOCOL_VERSIONS;
+}
+
+function assertKnownVersion(value: unknown, supported: readonly ProtocolVersionName[]): void {
   if (typeof value !== 'object' || value === null || !Object.prototype.hasOwnProperty.call(value, 'protocolVersion')) {
     return;
   }
-
   const version = (value as { protocolVersion?: unknown }).protocolVersion;
   if (
-    version !== PROTOCOL_VERSION &&
+    !supported.includes(version as ProtocolVersionName) &&
     (version === null || typeof version === 'string' || typeof version === 'number' || typeof version === 'boolean')
   ) {
-    throw new UnsupportedProtocolVersionError(version);
+    throw new UnsupportedProtocolVersionError(version, supported);
+  }
+}
+
+/**
+ * Enforces the envelope-version rules after schema validation.
+ *
+ * Handshake frames must use the base version and may list only versions the peer supports. Other
+ * messages must use a version the peer supports, and a message that needs the extended protocol
+ * must not be labelled with the base version.
+ */
+function assertVersionRules(
+  message: { type: string; protocolVersion: string; payload: unknown },
+  supported: readonly ProtocolVersionName[],
+): void {
+  if (!supported.includes(message.protocolVersion as ProtocolVersionName)) {
+    throw new UnsupportedProtocolVersionError(message.protocolVersion, supported);
+  }
+  if (message.type === 'agent.hello' || message.type === 'server.hello') {
+    if (message.protocolVersion !== PROTOCOL_VERSION) {
+      throw new ProtocolValidationError('Invalid handshake', [
+        { path: '/protocolVersion', message: 'handshake frames must use protocol version 1' },
+      ]);
+    }
+    const payload = message.payload as { supportedProtocolVersions: string[]; selectedProtocolVersion?: string };
+    const listed = [...payload.supportedProtocolVersions, payload.selectedProtocolVersion ?? PROTOCOL_VERSION];
+    if (listed.some((version) => !supported.includes(version as ProtocolVersionName))) {
+      throw new ProtocolValidationError('Invalid handshake', [
+        { path: '/payload/supportedProtocolVersions', message: 'lists a protocol version this peer does not support' },
+      ]);
+    }
+    return;
+  }
+  const required = requiredProtocolVersion(message);
+  if (required !== message.protocolVersion && message.protocolVersion === PROTOCOL_VERSION) {
+    throw new ProtocolValidationError('Invalid message', [
+      { path: '/protocolVersion', message: `this content requires protocol version ${required}` },
+    ]);
   }
 }
 
 function parseWithSchema<T>(schema: TSchema, value: unknown, description: string, checkVersion = false): T {
   if (checkVersion) {
-    assertSupportedVersion(value);
+    assertKnownVersion(value, PROTOCOL_VERSIONS);
   }
   if (!Value.Check(schema, value)) {
     throw new ProtocolValidationError(`Invalid ${description}`, normalizedIssues(schema, value));
   }
   return value as T;
+}
+
+/** Validates a message envelope against its schema and the version rules for the peer's supported versions. */
+function parseMessage<T extends { type: string; protocolVersion: string; payload: unknown }>(
+  schema: TSchema,
+  value: unknown,
+  description: string,
+  options: ProtocolDecodeOptions | undefined,
+): T {
+  const supported = supportedVersionsOf(options);
+  assertKnownVersion(value, supported);
+  const message = parseWithSchema<T>(schema, value, description);
+  assertVersionRules(message, supported);
+  return message;
 }
 
 function byteLength(value: string): number {
@@ -136,22 +202,22 @@ function encodeJson<T>(message: T, validate: (value: unknown) => T): string {
 }
 
 /** Validates an unknown value as an agent-to-server message. */
-export function parseAgentMessage(value: unknown): AgentMessage {
-  return parseWithSchema<AgentMessage>(AgentMessageSchema, value, 'agent message', true);
+export function parseAgentMessage(value: unknown, options?: ProtocolDecodeOptions): AgentMessage {
+  return parseMessage<AgentMessage>(AgentMessageSchema, value, 'agent message', options);
 }
 
 /** Validates an unknown value as a server-to-agent message. */
-export function parseServerMessage(value: unknown): ServerMessage {
-  return parseWithSchema<ServerMessage>(ServerMessageSchema, value, 'server message', true);
+export function parseServerMessage(value: unknown, options?: ProtocolDecodeOptions): ServerMessage {
+  return parseMessage<ServerMessage>(ServerMessageSchema, value, 'server message', options);
 }
 
 /** Validates an unknown value as either OpenPrinter message direction. */
-export function parseProtocolMessage(value: unknown): OpenPrinterProtocolMessage {
-  return parseWithSchema<OpenPrinterProtocolMessage>(
+export function parseProtocolMessage(value: unknown, options?: ProtocolDecodeOptions): OpenPrinterProtocolMessage {
+  return parseMessage<OpenPrinterProtocolMessage>(
     OpenPrinterProtocolSchema,
     value,
     'OpenPrinter protocol message',
-    true,
+    options,
   );
 }
 
@@ -236,18 +302,21 @@ export function parseGatewayAuthenticationServerMessage(value: unknown): Gateway
 }
 
 /** Decodes UTF-8 JSON and validates an agent-to-server message. */
-export function decodeAgentMessage(input: string | Uint8Array): AgentMessage {
-  return parseAgentMessage(decodeJson(input));
+export function decodeAgentMessage(input: string | Uint8Array, options?: ProtocolDecodeOptions): AgentMessage {
+  return parseAgentMessage(decodeJson(input), options);
 }
 
 /** Decodes UTF-8 JSON and validates a server-to-agent message. */
-export function decodeServerMessage(input: string | Uint8Array): ServerMessage {
-  return parseServerMessage(decodeJson(input));
+export function decodeServerMessage(input: string | Uint8Array, options?: ProtocolDecodeOptions): ServerMessage {
+  return parseServerMessage(decodeJson(input), options);
 }
 
 /** Decodes UTF-8 JSON and validates either protocol message direction. */
-export function decodeProtocolMessage(input: string | Uint8Array): OpenPrinterProtocolMessage {
-  return parseProtocolMessage(decodeJson(input));
+export function decodeProtocolMessage(
+  input: string | Uint8Array,
+  options?: ProtocolDecodeOptions,
+): OpenPrinterProtocolMessage {
+  return parseProtocolMessage(decodeJson(input), options);
 }
 
 /** Decodes and validates one bounded client authentication frame. */

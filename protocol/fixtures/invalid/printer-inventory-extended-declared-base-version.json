@@ -1,0 +1,43 @@
+{
+  "protocolVersion": "1",
+  "messageId": "msg_inventory_declared_base",
+  "correlationId": "msg_inventory_request_003",
+  "sentAt": "2026-07-28T10:00:06Z",
+  "type": "agent.printer_inventory",
+  "payload": {
+    "revision": 8,
+    "printers": [
+      {
+        "id": "printer_office_001",
+        "fingerprint": "system:CUPS:office-001",
+        "name": "Office laser",
+        "kind": "local",
+        "connection": {
+          "type": "system",
+          "systemName": "office-001"
+        },
+        "capabilities": {
+          "mediaWidths": [80],
+          "systemDriver": true,
+          "escPos": false,
+          "raster": true,
+          "cut": false,
+          "qr": true,
+          "barcode": true,
+          "documentFormats": ["receipt", "pdf"],
+          "paperSizes": ["a4", "a5", "letter", "legal"],
+          "customPaperSize": true,
+          "printOptions": {
+            "copies": true,
+            "duplex": true,
+            "orientation": true,
+            "scaling": true,
+            "pageRanges": true
+          }
+        },
+        "enabled": true,
+        "availability": "online"
+      }
+    ]
+  }
+}

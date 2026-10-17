@@ -8,6 +8,7 @@ import type {
   PublicEd25519Jwk,
   PrintJob,
   PrinterDescriptor,
+  ProtocolVersionName,
   ServerMessage,
 } from '@openprinter/protocol';
 
@@ -47,6 +48,8 @@ export interface ConnectedAgent<Metadata> {
   readonly metadata?: Readonly<Metadata>;
   /** Validated agent hello payload. */
   readonly hello: Readonly<AgentMessageOf<'agent.hello'>['payload']>;
+  /** Protocol version selected for this session during the hello exchange. */
+  readonly protocolVersion: ProtocolVersionName;
   /** UTC time at which the protocol handshake completed. */
   readonly connectedAt: string;
   /** UTC time of the most recently validated agent message. */
@@ -294,6 +297,13 @@ export interface OpenPrinterServerOptions<Metadata> {
   readonly serverVersion?: string;
   /** Framework-independent endpoint path configuration. */
   readonly paths?: Partial<OpenPrinterServerPaths>;
+  /**
+   * Protocol versions this server accepts. Defaults to every version this SDK implements.
+   *
+   * Must include `"1"`. Use `["1"]` to serve only base-protocol agents; agents that offer the extended
+   * protocol then negotiate the base version instead.
+   */
+  readonly protocolVersions?: readonly ProtocolVersionName[];
   /** Storage for temporary pairing grants; defaults to an in-memory implementation. */
   readonly pairingCodeStore?: PairingCodeStore<Metadata>;
   /** Storage for agent public keys; defaults to an in-memory implementation. */
@@ -357,7 +367,12 @@ export interface DeliverySuccess {
 }
 
 /** Reasons a message could not be handed to an agent transport. */
-export type DeliveryFailureReason = 'agent-offline' | 'session-not-ready' | 'connection-closed' | 'transport-error';
+export type DeliveryFailureReason =
+  | 'agent-offline'
+  | 'session-not-ready'
+  | 'connection-closed'
+  | 'transport-error'
+  | 'protocol-version-unsupported';
 
 /** Structured, non-queued delivery failure owned by the host application. */
 export interface DeliveryFailure {
@@ -367,8 +382,8 @@ export interface DeliveryFailure {
   readonly agentId: string;
   /** Stable reason suitable for application queue policy. */
   readonly reason: DeliveryFailureReason;
-  /** Signals that a later application-owned retry may succeed. */
-  readonly retryable: true;
+  /** Whether a later application-owned retry may succeed; false when the session cannot carry the message. */
+  readonly retryable: boolean;
 }
 
 /** Immediate transport handoff result; it is not a persistence acknowledgement. */

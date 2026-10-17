@@ -6,6 +6,17 @@
  */
 export const PROTOCOL_VERSION = '1' as const;
 
+/**
+ * Extended protocol version. It adds PDF print jobs and printer document capabilities.
+ *
+ * Peers negotiate it during the hello exchange. A `"2"` envelope is valid only in a session that
+ * negotiated it, and handshake frames always use `"1"` so every peer can read them.
+ */
+export const EXTENDED_PROTOCOL_VERSION = '2' as const;
+
+/** Every protocol version this package can decode, in ascending order. */
+export const PROTOCOL_VERSIONS = [PROTOCOL_VERSION, EXTENDED_PROTOCOL_VERSION] as const;
+
 /** Default discovery endpoint relative to an OpenPrinter server base URL. */
 export const OPENPRINTER_DISCOVERY_PATH = '/.well-known/openprinter' as const;
 

@@ -52,14 +52,17 @@ export class UnsupportedProtocolVersionError extends ProtocolError {
   readonly supportedVersions: readonly string[];
 
   /** Creates an explicit version-negotiation failure. */
-  constructor(receivedVersion: string | number | boolean | null) {
+  constructor(
+    receivedVersion: string | number | boolean | null,
+    supportedVersions: readonly string[] = PROTOCOL_VERSIONS,
+  ) {
     super(
       'unsupported_protocol_version',
-      `Unsupported protocol version ${String(receivedVersion)}; supported versions: ${PROTOCOL_VERSION}`,
+      `Unsupported protocol version ${String(receivedVersion)}; supported versions: ${supportedVersions.join(', ')}`,
     );
     this.name = 'UnsupportedProtocolVersionError';
     this.receivedVersion = receivedVersion;
-    this.supportedVersions = [PROTOCOL_VERSION];
+    this.supportedVersions = [...supportedVersions];
   }
 }
-import { PROTOCOL_VERSION } from './constants.js';
+import { PROTOCOL_VERSIONS } from './constants.js';
