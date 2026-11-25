@@ -11,6 +11,8 @@ on:
       - 'products/**'
       - 'Cargo.toml'
       - 'Cargo.lock'
+      - '.github/workflows/release-desktop.yml'
+      - '.github/scripts/check-desktop-release*'
 
 permissions:
   contents: read
@@ -20,7 +22,25 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  preflight:
+    name: Verify desktop release version
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - name: Test release version guards
+        run: node --test .github/scripts/check-desktop-release.test.mjs
+      - name: Refuse published release versions
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node .github/scripts/check-desktop-release.mjs
+
   release:
+    needs: preflight
     name: Release (${{ matrix.name }})
     permissions:
       contents: write

@@ -2,11 +2,28 @@
 
 All notable changes to OPPA and OpenPrinter are documented here.
 
-## Unreleased
+## oppa-v0.3.1 — 2026-11-26
 
-Prepared stable versions: OPPA **0.3.0**, `@openprinter/protocol`
-**0.4.0**, `@openprinter/server` **0.4.0**, and `openprinter`
-**0.1.1**. These versions have not been released yet.
+### Features
+
+- Realistic thermal receipt presentation with equal paper padding,
+  Receipt and Raw raster modes, accurate printable margins, feed/cut
+  annotations, and corrected zoom behavior. Captured PNG exports
+  retain their original raster content.
+  ([b90f055](https://github.com/neplextech/oppa/commit/b90f055283e7cd81bf0742ef6563c26fdc2ee956))
+
+### Bug Fixes
+
+- Use a new desktop release version for the latest receipt preview
+  changes; the previously published 0.3.0 release is immutable.
+- Check desktop manifest versions and reject published releases before
+  starting platform builds, preventing checksum asset replacement
+  failures.
+
+## oppa-v0.3.0 — 2026-11-25
+
+Stable versions: OPPA **0.3.0**, `@openprinter/protocol` **0.4.0**,
+`@openprinter/server` **0.4.0**, and `openprinter` **0.1.1**.
 
 ### Features
 
