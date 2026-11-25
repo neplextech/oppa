@@ -56,6 +56,7 @@ jobs:
             local package_directory="$1"
             local package_name
             local package_version
+            local registry_metadata
             local pack_directory
             local pack_metadata
             local package_tarball
@@ -63,10 +64,21 @@ jobs:
             package_name="$(node -p "require('./${package_directory}/package.json').name")"
             package_version="$(node -p "require('./${package_directory}/package.json').version")"
 
-            if npm view "${package_name}@${package_version}" version >/dev/null 2>&1; then
+            registry_metadata="${RUNNER_TEMP}/oppa-npm-$(basename "${package_directory}")-registry.json"
+            if npm view "${package_name}@${package_version}" version --json >"${registry_metadata}"; then
               echo "${package_name}@${package_version} is already published; skipping."
               return
             fi
+
+            # Only an explicit missing version permits publication. Registry or
+            # authentication failures must not be mistaken for an unpublished version.
+            node -e '
+              const fs = require("node:fs");
+              const result = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+              if (result.error?.code !== "E404") {
+                throw new Error("Cannot verify package version availability; refusing publication.");
+              }
+            ' "${registry_metadata}"
 
             pack_directory="${RUNNER_TEMP}/oppa-npm-packages/$(basename "${package_directory}")"
             pack_metadata="${pack_directory}/pack.json"
