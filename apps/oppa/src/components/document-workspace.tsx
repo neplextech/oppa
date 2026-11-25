@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ReceiptPreview } from '@/components/receipt-preview';
 import { Button } from '@/components/ui/button';
 import { KeyValue } from '@/components/workspace';
+import { previewZoom, type PreviewFit } from '@/lib/document-zoom';
 import type { VirtualOutput, VirtualPrinterSummary } from '@/lib/types';
 import { formatRelativeTime } from '@/lib/utils';
 
@@ -52,7 +53,11 @@ function DocumentCanvas({ output, printer }: { output: VirtualOutput; printer: V
   const [pageIndex, setPageIndex] = useState(0);
   const [inspector, setInspector] = useState(false);
   const [zoom, setZoom] = useState(1);
-  const [fit, setFit] = useState<'window' | 'width' | 'manual'>('window');
+  const thermal =
+    output.receiptWidthMm !== undefined ||
+    (printer.virtualProfile?.type === 'esc-pos-receipt' && output.format !== 'pdf');
+  const [presentation, setPresentation] = useState<'receipt' | 'raw'>('receipt');
+  const [fit, setFit] = useState<PreviewFit>(thermal ? 'actual' : 'window');
   const [height, setHeight] = useState(300);
   const canvas = useRef<HTMLDivElement>(null);
   const paper = useRef<HTMLDivElement>(null);
@@ -60,17 +65,23 @@ function DocumentCanvas({ output, printer }: { output: VirtualOutput; printer: V
   const page = output.pages?.[pageIndex];
   const imageUrl = page?.imageDataUrl ?? output.imageDataUrl;
   const profile = printer.virtualProfile;
-  const widthMm = page
-    ? Math.round((page.width / page.dpiX) * 25.4 * 10) / 10
-    : profile?.type === 'system-driver-page'
-      ? profile.pageWidthMm
-      : (profile?.widthMm ?? output.document?.width ?? 80);
+  const widthMm =
+    output.receiptWidthMm ??
+    (thermal && profile?.type === 'esc-pos-receipt'
+      ? profile.widthMm
+      : page
+        ? Math.round((page.width / page.dpiX) * 25.4 * 10) / 10
+        : profile?.type === 'system-driver-page'
+          ? profile.pageWidthMm
+          : (profile?.widthMm ?? output.document?.width ?? 80));
   const heightMm = page
     ? Math.round((page.height / page.dpiY) * 25.4 * 10) / 10
     : profile?.type === 'system-driver-page'
       ? profile.pageHeightMm
       : undefined;
-  const width = (widthMm * 96) / 25.4;
+  // Paper framing is outside the captured raster; never compress its physical scale.
+  const paperPadding = thermal && presentation === 'receipt' ? 16 : 0;
+  const width = (widthMm * 96) / 25.4 + paperPadding * 2;
   const pageTotal = output.pages?.length ?? 1;
   useEffect(() => {
     const host = canvas.current;
@@ -81,13 +92,11 @@ function DocumentCanvas({ output, printer }: { output: VirtualOutput; printer: V
       setHeight(nextHeight);
       if (fit !== 'manual')
         setZoom(
-          Math.max(
-            0.1,
-            Math.min(
-              4,
-              (host.clientWidth - 48) / width,
-              fit === 'window' ? (host.clientHeight - 48) / Math.max(nextHeight, 1) : 4,
-            ),
+          previewZoom(
+            fit,
+            { width: host.clientWidth, height: host.clientHeight },
+            { width, height: nextHeight },
+            thermal,
           ),
         );
     };
@@ -96,7 +105,7 @@ function DocumentCanvas({ output, printer }: { output: VirtualOutput; printer: V
     observer.observe(content);
     update();
     return () => observer.disconnect();
-  }, [fit, width, pageIndex, inspector]);
+  }, [fit, width, pageIndex, inspector, thermal, presentation]);
   function exportOutput() {
     const link = document.createElement('a');
     const blob = imageUrl
@@ -112,7 +121,7 @@ function DocumentCanvas({ output, printer }: { output: VirtualOutput; printer: V
   }
   const changeZoom = (value: number) => {
     setFit('manual');
-    setZoom(Math.max(0.1, Math.min(4, value)));
+    setZoom(previewZoom('manual', { width: 0, height: 0 }, { width, height }, thermal, value));
   };
   return (
     <div className="flex min-w-0 flex-1 flex-col">
@@ -130,10 +139,22 @@ function DocumentCanvas({ output, printer }: { output: VirtualOutput; printer: V
           value={fit}
           onChange={(e) => setFit(e.target.value as typeof fit)}
         >
+          <option value="actual">Actual size</option>
           <option value="window">Fit window</option>
           <option value="width">Fit width</option>
           <option value="manual">Manual zoom</option>
         </select>
+        {thermal && imageUrl && (
+          <select
+            aria-label="Thermal presentation"
+            className="bg-background border-border h-8 rounded-md border px-2 text-xs"
+            value={presentation}
+            onChange={(event) => setPresentation(event.target.value as typeof presentation)}
+          >
+            <option value="receipt">Receipt</option>
+            <option value="raw">Raw raster</option>
+          </select>
+        )}
         {pageTotal > 1 && (
           <>
             <Button
@@ -197,7 +218,7 @@ function DocumentCanvas({ output, printer }: { output: VirtualOutput; printer: V
             }
             if (event.key === '0') {
               event.preventDefault();
-              setFit('window');
+              setFit('actual');
             }
           }}
           onPointerDown={(event) => {
@@ -225,14 +246,56 @@ function DocumentCanvas({ output, printer }: { output: VirtualOutput; printer: V
                   This preview could not be decoded. Export the captured output or inspect the rendering diagnostics.
                 </p>
               ) : imageUrl ? (
-                <img
-                  onError={() => setFailedImage(imageUrl)}
-                  src={imageUrl}
-                  alt={`Captured document page ${pageIndex + 1}`}
-                  draggable={false}
-                  className="block w-full bg-white"
-                  style={heightMm ? { aspectRatio: `${widthMm} / ${heightMm}`, objectFit: 'contain' } : undefined}
-                />
+                <div className={thermal && presentation === 'receipt' ? 'thermal-presentation' : undefined}>
+                  <div
+                    className={thermal && presentation === 'receipt' ? 'thermal-paper' : undefined}
+                    data-cut={
+                      output.paperEvents?.some((event) => event.kind === 'cut' && page && event.y >= page.height - 1) ||
+                      undefined
+                    }
+                  >
+                    <div className="receipt-raster-area">
+                      <img
+                        onError={() => setFailedImage(imageUrl)}
+                        src={imageUrl}
+                        alt={`Captured document page ${pageIndex + 1}`}
+                        draggable={false}
+                        className="captured-raster block w-full bg-white"
+                        data-thermal={thermal || undefined}
+                        style={
+                          heightMm
+                            ? {
+                                aspectRatio: page ? `${page.width} / ${page.height}` : `${widthMm} / ${heightMm}`,
+                                objectFit: 'contain',
+                              }
+                            : undefined
+                        }
+                      />
+                      {thermal &&
+                        presentation === 'receipt' &&
+                        page &&
+                        output.paperEvents?.slice(0, 256).map((event, index) => (
+                          <span
+                            key={index}
+                            role="img"
+                            aria-label={event.kind === 'feed' ? `Feed ${event.lines} lines` : 'Cut requested'}
+                            title={event.kind === 'feed' ? `Feed ${event.lines} lines` : 'Cut requested (simulated)'}
+                            className={event.kind === 'feed' ? 'receipt-feed' : 'receipt-cut'}
+                            style={{
+                              top: `${Math.min(100, (event.y / page.height) * 100)}%`,
+                              ...(event.kind === 'feed' ? { height: `${(event.height / page.height) * 100}%` } : {}),
+                            }}
+                          />
+                        ))}
+                    </div>
+                  </div>
+                  {thermal && presentation === 'receipt' && (
+                    <div className="receipt-dimension">
+                      {widthMm} mm raster ·{' '}
+                      {output.paperEvents?.some((event) => event.kind === 'cut') ? 'Cut requested' : 'Captured paper'}
+                    </div>
+                  )}
+                </div>
               ) : output.document ? (
                 <ReceiptPreview document={output.document} />
               ) : (
@@ -258,7 +321,7 @@ function DocumentCanvas({ output, printer }: { output: VirtualOutput; printer: V
                 <h3 className="mt-6 mb-3 text-sm font-semibold">Rendering diagnostics</h3>
                 <p className="text-muted-foreground text-xs leading-5">
                   {output.diagnostics.interpretedCommands} commands · {output.diagnostics.textLines} text lines ·{' '}
-                  {output.diagnostics.images} images
+                  {output.diagnostics.images} images · {output.diagnostics.feedLines} feed lines
                   <br />
                   Cut {output.diagnostics.cutRequested ? 'requested' : 'not requested'}
                 </p>
@@ -267,6 +330,11 @@ function DocumentCanvas({ output, printer }: { output: VirtualOutput; printer: V
                   {output.diagnostics.unsupportedCommands.join('\n') || 'None reported'}
                 </pre>
               </>
+            )}
+            {output.paperEvents && output.paperEvents.length > 256 && (
+              <p className="text-muted-foreground mt-4 text-xs">
+                Showing the first 256 operation markers. The captured raster remains complete.
+              </p>
             )}
             {output.pageCount !== undefined && output.pageCount > pageTotal && (
               <p className="text-muted-foreground mt-4 text-xs">
@@ -280,7 +348,9 @@ function DocumentCanvas({ output, printer }: { output: VirtualOutput; printer: V
               </pre>
             </details>
             <p className="text-muted-foreground mt-4 text-xs leading-5">
-              Preview scale is approximate. Original binary payloads are not exposed by this inspector.
+              Preview scale is approximate. Receipt mode adds equal presentation-only padding around the captured
+              raster. Dimensions describe the raster; framing is excluded from exports. Original binary payloads are not
+              exposed by this inspector.
             </p>
           </aside>
         )}

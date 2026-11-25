@@ -28,7 +28,7 @@ use oppa_protocol::{
     PrinterConnection as ProtocolConnection, PrinterDescriptor, PrinterKind as ProtocolPrinterKind,
     ReceiptWidth, StandardPaperSize,
 };
-use oppa_renderer::{RenderedDocument, encode_raster_page_preview_png};
+use oppa_renderer::{RenderedDocument, encode_raster_page_png, encode_raster_page_preview_png};
 use oppa_spooler::VirtualSubmission;
 use oppa_storage::SqliteStorage;
 use serde_json::Value;
@@ -784,11 +784,16 @@ impl PrinterCatalog {
 
 fn captured_page_previews(
     source: &[oppa_renderer::RasterPage],
+    thermal: bool,
 ) -> Vec<crate::models::VirtualOutputPage> {
     let mut preview_bytes = 0;
     let mut pages = Vec::new();
     for (index, page) in source.iter().take(16).enumerate() {
-        let Ok(png) = encode_raster_page_preview_png(page) else {
+        let Ok(png) = (if thermal {
+            encode_raster_page_png(page)
+        } else {
+            encode_raster_page_preview_png(page)
+        }) else {
             continue;
         };
         preview_bytes += png.len();
@@ -857,7 +862,10 @@ fn virtual_output((index, submission): (usize, VirtualSubmission)) -> VirtualOut
             None,
         ),
     };
-    let pages = captured_page_previews(&submission.preview.pages);
+    let pages = captured_page_previews(
+        &submission.preview.pages,
+        submission.preview.receipt_width.is_some(),
+    );
     let image_data_url = pages.first().map(|page| page.image_data_url.clone());
     let diagnostics =
         submission
@@ -879,6 +887,11 @@ fn virtual_output((index, submission): (usize, VirtualSubmission)) -> VirtualOut
                     .collect(),
             });
     VirtualOutput {
+        receipt_width_mm: submission
+            .preview
+            .receipt_width
+            .map(oppa_renderer::ReceiptWidth::millimetres),
+        paper_events: submission.preview.paper_events,
         page_count: submission.preview.pages.len(),
         pages,
         id: format!("output_{}_{}", submission.job_id, index),
@@ -1391,6 +1404,7 @@ fn display_provider_name(provider: &str) -> &str {
 
 #[cfg(test)]
 mod tests {
+    use base64::{Engine as _, engine::general_purpose::STANDARD};
     use std::collections::BTreeMap;
 
     use oppa_core::PrinterId;
@@ -1405,6 +1419,26 @@ mod tests {
         protocol_capabilities, system_driver_capabilities,
     };
     use crate::models::{CatalogPrinter, PersistedCatalog, VirtualPrinterMode};
+
+    #[test]
+    fn thermal_projection_exports_full_monochrome_png_while_office_previews_stay_bounded() {
+        let page = oppa_renderer::RasterPage {
+            width: 464,
+            height: 2400,
+            dpi_x: 203,
+            dpi_y: 203,
+            format: oppa_renderer::PixelFormat::Mono1,
+            data: vec![0; 58 * 2400],
+        };
+        let original = oppa_renderer::encode_raster_page_png(&page).expect("PNG");
+        let thermal = super::captured_page_previews(std::slice::from_ref(&page), true);
+        assert_eq!(
+            thermal[0].image_data_url,
+            format!("data:image/png;base64,{}", STANDARD.encode(&original))
+        );
+        let office = super::captured_page_previews(&[page], false);
+        assert_ne!(office[0].image_data_url, thermal[0].image_data_url);
+    }
 
     #[test]
     fn captured_page_projection_is_bounded_and_keeps_source_dimensions() {
@@ -1426,6 +1460,8 @@ mod tests {
                 pages: pages.clone(),
             }),
             preview: oppa_spooler::VirtualPreview {
+                receipt_width: None,
+                paper_events: Vec::new(),
                 pages,
                 escpos: None,
             },

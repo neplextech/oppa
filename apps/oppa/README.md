@@ -91,3 +91,20 @@ Virtual output remains developer-only and product-capability gated. Existing ras
 bounded multipage previews, fit/zoom/pan, local export, and rendering information. Original binary
 payloads remain private; diagnostic export strips all captured history. Native webview download
 behavior and physical printing require separate platform acceptance testing.
+
+### Thermal paper inspection
+
+Thermal captures default to actual size (100% at CSS physical-unit scale).
+Receipt mode adds a warm paper surface, a restrained shadow, and presentation-only
+feed/cut markers, with equal 16 px presentation padding outside the captured
+raster on every side. The bitmap retains its physical scale; displayed dimensions
+describe the captured raster, not this decorative framing. A serrated lower edge indicates a recorded cut request, not
+verified hardware cutting. Raw raster removes all paper decoration. Both modes
+export the same full-resolution source PNG within the existing capture budget.
+Fit window only shrinks thermal paper; Fit width and manual zoom can enlarge it.
+Office/PDF previews keep their page fitting and multipage navigation.
+
+The isolated `test/receipt.browser.mjs` acceptance runner uses PNG fixtures from
+the Rust ESC/POS interpreter. Set `OPPA_PLAYWRIGHT_MODULE` to an external Playwright
+installation and run it against the Vite development server. No fixture content
+or browser automation dependency is included in the production application.

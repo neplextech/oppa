@@ -85,3 +85,24 @@ cargo clippy -p oppa-renderer --all-targets -- -D warnings
 ```
 
 Tests require no physical printer.
+
+## Thermal paper raster
+
+Receipt captures retain the physical 58/80 mm paper width. Ink occupies a centered
+384/576-dot printable area at 203 DPI, matching the ESC/POS encoder's 32/48
+Font A character columns. Other resolutions scale those dimensions. Bitmap
+`font8x8` glyphs remain embedded and monochrome; this is an approximation of a
+printer font, not an emulation of a particular device's glyph ROM.
+
+`render_layout_receipt_with_events` returns feed spans and requested cut positions
+in source raster dots from the same rendering pass. These local presentation
+coordinates draw no ink and do not change the ESC/POS payload. Driver pages keep
+cut operations as no-ops. Virtual history accounts for the retained event memory.
+
+Generate real raster fixtures for the desktop acceptance runner with:
+
+```sh
+OPPA_RECEIPT_FIXTURES=/tmp/oppa-receipt-fixtures cargo test -p oppa-renderer --test receipt_presentation
+cp /tmp/oppa-receipt-fixtures/* apps/oppa/test/receipts/
+pnpm exec oxfmt --write apps/oppa/test/receipts
+```

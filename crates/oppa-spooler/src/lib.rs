@@ -26,7 +26,7 @@ use oppa_renderer::encode_raster_page_png;
 use oppa_renderer::{
     EscPosDiagnostics, EscPosInterpreter, PageRenderOptions, PdfPrintDocument, PdfRasterOptions,
     RasterDocument, RasterPage, ReceiptWidth, RenderedDocument, rasterize_pdf,
-    render_escpos_for_page, render_layout_receipt,
+    render_escpos_for_page, render_layout_receipt_with_events,
 };
 use thiserror::Error;
 use tokio::{
@@ -722,6 +722,8 @@ impl VirtualSubmission {
     /// Approximate bytes this entry keeps alive in virtual-printer history.
     fn retained_bytes(&self) -> usize {
         self.document.byte_len()
+            + self.preview.paper_events.len()
+                * std::mem::size_of::<oppa_renderer::ReceiptPaperEvent>()
             + self
                 .preview
                 .pages
@@ -734,6 +736,10 @@ impl VirtualSubmission {
 /// Interpreted output produced by one virtual printer profile.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VirtualPreview {
+    /// Physical paper profile used when this receipt was captured.
+    pub receipt_width: Option<ReceiptWidth>,
+    /// Local-only feed and cutter positions in the receipt source raster.
+    pub paper_events: Vec<oppa_renderer::ReceiptPaperEvent>,
     /// Inspectable receipt or office page raster.
     pub pages: Vec<RasterPage>,
     /// ESC/POS interpreter diagnostics when the input passed through it.
@@ -927,9 +933,12 @@ fn virtual_preview(
             let interpretation = EscPosInterpreter::new(width)
                 .interpret(&document.bytes)
                 .map_err(|error| SpoolerError::DocumentRender(error.to_string()))?;
-            let preview = render_layout_receipt(&interpretation.layout, 203)
-                .map_err(|error| SpoolerError::DocumentRender(error.to_string()))?;
+            let (preview, paper_events) =
+                render_layout_receipt_with_events(&interpretation.layout, 203)
+                    .map_err(|error| SpoolerError::DocumentRender(error.to_string()))?;
             Ok(VirtualPreview {
+                receipt_width: Some(width),
+                paper_events,
                 pages: preview.pages,
                 escpos: Some(interpretation.diagnostics),
             })
@@ -946,6 +955,8 @@ fn virtual_preview(
             };
             match document {
                 RenderedDocument::Raster(document) => Ok(VirtualPreview {
+                    receipt_width: None,
+                    paper_events: Vec::new(),
                     pages: document.pages.clone(),
                     escpos: None,
                 }),
@@ -954,6 +965,8 @@ fn virtual_preview(
                         render_escpos_for_page(&document.bytes, document.receipt_width, options)
                             .map_err(|error| SpoolerError::DocumentRender(error.to_string()))?;
                     Ok(VirtualPreview {
+                        receipt_width: None,
+                        paper_events: Vec::new(),
                         pages: page.pages,
                         escpos: Some(diagnostics),
                     })
@@ -968,6 +981,8 @@ fn virtual_preview(
                     )
                     .map_err(|error| SpoolerError::DocumentRender(error.to_string()))?;
                     Ok(VirtualPreview {
+                        receipt_width: None,
+                        paper_events: Vec::new(),
                         pages: raster.pages,
                         escpos: None,
                     })

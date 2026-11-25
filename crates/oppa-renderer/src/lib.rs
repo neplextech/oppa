@@ -37,9 +37,9 @@ pub use escpos::{
     EscPosDiagnostics, EscPosInterpretation, EscPosInterpreter, UnsupportedEscPosCommand,
 };
 pub use page::{
-    PageRenderOptions, PrintLayout, ReceiptElement, ReceiptImage, encode_raster_page_png,
-    encode_raster_page_preview_png, render_escpos_for_page, render_layout_page,
-    render_layout_receipt,
+    PageRenderOptions, PrintLayout, ReceiptElement, ReceiptImage, ReceiptPaperEvent,
+    encode_raster_page_png, encode_raster_page_preview_png, render_escpos_for_page,
+    render_layout_page, render_layout_receipt, render_layout_receipt_with_events,
 };
 pub use pdf::{
     DEFAULT_PDF_RASTER_DPI, MAX_PDF_PAGES, MAX_PDF_PIXELS_PER_PAGE, MAX_PDF_RASTER_BYTES,

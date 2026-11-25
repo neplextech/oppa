@@ -815,3 +815,94 @@ kbd,
   -webkit-user-select: none;
   user-select: none;
 }
+
+/* Physical output colors are independent of the application theme. No ink is added to exports. */
+.thermal-presentation {
+  filter: drop-shadow(0 2px 3px #00000020);
+}
+.thermal-paper {
+  position: relative;
+  background: #fffdf5;
+  padding: 16px;
+  isolation: isolate;
+}
+.thermal-paper .captured-raster {
+  mix-blend-mode: multiply;
+}
+.captured-raster[data-thermal] {
+  image-rendering: pixelated;
+}
+.thermal-paper[data-cut]::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 0;
+  width: 100%;
+  height: 4px;
+  background: #fffdf5;
+  clip-path: polygon(
+    0 0,
+    100% 0,
+    100% 0px,
+    97% 100%,
+    94% 0px,
+    91% 100%,
+    88% 0px,
+    85% 100%,
+    82% 0px,
+    79% 100%,
+    76% 0px,
+    73% 100%,
+    70% 0px,
+    67% 100%,
+    64% 0px,
+    61% 100%,
+    58% 0px,
+    55% 100%,
+    52% 0px,
+    49% 100%,
+    46% 0px,
+    43% 100%,
+    40% 0px,
+    37% 100%,
+    34% 0px,
+    31% 100%,
+    28% 0px,
+    25% 100%,
+    22% 0px,
+    19% 100%,
+    16% 0px,
+    13% 100%,
+    10% 0px,
+    7% 100%,
+    4% 0px,
+    0 100%
+  );
+}
+.receipt-dimension {
+  padding-top: 12px;
+  height: 30px;
+  color: var(--muted-foreground);
+  font-size: 10px;
+  text-align: center;
+  filter: none;
+}
+.receipt-feed {
+  position: absolute;
+  left: 3px;
+  width: 3px;
+  border: 1px solid #aaa69c;
+  border-right: 0;
+  pointer-events: auto;
+}
+.receipt-cut {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-top: 1px dashed #8d897e80;
+  pointer-events: auto;
+}
+
+.receipt-raster-area {
+  position: relative;
+}

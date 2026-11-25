@@ -219,6 +219,10 @@ export interface VirtualOutput {
   preview: string;
   byteLength: number;
   imageDataUrl?: string;
+  /** Physical thermal profile at capture time. */
+  receiptWidthMm?: 58 | 80;
+  /** Local-only device coordinates in source raster dots; absent for older captures. */
+  paperEvents?: ({ kind: 'feed'; y: number; height: number; lines: number } | { kind: 'cut'; y: number })[];
   /** Bounded page previews, when captured by the renderer. */
   pages?: VirtualOutputPage[];
   /** Total captured pages, including previews omitted by the projection budget. */

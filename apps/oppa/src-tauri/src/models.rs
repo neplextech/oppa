@@ -207,6 +207,11 @@ pub enum VirtualPrinterMode {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct VirtualOutput {
+    /// Captured thermal paper width, independent of later configuration changes.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub receipt_width_mm: Option<u16>,
+    /// Presentation-only device operations; never serialized to the wire protocol.
+    pub paper_events: Vec<oppa_renderer::ReceiptPaperEvent>,
     /// Total captured raster pages, including previews outside the IPC budget.
     pub page_count: usize,
     /// Bounded previews for document navigation.

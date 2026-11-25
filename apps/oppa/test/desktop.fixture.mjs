@@ -65,6 +65,30 @@ office.history[0].pages = [
   },
 ];
 office.history[0].pageCount = 2;
+if (options.has('receipt')) {
+  const name = options.get('receipt');
+  const allowed = ['short58', 'short80', 'long80', 'symbols58'];
+  if (!allowed.includes(name)) throw new Error('Unknown receipt fixture');
+  const metadata = await (await fetch(`./receipts/${name}.json`)).json();
+  const receipt = printers.find((printer) => printer.id === 'printer_virtual_receipts');
+  receipt.virtualProfile = { type: 'esc-pos-receipt', widthMm: name.includes('58') ? 58 : 80 };
+  const imageDataUrl = new URL(`./receipts/${name}.png`, location.href).href;
+  receipt.history = [
+    {
+      id: name,
+      jobId: `fixture-${name}`,
+      createdAt: new Date().toISOString(),
+      format: 'esc_pos',
+      preview: 'Rasterized by the Rust ESC/POS interpreter; original binary is not projected.',
+      byteLength: metadata.byteLength,
+      receiptWidthMm: receipt.virtualProfile.widthMm,
+      imageDataUrl,
+      pages: [{ pageNumber: 1, ...metadata, imageDataUrl }],
+      pageCount: 1,
+      paperEvents: metadata.paperEvents,
+    },
+  ];
+}
 printers.push(office);
 if (options.has('empty')) {
   printers = [];

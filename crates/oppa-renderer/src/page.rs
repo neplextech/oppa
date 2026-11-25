@@ -13,6 +13,7 @@ use oppa_protocol::{
     BarcodeFormat, PrintDocument, PrintSection, ReceiptWidth, TextAlignment, Validate,
 };
 use qrcode::{Color, QrCode};
+use serde::Serialize;
 
 use crate::{
     EscPosDiagnostics, EscPosInterpreter, PixelFormat, RasterDocument, RasterPage, RendererError,
@@ -93,7 +94,7 @@ impl PrintLayout {
                 PrintSection::Divider => ReceiptElement::Divider,
                 PrintSection::Image { media_type, data } => {
                     let decoded = super::decode_image(*media_type, data)?;
-                    let maximum_width = receipt_pixel_width(document.width, 203);
+                    let maximum_width = printable_pixel_width(document.width, 203);
                     let decoded = if decoded.width() > maximum_width {
                         let height = decoded
                             .height()
@@ -260,30 +261,67 @@ pub fn render_layout_page(
     let width = mm_to_px(options.width_mm, options.dpi)?;
     let height = mm_to_px(options.height_mm, options.dpi)?;
     validate_canvas_area(width, height)?;
-    let receipt_width = receipt_pixel_width(layout.width, options.dpi).min(width);
+    let receipt_width = printable_pixel_width(layout.width, options.dpi).min(width);
     let x = width.saturating_sub(receipt_width) / 2;
     let y = mm_to_px(TOP_MARGIN_MM, options.dpi)?;
     let mut canvas = MonoCanvas::new(width, height, options.dpi)?;
-    render_elements(layout, &mut canvas, x, y, receipt_width)?;
+    render_elements(layout, &mut canvas, x, y, receipt_width, &mut Vec::new())?;
     Ok(RasterDocument {
         pages: vec![canvas.into_page(options.dpi)],
     })
 }
 
+/// A device operation positioned by the same layout pass as its raster.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum ReceiptPaperEvent {
+    /// Blank paper advanced by a supported line-feed operation.
+    Feed {
+        /// Start in source raster dots.
+        y: u32,
+        /// Advanced height in source raster dots.
+        height: u32,
+        /// Interpreted line count.
+        lines: u8,
+    },
+    /// Requested cutter position; no ink or physical cut is inferred.
+    Cut {
+        /// Position in source raster dots.
+        y: u32,
+    },
+}
+
 /// Renders the shared layout as a tall receipt-like preview.
 pub fn render_layout_receipt(layout: &PrintLayout, dpi: u16) -> RendererResult<RasterDocument> {
+    render_layout_receipt_with_events(layout, dpi).map(|(document, _)| document)
+}
+
+/// Renders a physical paper raster and local-only feed/cut coordinates together.
+pub fn render_layout_receipt_with_events(
+    layout: &PrintLayout,
+    dpi: u16,
+) -> RendererResult<(RasterDocument, Vec<ReceiptPaperEvent>)> {
     if !(72..=600).contains(&dpi) {
         return Err(RendererError::InvalidPageOptions);
     }
     let width = receipt_pixel_width(layout.width, dpi);
+    let printable = printable_pixel_width(layout.width, dpi);
     let estimated_height = estimate_layout_height(layout, dpi)?;
     validate_canvas_area(width, estimated_height)?;
     let mut canvas = MonoCanvas::new(width, estimated_height, dpi)?;
-    let final_y = render_elements(layout, &mut canvas, 0, 0, width)?;
+    let mut events = Vec::new();
+    let final_y = render_elements(
+        layout,
+        &mut canvas,
+        (width - printable) / 2,
+        0,
+        printable,
+        &mut events,
+    )?;
     let page = canvas.into_page(dpi);
     let content_height = final_y.max(1).min(page.height);
     let page = crop_page_height(page, content_height)?;
-    Ok(RasterDocument { pages: vec![page] })
+    Ok((RasterDocument { pages: vec![page] }, events))
 }
 
 /// Encodes a checked monochrome raster page as a PNG for local previews.
@@ -331,13 +369,12 @@ fn render_elements(
     left: u32,
     mut y: u32,
     receipt_width: u32,
+    events: &mut Vec<ReceiptPaperEvent>,
 ) -> RendererResult<u32> {
     let scale = glyph_scale(canvas.dpi);
-    let glyph_width = 8 * scale;
-    let line_height = 9 * scale;
-    let max_chars = usize::try_from(receipt_width / glyph_width.max(1))
-        .unwrap_or(1)
-        .max(1);
+    let line_height = receipt_line_height(canvas.dpi);
+    let max_chars = super::columns(layout.width);
+    let cell_width = receipt_width / u32::try_from(max_chars).unwrap_or(1);
 
     for element in &layout.elements {
         match element {
@@ -357,6 +394,7 @@ fn render_elements(
                             y,
                             max_width: receipt_width,
                             scale,
+                            cell_width,
                         },
                     );
                     y = y.saturating_add(line_height);
@@ -380,6 +418,7 @@ fn render_elements(
                                 y,
                                 max_width: receipt_width,
                                 scale,
+                                cell_width,
                             },
                         );
                     }
@@ -394,6 +433,7 @@ fn render_elements(
                                 y,
                                 max_width: receipt_width,
                                 scale,
+                                cell_width,
                             },
                         );
                     }
@@ -494,16 +534,24 @@ fn render_elements(
                             y,
                             max_width: receipt_width,
                             scale: HRI_GLYPH_SCALE.min(scale),
+                            cell_width,
                         },
                     );
                     y = y.saturating_add(line_height);
                 }
             }
             ReceiptElement::Feed { lines } => {
-                y = y.saturating_add(u32::from(*lines) * line_height);
+                let height = u32::from(*lines) * line_height;
+                events.push(ReceiptPaperEvent::Feed {
+                    y,
+                    height,
+                    lines: *lines,
+                });
+                y = y.saturating_add(height);
             }
             ReceiptElement::Cut => {
-                // Cutting is a device action and intentionally draws no pixels.
+                // Device actions remain metadata and draw no pixels.
+                events.push(ReceiptPaperEvent::Cut { y });
             }
         }
         if y > canvas.height {
@@ -515,11 +563,8 @@ fn render_elements(
 
 fn estimate_layout_height(layout: &PrintLayout, dpi: u16) -> RendererResult<u32> {
     let scale = glyph_scale(dpi);
-    let line_height = 9 * scale;
-    let width = receipt_pixel_width(layout.width, dpi);
-    let max_chars = usize::try_from(width / (8 * scale).max(1))
-        .unwrap_or(1)
-        .max(1);
+    let line_height = receipt_line_height(dpi);
+    let max_chars = super::columns(layout.width);
     let mut height = 4 * scale;
     for element in &layout.elements {
         height = height.saturating_add(match element {
@@ -530,7 +575,13 @@ fn estimate_layout_height(layout: &PrintLayout, dpi: u16) -> RendererResult<u32>
             ReceiptElement::Row { left, right } => {
                 let lines = super::wrap_text(left, (max_chars * 3 / 5).max(1))
                     .len()
-                    .max(super::wrap_text(right, (max_chars * 2 / 5).max(1)).len())
+                    .max(
+                        super::wrap_text(
+                            right,
+                            max_chars.saturating_sub(max_chars * 3 / 5 + 1).max(1),
+                        )
+                        .len(),
+                    )
                     .max(1);
                 u32::try_from(lines).unwrap_or(u32::MAX) * line_height
             }
@@ -599,6 +650,7 @@ struct TextPlacement {
     y: u32,
     max_width: u32,
     scale: u32,
+    cell_width: u32,
 }
 
 fn draw_text(canvas: &mut MonoCanvas, value: &str, placement: TextPlacement) {
@@ -609,8 +661,10 @@ fn draw_text(canvas: &mut MonoCanvas, value: &str, placement: TextPlacement) {
         y,
         max_width,
         scale,
+        cell_width,
     } = placement;
-    let glyph_width = 8 * scale;
+    let glyph_width = cell_width.max(1);
+    let ink_width = glyph_width.saturating_sub((glyph_width / 6).max(1)).max(1);
     let text_width = u32::try_from(value.chars().count())
         .unwrap_or(u32::MAX)
         .saturating_mul(glyph_width);
@@ -626,11 +680,12 @@ fn draw_text(canvas: &mut MonoCanvas, value: &str, placement: TextPlacement) {
             for (row, bits) in glyph.iter().enumerate() {
                 for column in 0..8 {
                     if bits & (1 << column) != 0 {
-                        let px = x + column * scale;
+                        let px = x + column * ink_width / 8;
+                        let next_x = x + (column + 1) * ink_width / 8;
                         let py = y + u32::try_from(row).unwrap_or(0) * scale;
-                        canvas.fill_rect(px, py, scale, scale);
+                        canvas.fill_rect(px, py, next_x.saturating_sub(px), scale);
                         if bold {
-                            canvas.fill_rect(px.saturating_add(scale), py, 1, scale);
+                            canvas.fill_rect(next_x.min(x + glyph_width - 1), py, 1, scale);
                         }
                     }
                 }
@@ -656,6 +711,16 @@ fn fit_dimensions(
         (f64::from(source_width) * ratio).round().max(1.0) as u32,
         (f64::from(source_height) * ratio).round().max(1.0) as u32,
     )
+}
+
+// Font A assumptions shared with the encoder: 32/48 columns of 12 dots at 203 DPI.
+fn printable_pixel_width(width: ReceiptWidth, dpi: u16) -> u32 {
+    let dots = u32::try_from(super::columns(width)).unwrap_or(1) * 12;
+    (dots * u32::from(dpi) / 203).max(1)
+}
+
+fn receipt_line_height(dpi: u16) -> u32 {
+    (24 * u32::from(dpi) / 203).max(1)
 }
 
 fn receipt_pixel_width(width: ReceiptWidth, dpi: u16) -> u32 {

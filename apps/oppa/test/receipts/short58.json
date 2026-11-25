@@ -1,0 +1,11 @@
+{
+  "byteLength": 233,
+  "dpiX": 203,
+  "dpiY": 203,
+  "height": 240,
+  "paperEvents": [
+    { "height": 72, "kind": "feed", "lines": 3, "y": 168 },
+    { "kind": "cut", "y": 240 }
+  ],
+  "width": 464
+}
