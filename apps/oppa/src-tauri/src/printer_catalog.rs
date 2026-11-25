@@ -164,6 +164,22 @@ impl PrinterCatalog {
         self.discovery_status.read().await.clone()
     }
 
+    /// Lightweight native-tray counts; does not clone documents or render virtual previews.
+    pub(crate) async fn availability_counts(&self) -> (usize, usize) {
+        let state = self.state.read().await;
+        let enabled = state
+            .printers
+            .iter()
+            .filter(|printer| self.is_active(printer) && printer.reference.enabled);
+        (
+            enabled
+                .clone()
+                .filter(|printer| matches!(printer.availability, PrinterAvailability::Online))
+                .count(),
+            enabled.count(),
+        )
+    }
+
     pub async fn list(&self) -> Result<Vec<PrinterSummary>, CommandError> {
         let printers = self
             .state
@@ -766,6 +782,31 @@ impl PrinterCatalog {
     }
 }
 
+fn captured_page_previews(
+    source: &[oppa_renderer::RasterPage],
+) -> Vec<crate::models::VirtualOutputPage> {
+    let mut preview_bytes = 0;
+    let mut pages = Vec::new();
+    for (index, page) in source.iter().take(16).enumerate() {
+        let Ok(png) = encode_raster_page_preview_png(page) else {
+            continue;
+        };
+        preview_bytes += png.len();
+        if preview_bytes > 4 * 1024 * 1024 {
+            break;
+        }
+        pages.push(crate::models::VirtualOutputPage {
+            page_number: index + 1,
+            width: page.width,
+            height: page.height,
+            dpi_x: page.dpi_x,
+            dpi_y: page.dpi_y,
+            image_data_url: format!("data:image/png;base64,{}", STANDARD.encode(png)),
+        });
+    }
+    pages
+}
+
 fn virtual_output((index, submission): (usize, VirtualSubmission)) -> VirtualOutput {
     let (format, preview, document) = match &submission.document {
         RenderedDocument::Virtual(document) => (
@@ -816,12 +857,8 @@ fn virtual_output((index, submission): (usize, VirtualSubmission)) -> VirtualOut
             None,
         ),
     };
-    let image_data_url = submission
-        .preview
-        .pages
-        .first()
-        .and_then(|page| encode_raster_page_preview_png(page).ok())
-        .map(|png| format!("data:image/png;base64,{}", STANDARD.encode(png)));
+    let pages = captured_page_previews(&submission.preview.pages);
+    let image_data_url = pages.first().map(|page| page.image_data_url.clone());
     let diagnostics =
         submission
             .preview
@@ -842,6 +879,8 @@ fn virtual_output((index, submission): (usize, VirtualSubmission)) -> VirtualOut
                     .collect(),
             });
     VirtualOutput {
+        page_count: submission.preview.pages.len(),
+        pages,
         id: format!("output_{}_{}", submission.job_id, index),
         job_id: submission.job_id.to_string(),
         created_at: submission.recorded_at.to_string(),
@@ -1366,6 +1405,49 @@ mod tests {
         protocol_capabilities, system_driver_capabilities,
     };
     use crate::models::{CatalogPrinter, PersistedCatalog, VirtualPrinterMode};
+
+    #[test]
+    fn captured_page_projection_is_bounded_and_keeps_source_dimensions() {
+        let page = oppa_renderer::RasterPage {
+            width: 8,
+            height: 8,
+            dpi_x: 203,
+            dpi_y: 203,
+            format: oppa_renderer::PixelFormat::Mono1,
+            data: vec![255; 8],
+        };
+        let pages = vec![page; 18];
+        let submission = oppa_spooler::VirtualSubmission {
+            job_id: oppa_core::PrintJobId::new("preview-test").expect("valid job ID"),
+            printer_id: PrinterId::new("virtual-test").expect("valid printer ID"),
+            recorded_at: oppa_core::Timestamp::now(),
+            outcome: oppa_spooler::VirtualOutcome::Submitted,
+            document: oppa_renderer::RenderedDocument::Raster(oppa_renderer::RasterDocument {
+                pages: pages.clone(),
+            }),
+            preview: oppa_spooler::VirtualPreview {
+                pages,
+                escpos: None,
+            },
+        };
+        let output = super::virtual_output((0, submission));
+        assert_eq!(output.page_count, 18);
+        assert_eq!(output.pages.len(), 16);
+        assert_eq!(output.pages[15].page_number, 16);
+        assert_eq!(
+            (
+                output.pages[0].width,
+                output.pages[0].height,
+                output.pages[0].dpi_x
+            ),
+            (8, 8, 203)
+        );
+        assert!(
+            output.pages[0]
+                .image_data_url
+                .starts_with("data:image/png;base64,")
+        );
+    }
 
     #[test]
     fn discovery_identity_is_stable_for_the_same_connection() {

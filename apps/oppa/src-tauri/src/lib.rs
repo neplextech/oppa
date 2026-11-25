@@ -69,7 +69,7 @@ pub fn run() {
             let win_builder = WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
                 .title(product_name.as_str())
                 .inner_size(1120.0, 760.0)
-                .min_inner_size(840.0, 600.0)
+                .min_inner_size(800.0, 600.0)
                 .center();
 
             #[cfg(target_os = "macos")]

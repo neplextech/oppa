@@ -1,67 +1,51 @@
-import { ClipboardCopy, MonitorCog, Plus, RefreshCw, Send, Trash2, Volume2 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { MoreHorizontal, Plus, Send, Settings2, Trash2, Volume2 } from 'lucide-react';
+import { useEffect, useState } from 'react';
 
-import { ReceiptPreview } from '@/components/receipt-preview';
-import { EmptyState, FieldLabel, ScreenContainer, ScreenHeader, Toggle, inputClass } from '@/components/ui';
+import { DocumentWorkspace } from '@/components/document-workspace';
+import { EmptyState, ScreenContainer, ScreenHeader, Toggle, inputClass } from '@/components/ui';
 import { Button } from '@/components/ui/button';
 import {
-  ContextMenu,
-  ContextMenuContent,
-  ContextMenuGroup,
-  ContextMenuItem,
-  ContextMenuSeparator,
-  ContextMenuTrigger,
-} from '@/components/ui/context-menu';
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { Field, FieldGroup, FieldLabel } from '@/components/ui/field';
+import { Input } from '@/components/ui/input';
+import { ConfirmAction, Toolbar } from '@/components/workspace';
 import { playPrinterSound } from '@/lib/printer-sound';
 import { isVirtualPrinter } from '@/lib/types';
 import type {
   PrinterSummary,
-  VirtualOutput,
   VirtualPrinterInput,
   VirtualPrinterMode,
   VirtualPrinterProfile,
+  VirtualPrinterSummary,
 } from '@/lib/types';
-import { cn, formatRelativeTime } from '@/lib/utils';
+import { useSelection } from '@/lib/workspace';
 
-const MODES: Array<{
-  value: VirtualPrinterMode;
-  label: string;
-  description: string;
-}> = [
-  {
-    value: 'always_succeed',
-    label: 'Always succeed',
-    description: 'All jobs complete immediately',
-  },
-  {
-    value: 'fail_next',
-    label: 'Fail next job',
-    description: 'Next job fails, then resets',
-  },
-  {
-    value: 'always_fail',
-    label: 'Always fail',
-    description: 'All jobs fail permanently',
-  },
-  {
-    value: 'delay',
-    label: 'Delay submission',
-    description: 'Jobs succeed after configured delay',
-  },
-  { value: 'offline', label: 'Offline', description: 'Printer is unavailable' },
-];
-
-export function VirtualPrintersScreen({
-  printers,
-  busy,
-  developerMode,
-  onCreate,
-  onUpdate,
-  onClear,
-  onDelete,
-  onTest,
-  onSetSound,
-}: {
+function soundPreference(id: string): boolean {
+  const current = localStorage.getItem(`oppa-sound-${id}`);
+  if (current !== null) return current === 'true';
+  try {
+    const previous: unknown = JSON.parse(localStorage.getItem('oppa-virtual-printer-sounds') ?? '{}');
+    return (
+      !!previous && typeof previous === 'object' && id in previous && (previous as Record<string, unknown>)[id] === true
+    );
+  } catch {
+    return false;
+  }
+}
+interface VirtualProps {
   printers: PrinterSummary[];
   busy: string | null;
   developerMode: boolean;
@@ -71,400 +55,331 @@ export function VirtualPrintersScreen({
   onDelete: (id: string) => Promise<void>;
   onTest: (id: string) => Promise<void>;
   onSetSound: (id: string, enabled: boolean) => Promise<void>;
-}) {
-  const virtualPrinters = printers.filter(isVirtualPrinter);
-  const [selectedId, setSelectedId] = useState(virtualPrinters[0]?.id ?? '');
-  const [showCreate, setShowCreate] = useState(false);
-  const [input, setInput] = useState<VirtualPrinterInput>({
-    displayName: 'Virtual Thermal 80mm',
-    profile: { type: 'esc-pos-receipt', widthMm: 80 },
-  });
-
-  // Per-printer sound enabled flags, persisted to localStorage
-  const [soundEnabled, setSoundEnabledMap] = useState<Record<string, boolean>>(() => {
-    try {
-      return JSON.parse(localStorage.getItem('oppa-virtual-printer-sounds') ?? '{}') as Record<string, boolean>;
-    } catch {
-      return {};
-    }
-  });
-
-  // Sync localStorage sound state to Rust on mount so remote jobs also trigger sound
+}
+export function VirtualPrintersScreen(props: VirtualProps) {
+  const { printers, busy, onCreate, onClear, onDelete, onTest } = props;
+  const virtual = printers.filter(isVirtualPrinter);
+  const [selectedId, select] = useSelection('oppa-virtual-selection');
+  const selected = virtual.find((p) => p.id === selectedId) ?? virtual[0];
   useEffect(() => {
-    const stored = soundEnabled;
-    for (const [id, enabled] of Object.entries(stored)) {
-      if (enabled) void onSetSound(id, true).catch(() => undefined);
-    }
-    // intentionally run once on mount only
+    for (const printer of virtual)
+      if (soundPreference(printer.id)) void props.onSetSound(printer.id, true).catch(() => undefined);
+    // Restore previously enabled targets once on entering the developer workspace.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  const handleSetSound = useCallback(
-    (printerId: string, enabled: boolean) => {
-      setSoundEnabledMap((prev) => {
-        const next = { ...prev, [printerId]: enabled };
-        localStorage.setItem('oppa-virtual-printer-sounds', JSON.stringify(next));
-        return next;
-      });
-      void onSetSound(printerId, enabled).catch(() => undefined);
-    },
-    [onSetSound],
-  );
-
-  const selected = useMemo(
-    () => virtualPrinters.find((p) => p.id === selectedId) ?? virtualPrinters[0],
-    [selectedId, virtualPrinters],
-  );
-
+  const [create, setCreate] = useState(false);
+  const [simulation, setSimulation] = useState(false);
+  const [confirm, setConfirm] = useState<'clear' | 'delete' | null>(null);
   return (
     <ScreenContainer>
       <ScreenHeader
-        title="Virtual Printers"
-        description="Inspect thermal ESC/POS receipts and office-driver pages without hardware."
+        title="Virtual printers"
+        description="Capture and inspect print output without physical hardware."
         action={
-          <Button size="sm" onClick={() => setShowCreate((v) => !v)}>
-            <Plus className="size-3" aria-hidden />
-            Create
+          <Button size="sm" onClick={() => setCreate(true)}>
+            <Plus />
+            Create printer
           </Button>
         }
       />
-
-      {showCreate && (
-        <div className="border-border bg-card/50 shrink-0 border-b px-5 py-4">
-          <p className="text-muted-foreground mb-3 text-xs font-semibold">New virtual printer</p>
-          <div className="flex flex-wrap items-end gap-3">
-            <div>
-              <FieldLabel htmlFor="virtual-name">Display name</FieldLabel>
-              <input
-                id="virtual-name"
-                className={cn(inputClass, 'w-48')}
-                value={input.displayName}
-                onChange={(e) => setInput((c) => ({ ...c, displayName: e.target.value }))}
-              />
-            </div>
-            <div>
-              <FieldLabel htmlFor="virtual-profile">Printer profile</FieldLabel>
-              <select
-                id="virtual-profile"
-                className={cn(inputClass, 'w-56')}
-                value={profileKey(input.profile)}
-                onChange={(e) => {
-                  const selectedProfile = profileFromKey(e.target.value);
-                  setInput({
-                    displayName: profileName(selectedProfile),
-                    profile: selectedProfile,
-                  });
-                }}
-              >
-                <option value="thermal-58">Virtual Thermal 58mm</option>
-                <option value="thermal-80">Virtual Thermal 80mm</option>
-                <option value="office-a4">Virtual Office A4</option>
-              </select>
-            </div>
-            <div className="flex gap-2">
-              <Button
-                size="sm"
-                disabled={!input.displayName.trim() || busy === 'create-virtual-printer'}
-                onClick={() => void onCreate(input).then(() => setShowCreate(false))}
-              >
-                {busy === 'create-virtual-printer' ? <RefreshCw className="size-3 animate-spin" aria-hidden /> : null}
-                Create
-              </Button>
-              <Button variant="outline" size="sm" onClick={() => setShowCreate(false)}>
-                Cancel
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {virtualPrinters.length === 0 ? (
+      {!virtual.length ? (
         <EmptyState
           title="No virtual printers"
-          description="Create a virtual printer to test server integrations and inspect rendered output without physical hardware."
+          description="Create a thermal receipt or office page target to inspect local rendering."
           action={
-            <Button size="sm" onClick={() => setShowCreate(true)}>
-              <Plus className="size-3" aria-hidden />
+            <Button size="sm" onClick={() => setCreate(true)}>
               Create virtual printer
             </Button>
           }
         />
       ) : (
-        <div className="flex flex-1 overflow-hidden">
-          {/* Sidebar list */}
-          <div className="border-border bg-card/30 w-48 shrink-0 overflow-y-auto border-r xl:w-56">
-            <div className="px-3 pt-3 pb-1">
-              <p className="text-muted-foreground/50 text-xs font-semibold tracking-wider uppercase">Virtual targets</p>
-            </div>
-            <div className="space-y-0.5 p-1.5">
-              {virtualPrinters.map((printer) => (
-                <ContextMenu key={printer.id}>
-                  <ContextMenuTrigger
-                    render={<button type="button" />}
-                    onClick={() => setSelectedId(printer.id)}
-                    className={cn(
-                      'flex w-full items-center gap-2.5 rounded px-2.5 py-2 text-left text-xs transition-colors',
-                      selected?.id === printer.id
-                        ? 'bg-primary/10 text-primary'
-                        : 'text-muted-foreground hover:bg-accent hover:text-foreground',
-                    )}
-                  >
-                    <MonitorCog className="size-3.5 shrink-0" aria-hidden />
-                    <div className="min-w-0">
-                      <p className="truncate font-medium">{printer.displayName}</p>
-                      <p className="text-muted-foreground/60 truncate text-xs">
-                        {virtualProfileLabel(printer.virtualProfile)} · {printer.history.length} captured
-                      </p>
-                    </div>
-                  </ContextMenuTrigger>
-                  <ContextMenuContent className="min-w-48">
-                    <ContextMenuGroup>
-                      <ContextMenuItem onClick={() => setSelectedId(printer.id)}>
-                        <MonitorCog className="size-4" aria-hidden />
-                        Open printer
-                      </ContextMenuItem>
-                      <ContextMenuItem disabled={busy === `test-${printer.id}`} onClick={() => void onTest(printer.id)}>
-                        <Send className="size-4" aria-hidden />
-                        Send test print
-                      </ContextMenuItem>
-                    </ContextMenuGroup>
-                    <ContextMenuSeparator />
-                    <ContextMenuGroup>
-                      <ContextMenuItem
-                        disabled={printer.history.length === 0 || busy === `clear-${printer.id}`}
-                        onClick={() => void onClear(printer.id)}
-                      >
-                        <Trash2 className="size-4" aria-hidden />
-                        Clear captured output
-                      </ContextMenuItem>
-                    </ContextMenuGroup>
-                    {developerMode && (
-                      <>
-                        <ContextMenuSeparator />
-                        <ContextMenuGroup>
-                          <ContextMenuItem onClick={() => void navigator.clipboard.writeText(printer.id)}>
-                            <ClipboardCopy className="size-4" aria-hidden />
-                            Copy ID
-                          </ContextMenuItem>
-                          <ContextMenuItem
-                            variant="destructive"
-                            disabled={busy === `remove-${printer.id}`}
-                            onClick={() => void onDelete(printer.id)}
-                          >
-                            <Trash2 className="size-4" aria-hidden />
-                            Delete printer
-                          </ContextMenuItem>
-                        </ContextMenuGroup>
-                      </>
-                    )}
-                  </ContextMenuContent>
-                </ContextMenu>
-              ))}
-            </div>
-          </div>
-
-          {/* Detail */}
-          {selected && (
-            <div className="flex flex-1 flex-col overflow-hidden">
-              {/* Controls */}
-              <div className="border-border shrink-0 border-b px-5 py-4">
-                <div className="mb-3 flex items-center justify-between">
-                  <div>
-                    <p className="text-foreground text-sm font-semibold">{selected.displayName}</p>
-                    <p className="text-muted-foreground text-xs">{virtualProfileLabel(selected.virtualProfile)}</p>
-                    <p className="text-muted-foreground font-mono text-xs">{selected.id}</p>
-                  </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={busy === `test-${selected.id}`}
-                    onClick={() => void onTest(selected.id)}
-                  >
-                    {busy === `test-${selected.id}` ? (
-                      <RefreshCw className="size-3 animate-spin" aria-hidden />
-                    ) : (
-                      <Send className="size-3" aria-hidden />
-                    )}
-                    Test print
-                  </Button>
-                </div>
-
-                {/* Simulation mode */}
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <div>
-                    <FieldLabel htmlFor={`mode-${selected.id}`}>Simulation mode</FieldLabel>
-                    <select
-                      id={`mode-${selected.id}`}
-                      className={inputClass}
-                      value={selected.mode}
-                      onChange={(e) => {
-                        const mode = e.target.value as VirtualPrinterMode;
-                        void onUpdate(selected.id, mode, selected.delayMs);
-                      }}
-                    >
-                      {MODES.map((m) => (
-                        <option key={m.value} value={m.value}>
-                          {m.label}
-                        </option>
-                      ))}
-                    </select>
-                    <p className="text-muted-foreground/60 mt-1 text-xs">
-                      {MODES.find((m) => m.value === selected.mode)?.description}
-                    </p>
-                  </div>
-                  <div>
-                    <FieldLabel htmlFor={`delay-${selected.id}`}>Delay (ms)</FieldLabel>
-                    <input
-                      id={`delay-${selected.id}`}
-                      className={inputClass}
-                      type="number"
-                      min={0}
-                      max={30_000}
-                      disabled={selected.mode !== 'delay'}
-                      value={selected.delayMs}
-                      onChange={(e) => void onUpdate(selected.id, selected.mode, Number(e.target.value))}
-                    />
-                    <p className="text-muted-foreground/60 mt-1 text-xs">Active only in delay mode.</p>
-                  </div>
-                </div>
-
-                {/* Printer sound — developer mode only */}
-                {developerMode && (
-                  <div className="border-border/50 mt-3 flex items-center justify-between border-t pt-3">
-                    <div className="flex items-center gap-2">
-                      <Volume2
-                        className="text-muted-foreground hover:text-foreground size-6 shrink-0 cursor-pointer"
-                        aria-hidden
-                        onClick={() => playPrinterSound()}
-                      />
-                      <div>
-                        <p className="text-foreground text-xs font-medium">Printer sound</p>
-                        <p className="text-muted-foreground/70 text-xs leading-4">
-                          Plays audio on any print job with a ≥3.5 s enforced delay.
-                        </p>
-                      </div>
-                    </div>
-                    <Toggle
-                      checked={soundEnabled[selected.id] ?? false}
-                      label="Enable printer sound"
-                      onChange={(enabled) => handleSetSound(selected.id, enabled)}
-                    />
-                  </div>
-                )}
-              </div>
-
-              {/* Captured output */}
-              <div className="border-border flex shrink-0 items-center justify-between border-b px-5 py-3">
-                <p className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">Captured output</p>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  disabled={selected.history.length === 0 || busy === `clear-${selected.id}`}
-                  onClick={() => void onClear(selected.id)}
+        selected && (
+          <>
+            <Toolbar>
+              <select aria-label="Virtual printer" value={selected.id} onChange={(e) => select(e.target.value)}>
+                {virtual.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.displayName}
+                  </option>
+                ))}
+              </select>
+              <span className="text-muted-foreground min-w-0 flex-1 truncate text-xs">
+                {selected.virtualProfile?.type === 'esc-pos-receipt'
+                  ? `${selected.virtualProfile.widthMm} mm · ESC/POS`
+                  : 'Office driver pages'}
+              </span>
+              <Button size="sm" variant="outline" onClick={() => setSimulation(true)}>
+                <Settings2 />
+                Simulation
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={busy !== null || !selected.available || !selected.enabled}
+                onClick={() => void onTest(selected.id).catch(() => undefined)}
+              >
+                <Send />
+                {busy === `test-${selected.id}` ? 'Submitting…' : 'Test print'}
+              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  render={<Button size="icon-sm" variant="ghost" aria-label="Virtual printer actions" />}
                 >
-                  <Trash2 className="size-3" aria-hidden />
-                  Clear
-                </Button>
-              </div>
-
-              <div className="flex-1 overflow-y-auto">
-                {selected.history.length === 0 ? (
-                  <EmptyState
-                    title="No output captured"
-                    description="Send a test print or deliver a job from the example server."
-                  />
-                ) : (
-                  <div>
-                    {selected.history.map((output) => (
-                      <div
-                        key={output.id}
-                        className="border-border/50 grid gap-4 border-b px-5 py-5 xl:grid-cols-[minmax(0,1fr)_minmax(280px,390px)] xl:items-start"
-                      >
-                        <div className="min-w-0">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className="text-foreground/80 font-mono text-xs">{output.jobId}</span>
-                            <span className="border-border bg-secondary text-muted-foreground rounded border px-1.5 py-0.5 font-mono text-xs tracking-wide uppercase">
-                              {output.format}
-                            </span>
-                          </div>
-                          <p className="text-muted-foreground/60 mt-0.5 text-xs">
-                            {formatRelativeTime(output.createdAt)} · {output.byteLength} bytes
-                          </p>
-                          {output.diagnostics && (
-                            <p
-                              className="text-muted-foreground/70 mt-2 max-w-sm text-xs leading-4"
-                              title={output.diagnostics.unsupportedCommands.join('\n') || undefined}
-                            >
-                              {output.diagnostics.interpretedCommands} commands · {output.diagnostics.qrCodes} QR ·{' '}
-                              {output.diagnostics.barcodes} barcode · {output.diagnostics.images} image ·{' '}
-                              {output.diagnostics.feedLines} feed lines · cut{' '}
-                              {output.diagnostics.cutRequested ? 'requested' : 'not requested'}
-                              {output.diagnostics.unsupportedCommands.length > 0 &&
-                                ` · ${output.diagnostics.unsupportedCommands.length} unsupported`}
-                            </p>
-                          )}
-                          {output.format === 'structured' && output.document && (
-                            <p className="text-muted-foreground/60 mt-4 max-w-xs text-xs leading-5">
-                              Structured output rendered as a receipt. Physical output may vary by printer.
-                            </p>
-                          )}
-                        </div>
-                        <CapturedOutputPreview output={output} />
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
+                  <MoreHorizontal />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent>
+                  <DropdownMenuGroup>
+                    <DropdownMenuItem
+                      disabled={!selected.history.length || busy !== null}
+                      onClick={() => setConfirm('clear')}
+                    >
+                      <Trash2 />
+                      Clear captures…
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      variant="destructive"
+                      disabled={busy !== null}
+                      onClick={() => setConfirm('delete')}
+                    >
+                      Delete virtual printer…
+                    </DropdownMenuItem>
+                  </DropdownMenuGroup>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </Toolbar>
+            <DocumentWorkspace key={selected.id} printer={selected} />
+            <SimulationDialog
+              key={selected.id + 'simulation'}
+              {...props}
+              printer={selected}
+              open={simulation}
+              onOpenChange={setSimulation}
+            />
+            <ConfirmAction
+              open={confirm !== null}
+              onOpenChange={(open) => {
+                if (!open) setConfirm(null);
+              }}
+              title={confirm === 'delete' ? 'Delete virtual printer?' : 'Clear captured output?'}
+              description={
+                confirm === 'delete'
+                  ? 'This removes the virtual target and its captured output.'
+                  : 'Captured documents for this target will be removed from local memory.'
+              }
+              busy={busy !== null}
+              action={async () => {
+                if (confirm === 'delete') {
+                  await onDelete(selected.id);
+                  select(null);
+                } else await onClear(selected.id);
+              }}
+            />
+          </>
+        )
       )}
+      <CreateVirtualDialog open={create} onOpenChange={setCreate} onCreate={onCreate} busy={busy !== null} />
     </ScreenContainer>
   );
 }
-
-function CapturedOutputPreview({ output }: { output: VirtualOutput }) {
-  if (output.imageDataUrl) {
-    return (
-      <div className="border-border bg-background flex max-h-[560px] w-full justify-center overflow-auto rounded border p-3">
-        <img
-          src={output.imageDataUrl}
-          alt="Interpreted virtual printer output"
-          className="h-auto max-h-[520px] w-auto max-w-full object-contain"
-        />
-      </div>
-    );
+function CreateVirtualDialog({
+  open,
+  onOpenChange,
+  onCreate,
+  busy,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onCreate: (input: VirtualPrinterInput) => Promise<void>;
+  busy: boolean;
+}) {
+  const [name, setName] = useState('Virtual receipt');
+  const [profile, setProfile] = useState('thermal-80');
+  const [error, setError] = useState<string | null>(null);
+  function submit() {
+    const definition: VirtualPrinterProfile =
+      profile === 'office'
+        ? { type: 'system-driver-page', pageWidthMm: 210, pageHeightMm: 297, dpi: 300 }
+        : { type: 'esc-pos-receipt', widthMm: profile === 'thermal-58' ? 58 : 80 };
+    void onCreate({ displayName: name.trim(), profile: definition })
+      .then(() => {
+        onOpenChange(false);
+        setError(null);
+      })
+      .catch((cause: unknown) =>
+        setError(cause instanceof Error ? cause.message : 'Unable to create this virtual printer.'),
+      );
   }
-  if (output.format === 'structured' && output.document) {
-    return <ReceiptPreview document={output.document} />;
-  }
-
   return (
-    <pre className="border-border text-muted-foreground max-h-36 w-full overflow-auto rounded border bg-[oklch(0.07_0_0)] p-3 font-mono text-xs leading-4">
-      {output.preview}
-    </pre>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!busy) onOpenChange(next);
+      }}
+    >
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Create virtual printer</DialogTitle>
+          <DialogDescription>
+            Capture receipt commands or system-driver pages locally. No physical device is used.
+          </DialogDescription>
+        </DialogHeader>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            submit();
+          }}
+        >
+          <FieldGroup>
+            <Field>
+              <FieldLabel htmlFor="virtual-name">Display name</FieldLabel>
+              <Input
+                autoFocus
+                id="virtual-name"
+                value={name}
+                required
+                maxLength={128}
+                onChange={(e) => setName(e.target.value)}
+              />
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="virtual-profile">Output profile</FieldLabel>
+              <select
+                id="virtual-profile"
+                className={inputClass}
+                value={profile}
+                onChange={(e) => setProfile(e.target.value)}
+              >
+                <option value="thermal-80">Thermal receipt · 80 mm</option>
+                <option value="thermal-58">Thermal receipt · 58 mm</option>
+                <option value="office">Office page · A4, 300 DPI</option>
+              </select>
+            </Field>
+            {error && (
+              <p role="alert" className="text-error text-sm">
+                {error}
+              </p>
+            )}
+          </FieldGroup>
+          <DialogFooter className="mt-6">
+            <Button variant="outline" disabled={busy} onClick={() => onOpenChange(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={busy || !name.trim()}>
+              {busy ? 'Creating…' : 'Create printer'}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }
-
-function profileKey(profile: VirtualPrinterProfile): string {
-  if (profile.type === 'esc-pos-receipt') return `thermal-${profile.widthMm}`;
-  return 'office-a4';
-}
-
-function profileFromKey(key: string): VirtualPrinterProfile {
-  if (key === 'thermal-58') return { type: 'esc-pos-receipt', widthMm: 58 };
-  if (key === 'office-a4') {
-    return { type: 'system-driver-page', pageWidthMm: 210, pageHeightMm: 297, dpi: 300 };
-  }
-  return { type: 'esc-pos-receipt', widthMm: 80 };
-}
-
-function profileName(profile: VirtualPrinterProfile): string {
-  if (profile.type === 'esc-pos-receipt') return `Virtual Thermal ${profile.widthMm}mm`;
-  return 'Virtual Office A4';
-}
-
-function virtualProfileLabel(profile: VirtualPrinterProfile | undefined): string {
-  if (profile?.type === 'esc-pos-receipt') return `ESC/POS • ${profile.widthMm} mm`;
-  return 'System driver • A4';
+function SimulationDialog({
+  printer,
+  open,
+  onOpenChange,
+  busy,
+  onUpdate,
+  onSetSound,
+}: VirtualProps & { printer: VirtualPrinterSummary; open: boolean; onOpenChange: (open: boolean) => void }) {
+  const [mode, setMode] = useState(printer.mode);
+  const [delay, setDelay] = useState(printer.delayMs);
+  const [sound, setSound] = useState(() => soundPreference(printer.id));
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    if (sound) void onSetSound(printer.id, true).catch(() => undefined);
+  }, [sound, onSetSound, printer.id]);
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!busy) onOpenChange(next);
+      }}
+    >
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Simulation</DialogTitle>
+          <DialogDescription>Control how {printer.displayName} responds to submitted jobs.</DialogDescription>
+        </DialogHeader>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            setError(null);
+            void onUpdate(printer.id, mode, delay)
+              .then(() => onOpenChange(false))
+              .catch((cause: unknown) =>
+                setError(cause instanceof Error ? cause.message : 'Unable to update simulation.'),
+              );
+          }}
+        >
+          <FieldGroup>
+            <Field>
+              <FieldLabel htmlFor="simulation-mode">Submission behavior</FieldLabel>
+              <select
+                id="simulation-mode"
+                className={inputClass}
+                value={mode}
+                onChange={(e) => setMode(e.target.value as VirtualPrinterMode)}
+              >
+                <option value="always_succeed">Always succeed</option>
+                <option value="fail_next">Fail next job, then reset</option>
+                <option value="always_fail">Always fail</option>
+                <option value="delay">Delay submission</option>
+                <option value="offline">Unavailable</option>
+              </select>
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="simulation-delay">Delay in milliseconds</FieldLabel>
+              <Input
+                id="simulation-delay"
+                type="number"
+                min={0}
+                max={30000}
+                step={100}
+                disabled={mode !== 'delay'}
+                value={delay}
+                onChange={(e) => setDelay(Number(e.target.value))}
+              />
+            </Field>
+            <Field>
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <p className="text-sm">Printer sound</p>
+                  <p className="text-muted-foreground mt-1 text-xs">Sound enforces at least 3.5 seconds of delay.</p>
+                </div>
+                <Toggle
+                  checked={sound}
+                  label="Enable printer sound"
+                  onChange={(enabled) => {
+                    void onSetSound(printer.id, enabled)
+                      .then(() => {
+                        setSound(enabled);
+                        localStorage.setItem(`oppa-sound-${printer.id}`, String(enabled));
+                      })
+                      .catch(() => setError('Unable to update sound.'));
+                  }}
+                />
+              </div>
+              <Button type="button" size="sm" variant="ghost" onClick={playPrinterSound}>
+                <Volume2 />
+                Preview sound
+              </Button>
+            </Field>
+            {error && (
+              <p role="alert" className="text-error text-sm">
+                {error}
+              </p>
+            )}
+          </FieldGroup>
+          <DialogFooter className="mt-6">
+            <Button variant="outline" disabled={busy !== null} onClick={() => onOpenChange(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={busy !== null}>
+              Apply simulation
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
 }

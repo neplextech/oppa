@@ -1,19 +1,17 @@
-import { ArrowRight, RefreshCw, TriangleAlert } from 'lucide-react';
+import { ArrowRight, CheckCircle2, CircleAlert, LoaderCircle, MoreHorizontal, Printer, RefreshCw } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
-import {
-  DefList,
-  DefTerm,
-  DefValue,
-  EmptyState,
-  ScreenContainer,
-  ScreenHeader,
-  SectionHeader,
-  StateBadge,
-  StatusDot,
-} from '@/components/ui';
+import { EmptyState, ScreenContainer, ScreenHeader, StateBadge, StatusDot } from '@/components/ui';
 import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+} from '@/components/ui/dropdown-menu';
 import type { AgentStatus, JobSummary, PrinterSummary } from '@/lib/types';
-import { cn, formatRelativeTime, titleCase } from '@/lib/utils';
+import { formatRelativeTime, titleCase } from '@/lib/utils';
 
 export function OverviewScreen({
   status,
@@ -32,223 +30,203 @@ export function OverviewScreen({
   onNavigateJobs: () => void;
   onReconnect: () => Promise<void>;
 }) {
+  const navigate = useNavigate();
   const enabled = printers.filter((p) => p.enabled);
-  const online = enabled.filter((p) => p.available);
-  const recent = jobs.slice(0, 12);
-  const hasErrors = status.activeErrors.length > 0;
-
-  const agentTone =
-    status.connectionState === 'connected'
-      ? 'connected'
-      : status.connectionState === 'authentication_failed' || status.connectionState === 'credential_revoked'
-        ? 'error'
-        : 'pending';
-
+  const available = enabled.filter((p) => p.available);
+  const connected = status.connectionState === 'connected';
+  const connecting = ['connecting', 'authenticating', 'paired'].includes(status.connectionState);
+  const unavailable = enabled.length - available.length;
+  const needsPairing = ['authentication_failed', 'credential_revoked'].includes(status.connectionState);
+  const healthy = connected && enabled.length > 0 && !unavailable && !status.activeErrors.length;
+  const Icon = healthy ? CheckCircle2 : connecting ? LoaderCircle : CircleAlert;
+  const heading = needsPairing
+    ? 'Pairing needs attention'
+    : !connected
+      ? connecting
+        ? 'Connecting to your server'
+        : 'Server disconnected'
+      : !enabled.length
+        ? 'Choose printers for this server'
+        : unavailable
+          ? 'Some printers are unavailable'
+          : status.activeErrors.length
+            ? 'The agent needs attention'
+            : 'Ready for print jobs';
+  const description = needsPairing
+    ? 'Verify your server and pair this computer again.'
+    : !connected
+      ? 'The local agent is running. Incoming jobs resume when the connection is restored.'
+      : !enabled.length
+        ? 'Enable a local printer to allow your server to send it print jobs.'
+        : unavailable
+          ? `${unavailable} enabled printer${unavailable === 1 ? ' is' : 's are'} unavailable. Check the connection or system queue.`
+          : 'All enabled printers are available.';
+  const recent = [...jobs].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, 6);
   return (
     <ScreenContainer>
       <ScreenHeader
         title="Overview"
-        description="Operational status and recent activity"
+
         action={
-          <Button variant="outline" size="sm" disabled={busy === 'reconnect'} onClick={() => void onReconnect()}>
-            {busy === 'reconnect' ? (
-              <RefreshCw className="size-3 animate-spin" aria-hidden />
-            ) : (
-              <RefreshCw className="size-3" aria-hidden />
-            )}
-            Reconnect
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" aria-label="Overview actions" />}>
+              <MoreHorizontal />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent>
+              <DropdownMenuGroup>
+                <DropdownMenuItem disabled={busy !== null} onClick={() => void onReconnect().catch(() => undefined)}>
+                  <RefreshCw />
+                  Reconnect server
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => void navigate('/diagnostics')}>Inspect logs</DropdownMenuItem>
+              </DropdownMenuGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
         }
       />
-
-      {/* Active errors */}
-      {hasErrors && (
-        <div className="flex shrink-0 items-start gap-3 border-b border-[var(--color-warning)]/20 bg-[var(--color-warning)]/5 px-5 py-3">
-          <TriangleAlert className="mt-0.5 size-3.5 shrink-0 text-[var(--color-warning)]" aria-hidden />
-          <div className="min-w-0 flex-1">
-            <p className="text-xs font-semibold text-[var(--color-warning)]">Action required</p>
-            <ul className="mt-1 space-y-0.5 text-xs text-[var(--color-warning)]/70">
-              {status.activeErrors.map((msg) => (
-                <li key={msg}>{msg}</li>
-              ))}
-            </ul>
-          </div>
-        </div>
-      )}
-
-      {/* Status strip */}
-      <div className="border-border bg-card/50 shrink-0 border-b px-5 py-3">
-        <div className="flex flex-wrap items-center gap-x-8 gap-y-2">
-          <StatusItem label="Agent">
-            <StatusDot
-              tone={agentTone}
-              pulse={status.connectionState === 'connecting' || status.connectionState === 'authenticating'}
-            />
-            <span className={cn('ml-1', agentTone === 'connected' ? 'text-[var(--color-connected)]' : '')}>
-              {titleCase(status.connectionState)}
-            </span>
-          </StatusItem>
-          <StatusItem label="Printers">
-            <span>
-              {online.length}/{enabled.length} online
-            </span>
-          </StatusItem>
-          <StatusItem label="Queue">
-            <span className={cn(status.pendingJobs > 0 ? 'text-[var(--color-pending)]' : 'text-muted-foreground')}>
-              {status.pendingJobs} pending
-            </span>
-          </StatusItem>
-          <StatusItem label="Connected">
-            <span>{formatRelativeTime(status.lastConnectionAt)}</span>
-          </StatusItem>
-          {status.agentId && (
-            <StatusItem label="Agent ID">
-              <span className="font-mono text-xs">{status.agentId}</span>
-            </StatusItem>
-          )}
-        </div>
-      </div>
-
-      {/* Main body */}
-      <div className="flex flex-1 overflow-hidden">
-        {/* Recent jobs */}
-        <div className="border-border flex flex-1 flex-col overflow-hidden border-r">
-          <div className="border-border flex shrink-0 items-center justify-between border-b px-5 py-3">
-            <SectionHeader title="Recent jobs" />
-            <button
-              type="button"
-              onClick={onNavigateJobs}
-              className="text-muted-foreground hover:text-foreground flex items-center gap-1 text-xs transition-colors"
+      <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6">
+        <section className="flex flex-wrap items-start justify-between gap-4">
+          <div className="flex min-w-0 items-start gap-3">
+            <span
+              className={
+                healthy
+                  ? 'bg-connected/10 flex size-10 shrink-0 items-center justify-center rounded-full'
+                  : 'bg-warning/10 flex size-10 shrink-0 items-center justify-center rounded-full'
+              }
             >
-              All jobs
-              <ArrowRight className="size-3" aria-hidden />
-            </button>
-          </div>
-
-          <div className="flex-1 overflow-y-auto">
-            {recent.length === 0 ? (
-              <EmptyState
-                title="No jobs yet"
-                description="Jobs will appear here once the agent receives work from the server."
+              <Icon
+                className={
+                  healthy
+                    ? 'text-connected mt-1 size-5 shrink-0'
+                    : connecting
+                      ? 'text-muted-foreground mt-1 size-5 shrink-0 animate-spin'
+                      : 'text-warning mt-1 size-5 shrink-0'
+                }
+                aria-hidden
               />
-            ) : (
-              <table className="w-full text-xs">
-                <thead className="bg-background/95 sticky top-0 backdrop-blur-sm">
-                  <tr className="border-border border-b text-left">
-                    <th className="text-muted-foreground px-5 py-2 font-medium">State</th>
-                    <th className="text-muted-foreground px-3 py-2 font-medium">Job ID</th>
-                    <th className="text-muted-foreground hidden px-3 py-2 font-medium md:table-cell">Printer</th>
-                    <th className="text-muted-foreground px-3 py-2 text-right font-medium">Received</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {recent.map((job) => (
-                    <JobRow key={job.id} job={job} />
-                  ))}
-                </tbody>
-              </table>
-            )}
+            </span>
+            <div className="min-w-0">
+              <h2 className="text-lg font-semibold">{heading}</h2>
+              <p className="text-muted-foreground mt-1 max-w-xl text-sm leading-5">{description}</p>
+            </div>
           </div>
-        </div>
-
-        {/* Agent health */}
-        <div className="w-64 shrink-0 overflow-y-auto xl:w-72">
-          <div className="border-border flex items-center justify-between border-b px-4 py-3">
-            <SectionHeader title="Health" />
-            <button
-              type="button"
-              onClick={onNavigatePrinters}
-              className="text-muted-foreground hover:text-foreground text-xs transition-colors"
-            >
+          {connected ? (
+            <Button variant="ghost" size="sm" onClick={onNavigatePrinters}>
               Manage
+              <ArrowRight />
+            </Button>
+          ) : needsPairing ? (
+            <Button size="sm" onClick={() => void navigate('/settings?category=Connection')}>
+              Review connection
+            </Button>
+          ) : null}
+        </section>
+        {status.activeErrors.length > 0 && (
+          <div role="alert" className="text-error mt-4 flex flex-col gap-1 text-sm">
+            {status.activeErrors.map((error) => (
+              <p className="break-words" key={error}>
+                {error}
+              </p>
+            ))}
+            <button className="mt-1 w-fit underline" onClick={() => void navigate('/diagnostics')}>
+              Inspect logs
             </button>
           </div>
-
-          <div className="space-y-4 px-4 py-3">
-            {/* System health */}
-            <div>
-              <p className="text-muted-foreground/60 mb-2 text-xs font-semibold tracking-wider uppercase">System</p>
-              <DefList>
-                <DefTerm>State</DefTerm>
-                <DefValue className={agentTone === 'connected' ? 'text-[var(--color-connected)]' : ''}>
-                  {titleCase(status.connectionState)}
-                </DefValue>
-                <DefTerm>Product</DefTerm>
-                <DefValue>{status.product.id}</DefValue>
-                <DefTerm>Version</DefTerm>
-                <DefValue>v{status.version}</DefValue>
-                <DefTerm>Platform</DefTerm>
-                <DefValue>{status.platform}</DefValue>
-              </DefList>
+        )}
+        <dl className="border-border my-6 grid grid-cols-3 gap-4 border-y py-4">
+          {[
+            ['Available printers', `${available.length} / ${enabled.length}`, 'Enabled for server access'],
+            ['Pending jobs', status.pendingJobs, 'In the local agent'],
+            ['Submitted records', jobs.filter((j) => j.state === 'submitted').length, 'In retained history'],
+          ].map(([label, value, caption]) => (
+            <div key={label}>
+              <dt className="text-muted-foreground text-xs">{label}</dt>
+              <dd className="mt-1 text-[28px] leading-9 font-semibold tabular-nums">{value}</dd>
+              <p className="text-muted-foreground mt-1 text-xs">{caption}</p>
             </div>
-
-            {/* Printer health */}
-            <div>
-              <p className="text-muted-foreground/60 mb-2 text-xs font-semibold tracking-wider uppercase">Printers</p>
-              {enabled.length === 0 ? (
-                <p className="text-muted-foreground/60 text-xs">No printers enabled.</p>
-              ) : (
-                <div className="space-y-1">
-                  {enabled.slice(0, 6).map((printer) => (
-                    <div key={printer.id} className="flex items-center gap-2 text-xs">
-                      <StatusDot tone={printer.available ? 'connected' : 'error'} />
-                      <span className="text-foreground/80 flex-1 truncate">{printer.displayName}</span>
-                      <span className="text-muted-foreground/60 shrink-0">
-                        {printer.available ? 'ready' : 'offline'}
-                      </span>
-                    </div>
-                  ))}
-                  {enabled.length > 6 && <p className="text-muted-foreground/50 text-xs">+{enabled.length - 6} more</p>}
-                </div>
-              )}
-            </div>
-
-            {/* Queue stats */}
-            <div>
-              <p className="text-muted-foreground/60 mb-2 text-xs font-semibold tracking-wider uppercase">Queue</p>
-              <DefList>
-                <DefTerm>Pending</DefTerm>
-                <DefValue>{status.pendingJobs}</DefValue>
-                <DefTerm>Total</DefTerm>
-                <DefValue>{jobs.length}</DefValue>
-                <DefTerm>Failed</DefTerm>
-                <DefValue
-                  className={jobs.filter((j) => j.state === 'failed').length > 0 ? 'text-[var(--color-error)]' : ''}
-                >
-                  {jobs.filter((j) => j.state === 'failed').length}
-                </DefValue>
-              </DefList>
-            </div>
+          ))}
+        </dl>
+        <section>
+          <div className="mb-2 flex items-center justify-between">
+            <h2 className="text-sm font-semibold">Your printers</h2>
+            <span className="text-muted-foreground text-xs">{enabled.length} enabled</span>
           </div>
-        </div>
+          {!enabled.length ? (
+            <EmptyState
+              title="No printers enabled"
+              description="Select which local printers your server may use."
+              action={
+                <Button size="sm" onClick={onNavigatePrinters}>
+                  <Printer />
+                  Choose printers
+                </Button>
+              }
+            />
+          ) : (
+            enabled.slice(0, 8).map((printer) => (
+              <button
+                key={printer.id}
+                onClick={() => void navigate(`/printers?selected=${encodeURIComponent(printer.id)}`)}
+                className="hover:bg-accent flex w-full items-center gap-3 rounded-md py-2 text-left"
+              >
+                <span className="device-icon">
+                  <Printer className="size-4" aria-hidden />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm">{printer.displayName}</p>
+                  <p className="text-muted-foreground mt-1 text-xs">
+                    {titleCase(printer.connectionType)} ·{' '}
+                    {printer.submissionMode.type === 'driver' ? 'System driver' : 'ESC/POS'}
+                  </p>
+                </div>
+                <StatusDot tone={printer.available ? 'connected' : 'warning'} />
+                <span className="text-muted-foreground w-20 text-right text-xs">
+                  {printer.available ? 'Available' : 'Unavailable'}
+                </span>
+              </button>
+            ))
+          )}
+        </section>
+        <section className="border-border mt-6 border-t pt-5">
+          <div className="mb-2 flex items-center justify-between">
+            <h2 className="text-sm font-semibold">Recent jobs</h2>
+            <Button size="sm" variant="ghost" onClick={onNavigateJobs}>
+              View all
+              <ArrowRight />
+            </Button>
+          </div>
+          {!recent.length ? (
+            <EmptyState
+              title="No print activity yet"
+              description="Jobs appear here when the agent receives work from your server."
+            />
+          ) : (
+            recent.map((job) => (
+              <button
+                key={job.id}
+                onClick={() => void navigate(`/jobs?selected=${encodeURIComponent(job.id)}`)}
+                className="hover:bg-accent flex w-full items-center gap-4 rounded-md py-2 text-left"
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium">{job.printerName}</p>
+                  {job.error && <p className="text-error mt-1 truncate text-xs">{job.error}</p>}
+                </div>
+                <StateBadge state={job.state} />
+                <time
+                  dateTime={job.updatedAt}
+                  title={new Date(job.updatedAt).toLocaleString()}
+                  className="text-muted-foreground w-20 text-right text-xs"
+                >
+                  {formatRelativeTime(job.updatedAt)}
+                </time>
+              </button>
+            ))
+          )}
+        </section>
+        <p className="text-muted-foreground mt-6 text-xs">
+          Availability describes the local transport. Physical printing and paper status are not verified.
+        </p>
       </div>
     </ScreenContainer>
-  );
-}
-
-function StatusItem({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="flex items-baseline gap-1.5 text-xs">
-      <span className="text-muted-foreground/60">{label}</span>
-      <span className="text-foreground/80 flex items-center gap-1 font-mono">{children}</span>
-    </div>
-  );
-}
-
-function JobRow({ job }: { job: JobSummary }) {
-  return (
-    <tr className="border-border/50 hover:bg-accent/30 border-b transition-colors">
-      <td className="px-5 py-2">
-        <StateBadge state={job.state} />
-      </td>
-      <td className="px-3 py-2">
-        <span className="text-foreground/80 font-mono text-xs">{job.id}</span>
-        {job.error && <p className="mt-0.5 truncate text-xs text-[var(--color-error)]/70">{job.error}</p>}
-      </td>
-      <td className="hidden px-3 py-2 md:table-cell">
-        <span className="text-foreground/70 truncate">{job.printerName}</span>
-      </td>
-      <td className="text-muted-foreground px-3 py-2 text-right">{formatRelativeTime(job.updatedAt)}</td>
-    </tr>
   );
 }

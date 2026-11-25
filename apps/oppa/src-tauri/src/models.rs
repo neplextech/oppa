@@ -41,6 +41,8 @@ impl From<&ProductConfig> for ProductSummary {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentStatus {
+    /// Whether virtual printers are compiled and enabled for this product.
+    pub virtual_printer_available: bool,
     pub agent_id: Option<String>,
     pub product: ProductSummary,
     pub last_connection_at: Option<String>,
@@ -205,6 +207,10 @@ pub enum VirtualPrinterMode {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct VirtualOutput {
+    /// Total captured raster pages, including previews outside the IPC budget.
+    pub page_count: usize,
+    /// Bounded previews for document navigation.
+    pub pages: Vec<VirtualOutputPage>,
     pub id: String,
     pub job_id: String,
     pub created_at: String,
@@ -217,6 +223,24 @@ pub struct VirtualOutput {
     pub diagnostics: Option<VirtualOutputDiagnostics>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub document: Option<PrintDocument>,
+}
+
+/// Bounded preview of one existing captured raster page.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VirtualOutputPage {
+    /// One-based page number in the captured output.
+    pub page_number: usize,
+    /// Original raster width in pixels.
+    pub width: u32,
+    /// Original raster height in pixels.
+    pub height: u32,
+    /// Original horizontal DPI.
+    pub dpi_x: u16,
+    /// Original vertical DPI.
+    pub dpi_y: u16,
+    /// Preview PNG data URL; never included in diagnostics.
+    pub image_data_url: String,
 }
 
 /// Bounded summary of ESC/POS emulation performed by a virtual printer.

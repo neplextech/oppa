@@ -5,7 +5,6 @@ import { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 
 import { AppShell, type ScreenId } from '@/components/app-shell';
-import { DeepLinkDialog } from '@/components/deep-link-dialog';
 import { ErrorBanner } from '@/components/ui';
 import { useAgent } from '@/hooks/use-agent';
 import { agentClient } from '@/lib/agent-client';
@@ -58,9 +57,12 @@ export default function App() {
   const [theme, setThemeState] = useState<Theme>(initialTheme);
   const [developerMode, setDeveloperModeState] = useState(() => localStorage.getItem('oppa-developer-mode') === 'true');
   const [commandOpen, setCommandOpen] = useState(false);
+  const [onboardingActive, setOnboardingActive] = useState(
+    () => localStorage.getItem('oppa-onboarding-active') === 'true',
+  );
   const [settingsFromSetup, setSettingsFromSetup] = useState(false);
   const [pendingDeepLink, setPendingDeepLink] = useState<DeepLinkPairing | null>(null);
-  const { status, printers, jobs, diagnostics, discoveredService, loading, busy, error, actions } = useAgent();
+  const { status, printers, jobs, diagnostics, loading, busy, error, actions } = useAgent();
 
   function setTheme(t: Theme) {
     localStorage.setItem('oppa-theme', t);
@@ -159,12 +161,16 @@ export default function App() {
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       if (!event.metaKey && !event.ctrlKey) return;
-      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) return;
-      if (event.key === 'k') {
+      if (event.key.toLowerCase() === 'k') {
         event.preventDefault();
         setCommandOpen((v) => !v);
         return;
       }
+      if (
+        event.target instanceof HTMLElement &&
+        (event.target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(event.target.tagName))
+      )
+        return;
       if (event.key === 'r') {
         event.preventDefault();
         window.location.reload();
@@ -191,16 +197,6 @@ export default function App() {
       delete (globalThis as Record<string, unknown>).handleDeeplink;
     };
   }, []);
-
-  async function handleDeepLinkConfirm(agentName: string): Promise<void> {
-    if (!pendingDeepLink || !status) return;
-    if (status.agentId !== null) await actions.forgetServer();
-    await actions.setServerConfiguration({
-      serverUrl: pendingDeepLink.serverUrl,
-    });
-    await actions.pairServer(pendingDeepLink.pairKey, agentName);
-    setPendingDeepLink(null);
-  }
 
   if (!loading && error && (!status || !diagnostics)) {
     return (
@@ -242,38 +238,36 @@ export default function App() {
     status.connectionState === 'authentication_failed' ||
     status.connectionState === 'credential_revoked';
 
-  // Defined once here; status is non-null past the loading guard above.
-  const deepLinkDialog = (
-    <DeepLinkDialog
-      open={pendingDeepLink !== null}
-      pairing={pendingDeepLink}
-      status={status}
-      busy={busy}
-      onConfirm={handleDeepLinkConfirm}
-      onCancel={() => setPendingDeepLink(null)}
-    />
-  );
-
-  if (isSetupState && !settingsFromSetup) {
+  if (((isSetupState || onboardingActive) && !settingsFromSetup) || pendingDeepLink !== null) {
     return (
-      <>
-        <SetupScreen
-          status={status}
-          discoveredService={discoveredService}
-          busy={busy}
-          onDiscover={actions.discoverServer}
-          onPair={actions.pairServer}
-          onForget={actions.forgetServer}
-          onSaveServerConfiguration={actions.setServerConfiguration}
-          onResetServerConfiguration={actions.resetServerConfiguration}
-          onReconnect={actions.reconnect}
-          onOpenSettings={() => {
-            setSettingsFromSetup(true);
-            void navigate('/settings');
-          }}
-        />
-        {deepLinkDialog}
-      </>
+      <SetupScreen
+        status={status}
+        printers={printers}
+        busy={busy}
+        deepLink={pendingDeepLink}
+        onDiscover={actions.discoverServer}
+        onPair={actions.pairServer}
+        onForget={actions.forgetServer}
+        onSaveServerConfiguration={actions.setServerConfiguration}
+        onReconnect={actions.reconnect}
+        onRefreshPrinters={actions.refreshPrinters}
+        onConfigurePrinter={actions.configurePrinter}
+        onOpenProductLink={actions.openProductLink}
+        onActivate={() => {
+          localStorage.setItem('oppa-onboarding-active', 'true');
+          setOnboardingActive(true);
+        }}
+        onComplete={() => {
+          setOnboardingActive(false);
+          setSettingsFromSetup(false);
+          setScreen('overview');
+        }}
+        onConsumeDeepLink={() => setPendingDeepLink(null)}
+        onOpenSettings={() => {
+          setSettingsFromSetup(true);
+          void navigate('/settings');
+        }}
+      />
     );
   }
 
@@ -296,6 +290,7 @@ export default function App() {
     case 'printers':
       content = (
         <PrintersScreen
+          jobs={jobs}
           printers={printers}
           busy={busy}
           developerMode={developerMode}
@@ -309,19 +304,24 @@ export default function App() {
       );
       break;
     case 'virtual':
-      content = (
-        <VirtualPrintersScreen
-          printers={printers}
-          busy={busy}
-          developerMode={developerMode}
-          onCreate={actions.createVirtualPrinter}
-          onUpdate={actions.updateVirtualPrinter}
-          onClear={actions.clearVirtualHistory}
-          onDelete={actions.removePrinter}
-          onTest={actions.sendTestPrint}
-          onSetSound={actions.setVirtualPrinterSound}
-        />
-      );
+      content =
+        developerMode && status.virtualPrinterAvailable ? (
+          <VirtualPrintersScreen
+            printers={printers}
+            busy={busy}
+            developerMode={developerMode}
+            onCreate={actions.createVirtualPrinter}
+            onUpdate={actions.updateVirtualPrinter}
+            onClear={actions.clearVirtualHistory}
+            onDelete={actions.removePrinter}
+            onTest={actions.sendTestPrint}
+            onSetSound={actions.setVirtualPrinterSound}
+          />
+        ) : (
+          <div className="text-muted-foreground p-6">
+            Virtual printing requires Developer Mode and an enabled product capability.
+          </div>
+        );
       break;
     case 'jobs':
       content = <JobsScreen jobs={jobs} busy={busy} onClear={actions.clearJobs} />;
@@ -365,17 +365,49 @@ export default function App() {
         activeScreen={screen}
         onNavigate={setScreen}
         status={status}
-        developerMode={developerMode}
+        developerMode={developerMode && status.virtualPrinterAvailable}
         paired={!isSetupState}
         commandOpen={commandOpen}
         onOpenCommand={() => setCommandOpen(true)}
         onCloseCommand={() => setCommandOpen(false)}
         onReconnect={actions.reconnect}
+        contextualActions={[
+          {
+            id: 'refresh-state',
+            label: 'Refresh local agent state',
+            action: () => {
+              void actions.reload();
+            },
+          },
+          ...(screen === 'printers'
+            ? [
+                {
+                  id: 'discover',
+                  label: 'Discover local printers',
+                  action: () => {
+                    void actions.refreshPrinters().catch(() => undefined);
+                  },
+                },
+              ]
+            : []),
+          ...((screen === 'printers' || screen === 'virtual') && !busy
+            ? printers
+                .filter(
+                  (printer) => printer.enabled && printer.available && (screen !== 'virtual' || printer.isVirtual),
+                )
+                .map((printer) => ({
+                  id: `test-${printer.id}`,
+                  label: `Send test print to ${printer.displayName}`,
+                  action: () => {
+                    void actions.sendTestPrint(printer.id).catch(() => undefined);
+                  },
+                }))
+            : []),
+        ]}
       >
         {error ? <ErrorBanner message={error} onRetry={() => void actions.reload()} /> : null}
         {content}
       </AppShell>
-      {deepLinkDialog}
     </>
   );
 }

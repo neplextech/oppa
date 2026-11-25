@@ -2,7 +2,9 @@ import { Activity, FileClock, MonitorCog, Printer, RotateCcw, ScrollText, Settin
 import { useEffect, useRef, useState } from 'react';
 
 import type { ScreenId } from '@/components/app-shell';
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
+import { isMacOSPlatform } from '@/lib/window-platform';
 
 interface Command {
   id: string;
@@ -18,7 +20,11 @@ export function CommandMenu({
   onClose,
   onNavigate,
   onReconnect,
+  developerMode,
+  contextualActions,
 }: {
+  developerMode: boolean;
+  contextualActions: Array<{ id: string; label: string; action: () => void }>;
   onClose: () => void;
   onNavigate: (screen: ScreenId) => void;
   onReconnect: () => Promise<void>;
@@ -39,7 +45,7 @@ export function CommandMenu({
     },
     {
       id: 'nav-jobs',
-      label: 'Jobs',
+      label: 'Print jobs',
       description: 'Print job history and status',
       icon: FileClock,
       shortcut: '⌘2',
@@ -94,13 +100,17 @@ export function CommandMenu({
     },
   ];
 
+  const commands: Command[] = [
+    ...contextualActions.map((action): Command => ({ ...action, icon: Printer, group: 'Workspace actions' })),
+    ...allCommands.filter((command) => command.id !== 'nav-virtual' || developerMode),
+  ].map((command) => ({ ...command, shortcut: command.shortcut?.replace('⌘', isMacOSPlatform() ? '⌘' : 'Ctrl+') }));
   const filtered = query.trim()
-    ? allCommands.filter(
+    ? commands.filter(
         (c) =>
           c.label.toLowerCase().includes(query.toLowerCase()) ||
           c.description?.toLowerCase().includes(query.toLowerCase()),
       )
-    : allCommands;
+    : commands;
 
   const groups = filtered.reduce<Record<string, Command[]>>((acc, cmd) => {
     (acc[cmd.group] ??= []).push(cmd);
@@ -123,9 +133,10 @@ export function CommandMenu({
         onClose();
         return;
       }
+      if (e.target !== inputRef.current) return;
       if (e.key === 'ArrowDown') {
         e.preventDefault();
-        setActiveIndex((i) => Math.min(i + 1, flatFiltered.length - 1));
+        setActiveIndex((i) => Math.max(0, Math.min(i + 1, flatFiltered.length - 1)));
       } else if (e.key === 'ArrowUp') {
         e.preventDefault();
         setActiveIndex((i) => Math.max(i - 1, 0));
@@ -142,21 +153,20 @@ export function CommandMenu({
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [flatFiltered, activeIndex, onClose]);
 
+  useEffect(() => {
+    document.getElementById(`command-${flatFiltered[activeIndex]?.id}`)?.scrollIntoView({ block: 'nearest' });
+  }, [activeIndex, flatFiltered]);
   let globalIndex = 0;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center pt-20" onClick={onClose}>
-      {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/20 backdrop-blur-sm dark:bg-black/40" />
-
-      {/* Panel */}
-      <div
-        className="bg-popover border-border relative w-full max-w-md overflow-hidden rounded-2xl border shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-        role="dialog"
-        aria-label="Command menu"
-        aria-modal
-      >
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+    >
+      <DialogContent showCloseButton={false} className="gap-0 overflow-hidden p-0">
+        <DialogTitle className="sr-only">Commands</DialogTitle>
         {/* Search input */}
         <div className="border-border flex items-center gap-3 border-b px-4 py-3">
           <svg
@@ -177,6 +187,10 @@ export function CommandMenu({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             aria-label="Search commands"
+            role="combobox"
+            aria-expanded
+            aria-controls="command-results"
+            aria-activedescendant={flatFiltered[activeIndex] ? `command-${flatFiltered[activeIndex].id}` : undefined}
             aria-autocomplete="list"
           />
           <button
@@ -190,15 +204,13 @@ export function CommandMenu({
         </div>
 
         {/* Results */}
-        <div className="max-h-80 overflow-y-auto py-2" role="listbox">
+        <div className="max-h-80 overflow-y-auto py-2" role="listbox" id="command-results">
           {flatFiltered.length === 0 ? (
             <p className="text-muted-foreground px-4 py-8 text-center text-sm">No results for "{query}"</p>
           ) : (
             Object.entries(groups).map(([group, cmds]) => (
               <div key={group}>
-                <p className="text-muted-foreground px-4 pt-2 pb-1 text-xs font-medium tracking-wider uppercase">
-                  {group}
-                </p>
+                <p className="text-muted-foreground px-4 pt-2 pb-1 text-xs font-medium">{group}</p>
                 {cmds.map((cmd) => {
                   const idx = globalIndex++;
                   const Icon = cmd.icon;
@@ -207,6 +219,7 @@ export function CommandMenu({
                     <button
                       key={cmd.id}
                       type="button"
+                      id={`command-${cmd.id}`}
                       role="option"
                       aria-selected={isActive}
                       className={cn(
@@ -257,7 +270,7 @@ export function CommandMenu({
             <kbd className="font-mono">Esc</kbd> close
           </span>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

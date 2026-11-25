@@ -10,7 +10,8 @@
     "lint": "eslint src vite.config.ts --max-warnings=0",
     "generate-icons": "node scripts/generate-icons.mjs",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "test": "node --experimental-strip-types --test test/*.test.mjs"
   },
   "dependencies": {
     "@base-ui/react": "catalog:",

@@ -52,11 +52,16 @@ export function useAgent() {
 
   useEffect(() => {
     let disposed = false;
+    let scheduled: ReturnType<typeof setTimeout> | undefined;
     let unsubscribe: () => void = () => undefined;
 
     void agentClient
       .subscribe(() => {
-        void load();
+        if (scheduled !== undefined) return;
+        scheduled = setTimeout(() => {
+          scheduled = undefined;
+          if (!disposed) void load();
+        }, 50);
       })
       .then((stop) => {
         if (disposed) {
@@ -71,6 +76,7 @@ export function useAgent() {
 
     return () => {
       disposed = true;
+      if (scheduled !== undefined) clearTimeout(scheduled);
       unsubscribe();
     };
   }, [load]);

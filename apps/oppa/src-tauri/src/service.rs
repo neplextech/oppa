@@ -316,6 +316,7 @@ impl DesktopService {
         let snapshot = self.agent.handle().snapshot().await;
         let agent_id = self.agent_id.read().await.clone();
         AgentStatus {
+            virtual_printer_available: self.product.features.virtual_printer,
             agent_id,
             product: ProductSummary::from(&self.product),
             last_connection_at: self.last_connection_at.read().await.clone(),

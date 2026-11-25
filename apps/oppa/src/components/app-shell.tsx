@@ -1,10 +1,12 @@
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import {
-  Activity,
+  LayoutDashboard,
   Command,
   Copy,
   FileClock,
-  Globe2,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Server,
   Maximize2,
   Minus,
   MonitorCog,
@@ -16,6 +18,7 @@ import {
 import { useEffect, useState, type ReactNode } from 'react';
 
 import { CommandMenu } from '@/components/command-menu';
+import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip';
 import { WindowMenu } from '@/components/window-menu';
 import type { AgentStatus } from '@/lib/types';
 import { cn, titleCase } from '@/lib/utils';
@@ -23,11 +26,17 @@ import { isMacOSPlatform, isWindowsTauri } from '@/lib/window-platform';
 
 export type ScreenId = 'overview' | 'printers' | 'virtual' | 'jobs' | 'diagnostics' | 'settings';
 
-const ALL_NAV: Array<{ id: ScreenId; label: string; icon: typeof Activity; shortcut: string; devOnly?: boolean }> = [
-  { id: 'overview', label: 'Overview', icon: Activity, shortcut: '1' },
-  { id: 'jobs', label: 'Jobs', icon: FileClock, shortcut: '2' },
+const ALL_NAV: Array<{
+  id: ScreenId;
+  label: string;
+  icon: typeof LayoutDashboard;
+  shortcut: string;
+  devOnly?: boolean;
+}> = [
+  { id: 'overview', label: 'Overview', icon: LayoutDashboard, shortcut: '1' },
   { id: 'printers', label: 'Printers', icon: Printer, shortcut: '3' },
-  { id: 'virtual', label: 'Virtual Printer', icon: MonitorCog, shortcut: '4', devOnly: true },
+  { id: 'jobs', label: 'Print jobs', icon: FileClock, shortcut: '2' },
+  { id: 'virtual', label: 'Virtual printers', icon: MonitorCog, shortcut: '4', devOnly: true },
   { id: 'diagnostics', label: 'Logs', icon: ScrollText, shortcut: '5' },
 ];
 
@@ -42,6 +51,7 @@ export function AppShell({
   onCloseCommand,
   onReconnect,
   children,
+  contextualActions = [],
 }: {
   activeScreen: ScreenId;
   onNavigate: (screen: ScreenId) => void;
@@ -53,11 +63,13 @@ export function AppShell({
   onCloseCommand: () => void;
   onReconnect: () => Promise<void>;
   children: ReactNode;
+  contextualActions?: Array<{ id: string; label: string; action: () => void }>;
 }) {
   return (
     <div className="bg-background text-foreground flex h-dvh flex-col overflow-hidden">
       {/* Title bar */}
       <TitleBar
+        minimal
         status={status}
         paired={paired}
         developerMode={developerMode}
@@ -70,6 +82,7 @@ export function AppShell({
         {/* Sidebar navigation — hidden until server is paired */}
         {paired && (
           <Sidebar
+            status={status}
             activeScreen={activeScreen}
             onNavigate={onNavigate}
             onOpenCommand={onOpenCommand}
@@ -78,17 +91,36 @@ export function AppShell({
         )}
 
         {/* Main workspace */}
-        <main className="bg-background flex-1 overflow-x-hidden overflow-y-auto" id="main-content" tabIndex={-1}>
+        <main className="bg-background min-w-0 flex-1 overflow-hidden" id="main-content" tabIndex={-1}>
           {children}
         </main>
       </div>
 
-      {commandOpen && <CommandMenu onClose={onCloseCommand} onNavigate={onNavigate} onReconnect={onReconnect} />}
+      <footer className="border-border text-muted-foreground flex h-7 shrink-0 items-center justify-between gap-4 border-t px-3 text-xs">
+        <span>
+          {status.activeErrors.length
+            ? `${status.activeErrors.length} issue${status.activeErrors.length === 1 ? '' : 's'} need attention`
+            : 'Agent running'}
+        </span>
+        <span className="tabular-nums">
+          {status.pendingJobs} pending job{status.pendingJobs === 1 ? '' : 's'}
+        </span>
+      </footer>
+      {commandOpen && (
+        <CommandMenu
+          developerMode={developerMode}
+          contextualActions={contextualActions}
+          onClose={onCloseCommand}
+          onNavigate={onNavigate}
+          onReconnect={onReconnect}
+        />
+      )}
     </div>
   );
 }
 
 export function TitleBar({
+  minimal = false,
   status,
   paired,
   developerMode,
@@ -96,6 +128,7 @@ export function TitleBar({
   onOpenCommand,
   onReconnect,
 }: {
+  minimal?: boolean;
   status: AgentStatus;
   paired: boolean;
   developerMode: boolean;
@@ -103,40 +136,35 @@ export function TitleBar({
   onOpenCommand?: () => void;
   onReconnect?: () => Promise<void>;
 }) {
-  const agentId = status.agentId;
-  const connected = status.connectionState === 'connected';
   const macOS = isMacOSPlatform();
   const windows = isWindowsTauri();
-  const tone =
-    status.connectionState === 'connected'
-      ? 'connected'
-      : status.connectionState === 'authentication_failed' || status.connectionState === 'credential_revoked'
-        ? 'error'
-        : status.connectionState === 'connecting' ||
-            status.connectionState === 'authenticating' ||
-            status.connectionState === 'pairing' ||
-            status.connectionState === 'discovering'
-          ? 'pending'
-          : 'offline';
 
   return (
     <header
       data-tauri-drag-region
       className={cn(
-        'border-sidebar-border bg-sidebar flex h-11 shrink-0 items-center border-b select-none',
+        'border-sidebar-border relative flex shrink-0 items-center border-b select-none',
+        minimal ? 'bg-background' : 'bg-sidebar',
+        minimal && !windows ? 'h-10' : 'h-11',
         windows && 'oppa-titlebar--windows',
       )}
     >
       {/* Tauri places the macOS traffic lights over the title bar. */}
       {macOS && <div className="w-[72px] shrink-0" />}
 
-      {/* Product identity */}
-      <div data-tauri-drag-region className="flex items-center gap-2 px-2">
-        <img src="/oppa-icon.png" alt="" className="pointer-events-none size-5 shrink-0 rounded-md" draggable={false} />
-        <span data-tauri-drag-region className="text-foreground/90 pointer-events-none text-sm font-semibold">
+      {minimal ? (
+        <span
+          data-tauri-drag-region
+          className="text-muted-foreground pointer-events-none absolute left-1/2 -translate-x-1/2 text-sm"
+        >
           {status.product.name}
         </span>
-      </div>
+      ) : (
+        <div data-tauri-drag-region className="flex items-center gap-2 px-2">
+          <img src="/oppa-icon.png" alt="" className="size-5" />
+          <span>{status.product.name}</span>
+        </div>
+      )}
 
       {!macOS && (
         <WindowMenu
@@ -148,48 +176,8 @@ export function TitleBar({
         />
       )}
 
-      <div data-tauri-drag-region className="bg-border pointer-events-none mx-3 h-3.5 w-px" />
-
-      {/* Connection state — non-interactive, all pointer-events-none so drag passes through */}
-      <div data-tauri-drag-region className="text-muted-foreground pointer-events-none flex items-center gap-2 text-sm">
-        <span
-          className={cn('status-dot', `status-dot--${tone}`)}
-          aria-label={`State: ${titleCase(status.connectionState)}`}
-        />
-        <span className={cn(connected ? 'text-foreground/70' : 'text-muted-foreground')}>
-          {titleCase(status.connectionState)}
-        </span>
-        {status.connectedService ? (
-          <>
-            <span className="text-border/60">·</span>
-            <span
-              className="text-foreground/70 flex min-w-0 items-center gap-1"
-              title={`${status.connectedService.name} · ${status.connectedService.gatewayUrl}`}
-            >
-              <Globe2 className="size-3" aria-hidden />
-              <span className="max-w-44 truncate">{status.connectedService.name}</span>
-            </span>
-          </>
-        ) : null}
-        {agentId && (
-          <>
-            <span className="text-border/60">·</span>
-            <span className="font-mono text-xs">{agentId}</span>
-          </>
-        )}
-      </div>
-
       {/* Primary drag target — wide empty space in the middle */}
       <div data-tauri-drag-region className="flex-1 self-stretch" />
-
-      <div className="flex items-center gap-2 px-4">
-        {import.meta.env.DEV && (
-          <span className="border-primary/30 text-primary bg-primary/10 rounded px-1.5 py-0.5 font-mono text-xs font-medium tracking-wide">
-            DEV
-          </span>
-        )}
-        <span className="text-muted-foreground/50 pointer-events-none font-mono text-xs">v{status.version}</span>
-      </div>
 
       {!macOS && !windows && <WindowControls />}
     </header>
@@ -280,103 +268,114 @@ function Sidebar({
   onNavigate,
   onOpenCommand,
   developerMode,
+  status,
 }: {
   activeScreen: ScreenId;
   onNavigate: (screen: ScreenId) => void;
   onOpenCommand: () => void;
   developerMode: boolean;
+  status: AgentStatus;
 }) {
-  const visibleNav = ALL_NAV.filter((item) => !item.devOnly || developerMode);
-
-  return (
-    <nav
-      className="border-sidebar-border bg-sidebar flex w-52 shrink-0 flex-col border-r select-none"
-      aria-label="Primary navigation"
-    >
-      {/* Primary nav items */}
-      <div className="flex-1 space-y-0.5 p-2 pt-3">
-        {visibleNav.map((item) => {
-          const Icon = item.icon;
-          const active = activeScreen === item.id;
-          return (
+  const [collapsed, setCollapsed] = useState(() => localStorage.getItem('oppa-sidebar-collapsed') === 'true');
+  const modifier = isMacOSPlatform() ? '⌘' : 'Ctrl+';
+  const items = ALL_NAV.filter((item) => !item.devOnly || developerMode);
+  function navButton(
+    label: string,
+    icon: typeof LayoutDashboard,
+    action: () => void,
+    shortcut?: string,
+    active = false,
+  ) {
+    const Icon = icon;
+    return (
+      <Tooltip key={label}>
+        <TooltipTrigger
+          render={
             <button
-              key={item.id}
               type="button"
-              onClick={() => onNavigate(item.id)}
+              className="sidebar-button"
+              aria-label={label}
               aria-current={active ? 'page' : undefined}
-              className={cn(
-                'group relative flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                active
-                  ? 'bg-primary/10 text-primary'
-                  : 'text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
-              )}
+              onClick={action}
+            />
+          }
+        >
+          <Icon aria-hidden />
+          <span className="sidebar-label truncate">{label}</span>
+          {shortcut && (
+            <kbd className="ml-auto text-xs opacity-60">
+              {modifier}
+              {shortcut}
+            </kbd>
+          )}
+        </TooltipTrigger>
+        <TooltipContent side="right">
+          {label}
+          {shortcut ? ` · ${modifier}${shortcut}` : ''}
+        </TooltipContent>
+      </Tooltip>
+    );
+  }
+  return (
+    <TooltipProvider delay={450}>
+      <nav className={cn('sidebar', collapsed && 'is-collapsed')} aria-label="Primary navigation">
+        <div className="mb-4 flex items-center gap-2 px-2 py-2">
+          <span className="sidebar-service text-primary bg-primary/10 flex size-7 shrink-0 items-center justify-center rounded-md">
+            <Server className="size-4" />
+          </span>
+          <div className="sidebar-service min-w-0 flex-1">
+            <p
+              className="truncate text-sm font-medium"
+              title={status.connectedService?.name ?? status.serverConfiguration.serverUrl}
             >
-              {active && <span className="bg-primary absolute top-1/2 left-0 h-5 w-0.5 -translate-y-1/2 rounded-r" />}
-              <Icon
+              {status.connectedService?.name ?? 'OpenPrinter server'}
+            </p>
+            <p className="text-muted-foreground mt-1 flex items-center gap-1.5 text-xs">
+              <span
                 className={cn(
-                  'size-[18px] shrink-0',
-                  active ? 'text-primary' : 'text-sidebar-foreground/50 group-hover:text-sidebar-accent-foreground',
+                  'status-dot',
+                  status.connectionState === 'connected' ? 'status-dot--connected' : 'status-dot--warning',
                 )}
-                strokeWidth={active ? 2.25 : 1.75}
-                aria-hidden
               />
-              <span className="truncate">{item.label}</span>
-              <kbd
-                className={cn(
-                  'ml-auto font-mono text-xs opacity-0 transition-opacity group-hover:opacity-100',
-                  active ? 'opacity-40' : 'text-muted-foreground',
-                )}
-              >
-                ⌘{item.shortcut}
-              </kbd>
-            </button>
-          );
-        })}
-      </div>
+              {titleCase(status.connectionState)}
+            </p>
+          </div>
+          <button
+            className="text-muted-foreground shrink-0 rounded p-1"
+            aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            aria-expanded={!collapsed}
+            title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            onClick={() => {
+              localStorage.setItem('oppa-sidebar-collapsed', String(!collapsed));
+              setCollapsed(!collapsed);
+            }}
+          >
+            {collapsed ? <PanelLeftOpen className="size-4" /> : <PanelLeftClose className="size-4" />}
+          </button>
+        </div>
 
-      {/* Bottom section: command search + settings */}
-      <div className="border-sidebar-border space-y-0.5 border-t p-2 pb-3">
-        <button
-          type="button"
-          onClick={onOpenCommand}
-          className="text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-sm transition-colors"
-          aria-label="Open command menu (⌘K)"
-        >
-          <Command className="size-[18px] shrink-0" strokeWidth={1.75} aria-hidden />
-          <span>Search & commands</span>
-          <kbd className="text-muted-foreground ml-auto font-mono text-xs opacity-60">⌘K</kbd>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => onNavigate('settings')}
-          aria-current={activeScreen === 'settings' ? 'page' : undefined}
-          className={cn(
-            'group relative flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-            activeScreen === 'settings'
-              ? 'bg-primary/10 text-primary'
-              : 'text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
-          )}
-        >
-          {activeScreen === 'settings' && (
-            <span className="bg-primary absolute top-1/2 left-0 h-5 w-0.5 -translate-y-1/2 rounded-r" />
-          )}
-          <Settings2
-            className={cn(
-              'size-[18px] shrink-0',
-              activeScreen === 'settings'
-                ? 'text-primary'
-                : 'text-sidebar-foreground/50 group-hover:text-sidebar-accent-foreground',
+        <div className="flex flex-1 flex-col gap-1">
+          {items
+            .filter((item) => !item.devOnly)
+            .map((item) =>
+              navButton(item.label, item.icon, () => onNavigate(item.id), item.shortcut, activeScreen === item.id),
             )}
-            strokeWidth={activeScreen === 'settings' ? 2.25 : 1.75}
-            aria-hidden
-          />
-          Settings
-          <kbd className="text-muted-foreground ml-auto font-mono text-xs opacity-0 transition-opacity group-hover:opacity-100">
-            ⌘,
-          </kbd>
-        </button>
-      </div>
-    </nav>
+          {developerMode && (
+            <>
+              <p className="sidebar-label text-muted-foreground mt-4 mb-2 px-2 text-xs">Developer tools</p>
+              {items
+                .filter((item) => item.devOnly)
+                .map((item) =>
+                  navButton(item.label, item.icon, () => onNavigate(item.id), item.shortcut, activeScreen === item.id),
+                )}
+            </>
+          )}
+        </div>
+        <div className="border-border flex flex-col gap-1 border-t pt-2">
+          {navButton('Quick actions', Command, onOpenCommand, 'K')}
+          {navButton('Settings', Settings2, () => onNavigate('settings'), ',', activeScreen === 'settings')}
+        </div>
+      </nav>
+    </TooltipProvider>
   );
 }

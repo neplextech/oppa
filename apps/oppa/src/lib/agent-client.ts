@@ -170,6 +170,7 @@ const demoJobs: JobSummary[] = [
 ];
 
 const demoStatus: AgentStatus = {
+  virtualPrinterAvailable: true,
   agentId: 'agent_01JOPPA7Y9JD4BVA0N',
   product: {
     id: 'oppa',
@@ -251,7 +252,15 @@ function isTauri(): boolean {
 }
 
 async function command<T>(name: string, args?: Record<string, unknown>): Promise<T> {
-  return invoke<T>(name, args);
+  try {
+    return await invoke<T>(name, args);
+  } catch (cause: unknown) {
+    if (cause instanceof Error) throw cause;
+    if (cause && typeof cause === 'object' && 'message' in cause && typeof cause.message === 'string') {
+      throw new Error(cause.message);
+    }
+    throw new Error(typeof cause === 'string' ? cause : 'The agent operation failed. Try again.');
+  }
 }
 
 /** Encodes a selected file for one local IPC call without exceeding the document limit. */

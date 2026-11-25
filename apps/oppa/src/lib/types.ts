@@ -41,6 +41,8 @@ export interface ConnectedServiceSummary {
 }
 
 export interface AgentStatus {
+  /** Whether virtual printers are compiled and enabled for this product. */
+  virtualPrinterAvailable: boolean;
   agentId: string | null;
   product: ProductSummary;
   lastConnectionAt: string | null;
@@ -193,6 +195,22 @@ export interface PrintDocument {
   sections: PrintSection[];
 }
 
+/** One bounded page preview from an existing virtual capture. */
+export interface VirtualOutputPage {
+  /** One-based page number in the captured output. */
+  pageNumber: number;
+  /** Source raster width in pixels. */
+  width: number;
+  /** Source raster height in pixels. */
+  height: number;
+  /** Source horizontal DPI. */
+  dpiX: number;
+  /** Source vertical DPI. */
+  dpiY: number;
+  /** PNG preview; excluded from diagnostic exports. */
+  imageDataUrl: string;
+}
+
 export interface VirtualOutput {
   id: string;
   jobId: string;
@@ -201,6 +219,10 @@ export interface VirtualOutput {
   preview: string;
   byteLength: number;
   imageDataUrl?: string;
+  /** Bounded page previews, when captured by the renderer. */
+  pages?: VirtualOutputPage[];
+  /** Total captured pages, including previews omitted by the projection budget. */
+  pageCount?: number;
   diagnostics?: {
     interpretedCommands: number;
     textLines: number;

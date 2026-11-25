@@ -1,34 +1,17 @@
 import { getTauriVersion } from '@tauri-apps/api/app';
-import {
-  ArrowLeft,
-  Code2,
-  Download,
-  ExternalLink,
-  Globe2,
-  LockKeyhole,
-  Monitor,
-  Moon,
-  Power,
-  RotateCcw,
-  Sun,
-} from 'lucide-react';
+import { ArrowLeft, ExternalLink } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 
 import type { Theme } from '@/App';
 import { ServerConfigurationForm } from '@/components/server-configuration-form';
-import { ScreenContainer, ScreenHeader, SectionHeader, Toggle } from '@/components/ui';
+import { ScreenContainer, ScreenHeader, Toggle } from '@/components/ui';
 import { Button } from '@/components/ui/button';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { useUpdater } from '@/components/updater-context';
+import { ConfirmAction, KeyValue } from '@/components/workspace';
 import type { AgentStatus, OpenPrinterServerConfiguration } from '@/lib/types';
-import { cn } from '@/lib/utils';
-
-const THEMES: Array<{ value: Theme; label: string; icon: typeof Sun }> = [
-  { value: 'light', label: 'Light', icon: Sun },
-  { value: 'dark', label: 'Dark', icon: Moon },
-  { value: 'system', label: 'System', icon: Monitor },
-];
-
 export function SettingsScreen({
   status,
   busy,
@@ -61,248 +44,267 @@ export function SettingsScreen({
   onBackToSetup?: () => void;
 }) {
   const { checkForUpdates, isChecking, lastResult } = useUpdater();
+  const [params, setParams] = useSearchParams();
+  const categories = ['General', 'Connection', 'Appearance', 'Developer', 'About'];
+  const category = categories.includes(params.get('category') ?? '') ? params.get('category')! : 'General';
   const [tauriVersion, setTauriVersion] = useState<string | null>(null);
-
+  const [operation, setOperation] = useState<{
+    kind: 'forget' | 'save' | 'reset';
+    configuration?: OpenPrinterServerConfiguration;
+  } | null>(null);
   useEffect(() => {
-    if ('__TAURI_INTERNALS__' in window) {
-      getTauriVersion()
-        .then((v) => setTauriVersion(v))
+    if ('__TAURI_INTERNALS__' in window)
+      void getTauriVersion()
+        .then(setTauriVersion)
         .catch(() => undefined);
-    }
   }, []);
-
   return (
     <ScreenContainer>
       <ScreenHeader
         title="Settings"
-        description="Agent preferences and product configuration."
+        description="Preferences for this computer."
         action={
           fromSetup && onBackToSetup ? (
-            <Button variant="ghost" size="sm" onClick={onBackToSetup}>
-              <ArrowLeft className="size-3.5" aria-hidden />
-              Back to pairing
+            <Button size="sm" variant="ghost" onClick={onBackToSetup}>
+              <ArrowLeft />
+              Back to setup
             </Button>
           ) : undefined
         }
       />
-
-      <div className="flex flex-1 justify-center overflow-y-auto">
-        <div className="w-full max-w-2xl space-y-8 p-8">
-          {/* Appearance */}
-          <Section title="Appearance" description="Interface color scheme">
-            <div className="bg-card/50 px-5 py-4">
-              <p className="text-foreground mb-3 text-sm font-medium">Color scheme</p>
-              <div className="flex gap-3">
-                {THEMES.map(({ value, label, icon: Icon }) => (
-                  <button
-                    key={value}
-                    type="button"
-                    onClick={() => onThemeChange(value)}
-                    className={cn(
-                      'flex flex-1 flex-col items-center gap-2 rounded-xl border px-3 py-4 text-xs font-medium transition-all',
-                      theme === value
-                        ? 'border-primary bg-primary/5 text-primary'
-                        : 'border-border bg-secondary/50 text-muted-foreground hover:border-border/80 hover:bg-secondary hover:text-foreground',
-                    )}
-                    aria-pressed={theme === value}
-                  >
-                    <Icon className="size-5" strokeWidth={1.75} aria-hidden />
-                    {label}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </Section>
-
-          {/* OpenPrinter service */}
-          <Section title="OpenPrinter service" description="Discovered identity and paired credential">
-            {status.connectedService ? (
-              <div className="bg-card/30 flex items-start gap-4 px-5 py-4">
-                <div className="border-border bg-primary/10 text-primary flex size-9 shrink-0 items-center justify-center rounded-lg border">
-                  <Globe2 className="size-4" aria-hidden />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-foreground text-sm font-semibold">{status.connectedService.name}</p>
-                  <p className="text-muted-foreground mt-0.5 text-xs">
-                    Connected service · server {status.connectedService.serverVersion}
-                  </p>
-                  <p className="text-muted-foreground/60 mt-1 truncate font-mono text-xs">
-                    {status.connectedService.gatewayUrl}
-                  </p>
-                </div>
-              </div>
-            ) : (
-              <div className="bg-card/30 flex items-center gap-3 px-5 py-3">
-                <Globe2 className="text-muted-foreground size-4" aria-hidden />
-                <p className="text-muted-foreground text-xs">
-                  Service identity appears here after the gateway completes its handshake.
-                </p>
-              </div>
-            )}
-            <ServerConfigurationForm
-              value={status.serverConfiguration}
-              saving={busy === 'server-configuration'}
-              resetting={busy === 'reset-server-configuration'}
-              onSave={onSaveServerConfiguration}
-              onReset={onResetServerConfiguration}
-            />
-            <p className="border-border/50 text-muted-foreground/70 border-t px-5 py-3 text-xs leading-4">
-              Changing the server URL will unpair this computer and require pairing again.
-            </p>
-            <div className="border-border/50 border-t px-5 py-3">
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={busy === 'forget-server'}
-                onClick={() => void onForgetServer()}
-              >
-                <LockKeyhole className="size-3.5" aria-hidden />
-                {busy === 'forget-server' ? 'Forgetting…' : 'Forget server'}
-              </Button>
-            </div>
-          </Section>
-
-          {/* Startup */}
-          <Section title="Startup" description="Desktop startup and connectivity">
-            <SettingRow
-              icon={<Power className="size-4" aria-hidden />}
-              title="Start on login"
-              description={`Launch ${status.product.name} automatically after signing in to this computer.`}
-              control={
-                <Toggle
-                  checked={status.startOnLogin}
-                  label={`Start ${status.product.name} on login`}
-                  onChange={(enabled) => void onStartOnLogin(enabled)}
-                />
-              }
-            />
-            <SettingRow
-              icon={<RotateCcw className="size-4" aria-hidden />}
-              title="Reconnect gateway"
-              description="Close the active transport and establish a fresh connection."
-              control={
-                <Button variant="outline" size="sm" disabled={busy === 'reconnect'} onClick={() => void onReconnect()}>
-                  Reconnect
-                </Button>
-              }
-            />
-            <SettingRow
-              icon={<Download className="size-4" aria-hidden />}
-              title="Software updates"
-              description={lastResult ?? 'Check GitHub Releases for a signed stable OPPA update.'}
-              control={
-                <Button variant="outline" size="sm" disabled={isChecking} onClick={() => void checkForUpdates()}>
-                  {isChecking ? 'Checking…' : 'Check now'}
-                </Button>
-              }
-            />
-          </Section>
-
-          {/* Developer */}
-          <Section title="Developer" description="Tools for integration testing and diagnostics">
-            <SettingRow
-              icon={<Code2 className="size-4" aria-hidden />}
-              title="Developer Mode"
-              description="Reveals virtual printer controls and enables Copy ID in context menus."
-              control={
-                <Toggle checked={developerMode} label="Enable developer mode" onChange={onDeveloperModeChange} />
-              }
-            />
-          </Section>
-
-          {/* Product */}
-          <Section title="Product" description="Application identity and compiled capabilities">
-            <div className="bg-card/50 p-5">
-              <div className="flex items-start gap-4">
-                <div className="border-border bg-secondary flex size-10 shrink-0 items-center justify-center rounded-lg border">
-                  <LockKeyhole className="text-muted-foreground size-4" aria-hidden />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-foreground font-semibold">{status.product.name}</p>
-                  <p className="text-muted-foreground font-mono text-xs">{status.product.id}</p>
-                  <p className="text-foreground/70 mt-2 text-sm leading-5">{status.product.description}</p>
-                  <div className="mt-3 flex items-center gap-4">
-                    <ProductLink
-                      label="Documentation"
-                      onClick={() => void onOpenProductLink('documentation', status.product.documentationUrl)}
-                    />
-                    <ProductLink
-                      label="Support"
-                      onClick={() => void onOpenProductLink('support', status.product.supportUrl)}
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
-            <div className="bg-card/30 border-border/50 mb-8 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 border-t px-5 py-4">
-              <AboutRow label="App version" value={`v${status.version}`} mono />
-              {tauriVersion && <AboutRow label="Tauri" value={`v${tauriVersion}`} mono />}
-              <AboutRow label="Platform" value={status.platform} />
-              {import.meta.env.VITE_APP_IDENTIFIER && (
-                <AboutRow label="Identifier" value={import.meta.env.VITE_APP_IDENTIFIER as string} mono />
-              )}
-              {status.agentId && <AboutRow label="Agent ID" value={status.agentId} mono />}
-              <AboutRow label="Build" value={import.meta.env.DEV ? 'Development' : 'Release'} />
-            </div>
-          </Section>
+      <Tabs
+        className="min-h-0 flex-1 gap-0"
+        value={category}
+        onValueChange={(value) => {
+          const next = new URLSearchParams(params);
+          next.set('category', String(value));
+          void setParams(next, { replace: true });
+        }}
+      >
+        <div className="border-border shrink-0 overflow-x-auto border-b px-6 py-2">
+          <TabsList variant="line">
+            {categories.map((item) => (
+              <TabsTrigger key={item} value={item}>
+                {item}
+              </TabsTrigger>
+            ))}
+          </TabsList>
         </div>
-      </div>
+        <TabsContent value="General" className="min-h-0 overflow-y-auto">
+          <div className="preferences-content">
+            <PreferenceSection title="Background agent" description="Keep local printing available when you need it.">
+              <PreferenceRow
+                title="Start on login"
+                description={`Launch ${status.product.name} when you sign in to this computer.`}
+                control={
+                  <Toggle
+                    checked={status.startOnLogin}
+                    label="Start on login"
+                    onChange={(enabled) => void onStartOnLogin(enabled).catch(() => undefined)}
+                  />
+                }
+              />
+              <PreferenceRow
+                title="Window behavior"
+                description="Closing the window keeps the background agent running. Use Quit to stop the agent."
+              />
+              <PreferenceRow
+                title="Software updates"
+                description={lastResult ?? 'Check for a signed application update.'}
+                control={
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={isChecking}
+                    onClick={() => void checkForUpdates().catch(() => undefined)}
+                  >
+                    {isChecking ? 'Checking…' : 'Check for updates'}
+                  </Button>
+                }
+              />
+            </PreferenceSection>
+          </div>
+        </TabsContent>
+        <TabsContent value="Connection" className="min-h-0 overflow-y-auto">
+          <div className="preferences-content">
+            <PreferenceSection
+              title="OpenPrinter server"
+              description="Service identity and the connection for this computer."
+            >
+              {status.connectedService ? (
+                <dl className="flex flex-col gap-2 py-4">
+                  <KeyValue label="Service" value={status.connectedService.name} />
+                  <KeyValue label="Server ID" value={status.connectedService.serverId} copy />
+                  <KeyValue label="Gateway" value={status.connectedService.gatewayUrl} copy />
+                </dl>
+              ) : (
+                <p className="text-muted-foreground py-4 text-sm">
+                  Service identity appears after the gateway handshake.
+                </p>
+              )}
+              <ServerConfigurationForm
+                value={status.serverConfiguration}
+                saving={busy === 'server-configuration'}
+                resetting={busy === 'reset-server-configuration'}
+                onSave={(configuration) => {
+                  setOperation({ kind: 'save', configuration });
+                  return Promise.resolve();
+                }}
+                onReset={() => {
+                  setOperation({ kind: 'reset' });
+                  return Promise.resolve();
+                }}
+                compact
+              />
+              <PreferenceRow
+                title="Reconnect"
+                description="Establish a fresh gateway connection."
+                control={
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={busy !== null}
+                    onClick={() => void onReconnect().catch(() => undefined)}
+                  >
+                    Reconnect
+                  </Button>
+                }
+              />
+            </PreferenceSection>
+            <PreferenceSection title="Pairing credential" description="Stored securely by the operating system.">
+              <PreferenceRow
+                title="Forget this server"
+                description="Disconnect and remove the saved pairing credential. Pair again to restore access."
+                control={
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    disabled={busy !== null}
+                    onClick={() => setOperation({ kind: 'forget' })}
+                  >
+                    Forget server…
+                  </Button>
+                }
+              />
+            </PreferenceSection>
+          </div>
+        </TabsContent>
+        <TabsContent value="Appearance" className="min-h-0 overflow-y-auto">
+          <div className="preferences-content">
+            <PreferenceSection title="Appearance" description="Use a fixed theme or follow your operating system.">
+              <PreferenceRow
+                title="Color scheme"
+                description="Applies to every screen, dialog, and menu."
+                control={
+                  <select
+                    className="preference-select"
+                    aria-label="Color scheme"
+                    value={theme}
+                    onChange={(e) => onThemeChange(e.target.value as Theme)}
+                  >
+                    <option value="system">System</option>
+                    <option value="light">Light</option>
+                    <option value="dark">Dark</option>
+                  </select>
+                }
+              />
+            </PreferenceSection>
+          </div>
+        </TabsContent>
+        <TabsContent value="Developer" className="min-h-0 overflow-y-auto">
+          <div className="preferences-content">
+            <PreferenceSection title="Developer tools" description="Tools for local integration testing.">
+              <PreferenceRow
+                title="Developer Mode"
+                description="Reveal the virtual print workspace and captured output inspection."
+                control={
+                  <Toggle label="Enable Developer Mode" checked={developerMode} onChange={onDeveloperModeChange} />
+                }
+              />
+              {!status.virtualPrinterAvailable && (
+                <p className="text-muted-foreground py-4 text-xs">
+                  Virtual printing is unavailable in this product build.
+                </p>
+              )}
+            </PreferenceSection>
+          </div>
+        </TabsContent>
+        <TabsContent value="About" className="min-h-0 overflow-y-auto">
+          <div className="preferences-content">
+            <PreferenceSection title={status.product.name} description={status.product.description}>
+              <dl className="flex flex-col gap-3 py-4">
+                <KeyValue label="Application version" value={status.version} />
+                <KeyValue label="Product ID" value={status.product.id} copy />
+                <KeyValue label="Platform" value={status.platform} />
+                {tauriVersion && <KeyValue label="Tauri version" value={tauriVersion} />}
+                {status.agentId && <KeyValue label="Agent ID" value={status.agentId} copy />}
+              </dl>
+              <div className="flex gap-3 py-4">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() =>
+                    void onOpenProductLink('documentation', status.product.documentationUrl).catch(() => undefined)
+                  }
+                >
+                  Documentation
+                  <ExternalLink />
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => void onOpenProductLink('support', status.product.supportUrl).catch(() => undefined)}
+                >
+                  Support
+                  <ExternalLink />
+                </Button>
+              </div>
+            </PreferenceSection>
+          </div>
+        </TabsContent>
+      </Tabs>
+      <ConfirmAction
+        open={operation !== null}
+        onOpenChange={(open) => {
+          if (!open) setOperation(null);
+        }}
+        title={operation?.kind === 'forget' ? 'Forget server?' : 'Change server configuration?'}
+        description="This disconnects the current server and removes its pairing credential. You will need to verify and pair this computer again."
+        busy={busy !== null}
+        action={async () => {
+          if (operation?.kind === 'forget') await onForgetServer();
+          else if (operation?.kind === 'reset') await onResetServerConfiguration();
+          else if (operation?.configuration) await onSaveServerConfiguration(operation.configuration);
+        }}
+      />
     </ScreenContainer>
   );
 }
-
-function Section({ title, description, children }: { title: string; description?: string; children: ReactNode }) {
-  return (
-    <div>
-      <SectionHeader title={title} description={description} className="mb-3" />
-      <div className="border-border divide-border divide-y overflow-hidden rounded-xl border">{children}</div>
-    </div>
-  );
-}
-
-function SettingRow({
-  icon,
+function PreferenceSection({
   title,
   description,
-  control,
+  children,
 }: {
-  icon: ReactNode;
   title: string;
-  description: string | ReactNode;
-  control: ReactNode;
+  description: string;
+  children: ReactNode;
 }) {
   return (
-    <div className="bg-card/30 flex items-center gap-4 px-5 py-4">
-      <div className="border-border bg-secondary text-muted-foreground flex size-9 shrink-0 items-center justify-center rounded-lg border">
-        {icon}
+    <section className="mb-8">
+      <h2 className="text-sm font-semibold">{title}</h2>
+      <p className="text-muted-foreground mt-1 mb-3 text-xs leading-5">{description}</p>
+      {children}
+    </section>
+  );
+}
+function PreferenceRow({ title, description, control }: { title: string; description: string; control?: ReactNode }) {
+  return (
+    <div className="border-border flex items-center justify-between gap-6 border-b py-4">
+      <div className="min-w-0">
+        <p className="text-sm font-medium">{title}</p>
+        <p className="text-muted-foreground mt-1 max-w-lg text-xs leading-5">{description}</p>
       </div>
-      <div className="min-w-0 flex-1">
-        <p className="text-foreground text-sm font-medium">{title}</p>
-        <p className="text-muted-foreground mt-0.5 text-xs leading-5">{description}</p>
-      </div>
-      {control}
+      {control && <div className="shrink-0">{control}</div>}
     </div>
-  );
-}
-
-function AboutRow({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
-  return (
-    <>
-      <span className="text-muted-foreground text-xs">{label}</span>
-      <span className={`text-foreground/80 text-xs ${mono ? 'font-mono' : ''}`}>{value}</span>
-    </>
-  );
-}
-
-function ProductLink({ label, onClick }: { label: string; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="text-primary hover:text-primary/80 inline-flex items-center gap-1 text-sm transition-colors"
-    >
-      {label}
-      <ExternalLink className="size-3" aria-hidden />
-    </button>
   );
 }

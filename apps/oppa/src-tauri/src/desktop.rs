@@ -4,7 +4,7 @@ use std::sync::{
 };
 
 use tauri::{
-    App, AppHandle, Emitter, Manager,
+    App, AppHandle, Emitter, Listener, Manager,
     menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::TrayIconBuilder,
 };
@@ -55,23 +55,51 @@ pub fn setup_tray(app: &App) -> tauri::Result<()> {
         true,
         None::<&str>,
     )?;
+    let connection = MenuItem::with_id(
+        app,
+        "tray-connection",
+        "Starting agent…",
+        false,
+        None::<&str>,
+    )?;
+    let workload = MenuItem::with_id(
+        app,
+        "tray-workload",
+        "Loading printer status…",
+        false,
+        None::<&str>,
+    )?;
+    let jobs = MenuItem::with_id(app, "jobs", "Print jobs", true, None::<&str>)?;
+    let settings = MenuItem::with_id(app, "settings", "Settings", true, None::<&str>)?;
+    let hide = MenuItem::with_id(
+        app,
+        "hide-window",
+        "Hide window (keep agent running)",
+        true,
+        None::<&str>,
+    )?;
     let printers = MenuItem::with_id(app, PRINTERS_ID, "Printers", true, None::<&str>)?;
     let diagnostics = MenuItem::with_id(app, DIAGNOSTICS_ID, "Diagnostics", true, None::<&str>)?;
     let reconnect = MenuItem::with_id(app, RECONNECT_ID, "Reconnect", true, None::<&str>)?;
     let separator = PredefinedMenuItem::separator(app)?;
-    let quit = MenuItem::with_id(app, QUIT_ID, "Quit", true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, QUIT_ID, "Quit and stop agent", true, None::<&str>)?;
     let menu = Menu::with_items(
         app,
         &[
+            &connection,
+            &workload,
             &open,
+            &jobs,
+            &settings,
             &printers,
             &diagnostics,
             &reconnect,
             &separator,
+            &hide,
             &quit,
         ],
     )?;
-    let mut tray = TrayIconBuilder::with_id(tray_id)
+    let mut tray = TrayIconBuilder::with_id(tray_id.clone())
         .menu(&menu)
         .tooltip(product_name)
         // Both left and right click open the tray menu; the main window is
@@ -82,7 +110,97 @@ pub fn setup_tray(app: &App) -> tauri::Result<()> {
         tray = tray.icon(icon);
     }
     tray.build(app)?;
+    observe_tray_status(app, connection, workload, reconnect, tray_id);
     Ok(())
+}
+
+fn observe_tray_status(
+    app: &App,
+    connection: MenuItem<tauri::Wry>,
+    workload: MenuItem<tauri::Wry>,
+    reconnect: MenuItem<tauri::Wry>,
+    tray_id: String,
+) {
+    let handle = app.handle().clone();
+    let update = Arc::new(move || {
+        let app = handle.clone();
+        let connection = connection.clone();
+        let workload = workload.clone();
+        let reconnect = reconnect.clone();
+        let tray_id = tray_id.clone();
+        tauri::async_runtime::spawn(async move {
+            let service = Arc::clone(app.state::<Arc<DesktopService>>().inner());
+            let status = service.status(false, String::new()).await;
+            let (available, enabled) = service.catalog.availability_counts().await;
+            let connected =
+                status.connection_state == crate::models::OpenPrinterConnectionState::Connected;
+            let state = match status.connection_state {
+                crate::models::OpenPrinterConnectionState::Connected => "Connected",
+                crate::models::OpenPrinterConnectionState::Connecting
+                | crate::models::OpenPrinterConnectionState::Authenticating => "Connecting",
+                crate::models::OpenPrinterConnectionState::CredentialRevoked
+                | crate::models::OpenPrinterConnectionState::AuthenticationFailed => {
+                    "Pairing needs attention"
+                }
+                _ => "Not connected",
+            };
+            let identity = status.connected_service.map_or_else(
+                || service.product.product_name.clone(),
+                |server| server.name,
+            );
+            let summary = format!(
+                "{} pending · {available}/{enabled} printers available",
+                status.pending_jobs
+            );
+            let _ = connection.set_text(format!("{identity} · {state}"));
+            let _ = workload.set_text(&summary);
+            let _ = reconnect.set_enabled(status.agent_id.is_some());
+            if let Some(tray) = app.tray_by_id(&tray_id) {
+                let _ = tray.set_tooltip(Some(format!("{identity} · {state}\n{summary}")));
+                if let Some(icon) = app.default_window_icon() {
+                    let _ = tray.set_icon(Some(connection_icon(icon, connected)));
+                }
+            }
+        });
+    });
+    for event in [
+        crate::service::STATE_CHANGED_EVENT,
+        crate::service::JOBS_CHANGED_EVENT,
+        crate::service::PRINTERS_CHANGED_EVENT,
+    ] {
+        let update = Arc::clone(&update);
+        app.listen(event, move |_| update());
+    }
+    update();
+}
+
+fn connection_icon(
+    original: &tauri::image::Image<'_>,
+    connected: bool,
+) -> tauri::image::Image<'static> {
+    let (width, height) = (original.width(), original.height());
+    let mut pixels = original.rgba().to_vec();
+    let radius = (width.min(height) / 6).max(1);
+    let (cx, cy) = (
+        width.saturating_sub(radius + 1),
+        height.saturating_sub(radius + 1),
+    );
+    for y in 0..height {
+        for x in 0..width {
+            let dx = i64::from(x) - i64::from(cx);
+            let dy = i64::from(y) - i64::from(cy);
+            if dx * dx + dy * dy <= i64::from(radius) * i64::from(radius) {
+                let offset = ((y * width + x) * 4) as usize;
+                let color = if connected {
+                    [93, 175, 126, 255]
+                } else {
+                    [224, 164, 69, 255]
+                };
+                pixels[offset..offset + 4].copy_from_slice(&color);
+            }
+        }
+    }
+    tauri::image::Image::new_owned(pixels, width, height)
 }
 
 pub fn show_main_window(app: &AppHandle) {
@@ -128,7 +246,15 @@ pub fn handle_close_request(window: &tauri::Window, event: &tauri::WindowEvent) 
 
 fn handle_tray_menu(app: &AppHandle, event: &tauri::menu::MenuEvent) {
     match event.id().as_ref() {
-        OPEN_ID => show_main_window(app),
+        OPEN_ID => {
+            show_main_window(app);
+            let _ = app.emit(NAVIGATE_EVENT, "overview");
+        }
+        "hide-window" => hide_main_window(app),
+        "jobs" | "settings" => {
+            show_main_window(app);
+            let _ = app.emit(NAVIGATE_EVENT, event.id().as_ref());
+        }
         PRINTERS_ID => {
             show_main_window(app);
             let _ = app.emit(NAVIGATE_EVENT, "printers");
@@ -342,6 +468,16 @@ mod tests {
     use std::sync::atomic::Ordering;
 
     use super::QuitState;
+
+    #[test]
+    fn tray_connection_overlay_preserves_product_icon_geometry() {
+        let original = tauri::image::Image::new_owned(vec![0; 16 * 16 * 4], 16, 16);
+        let connected = super::connection_icon(&original, true);
+        let disconnected = super::connection_icon(&original, false);
+        assert_eq!((connected.width(), connected.height()), (16, 16));
+        assert_ne!(connected.rgba(), disconnected.rgba());
+        assert_eq!(&connected.rgba()[..4], &original.rgba()[..4]);
+    }
 
     #[test]
     fn quit_state_defaults_to_background_mode() {

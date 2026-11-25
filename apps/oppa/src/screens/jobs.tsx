@@ -1,19 +1,26 @@
-import { RefreshCw, Search, Trash2, X } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { MoreHorizontal, Trash2, X } from 'lucide-react';
+import { useState } from 'react';
 
 import { EmptyState, ScreenContainer, ScreenHeader, StateBadge } from '@/components/ui';
 import { Button } from '@/components/ui/button';
-import type { JobState, JobSummary } from '@/lib/types';
-import { cn, formatRelativeTime } from '@/lib/utils';
-
-const STATE_OPTIONS: Array<{ value: JobState | 'all'; label: string }> = [
-  { value: 'all', label: 'All' },
-  { value: 'queued', label: 'Queued' },
-  { value: 'received', label: 'Received' },
-  { value: 'submitted', label: 'Submitted' },
-  { value: 'failed', label: 'Failed' },
-  { value: 'cancelled', label: 'Cancelled' },
-];
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuGroup,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from '@/components/ui/context-menu';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { ConfirmAction, KeyValue, MasterDetail, SearchField, Toolbar } from '@/components/workspace';
+import type { JobSummary } from '@/lib/types';
+import { formatRelativeTime, titleCase } from '@/lib/utils';
+import { listNavigation, useSelection } from '@/lib/workspace';
 
 export function JobsScreen({
   jobs,
@@ -25,276 +32,206 @@ export function JobsScreen({
   onClear: () => Promise<void>;
 }) {
   const [query, setQuery] = useState('');
-  const [stateFilter, setStateFilter] = useState<JobState | 'all'>('all');
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-
-  const filtered = useMemo(
-    () =>
-      jobs.filter(
-        (job) =>
-          (stateFilter === 'all' || job.state === stateFilter) &&
-          (query === '' ||
-            [job.id, job.printerName, job.idempotencyKey].some((v) => v.toLowerCase().includes(query.toLowerCase()))),
-      ),
-    [jobs, query, stateFilter],
-  );
-
-  const selected = useMemo(() => jobs.find((j) => j.id === selectedId) ?? null, [jobs, selectedId]);
-
+  const [filter, setFilter] = useState('all');
+  const [order, setOrder] = useState('newest');
+  const [confirm, setConfirm] = useState(false);
+  const [selectedId, select] = useSelection('oppa-job-selection');
+  const selected = jobs.find((job) => job.id === selectedId);
+  const filtered = jobs
+    .filter(
+      (job) =>
+        (filter === 'all' || job.state === filter) &&
+        [job.printerName, job.id, job.idempotencyKey, job.error ?? ''].some((value) =>
+          value.toLowerCase().includes(query.toLowerCase()),
+        ),
+    )
+    .sort((a, b) =>
+      order === 'newest' ? b.updatedAt.localeCompare(a.updatedAt) : a.updatedAt.localeCompare(b.updatedAt),
+    );
   return (
     <ScreenContainer>
       <ScreenHeader
-        title="Jobs"
-        description="Durable local delivery records. Submitted means the job was handed to the printer transport."
+        title="Print jobs"
+        description="Durable local delivery history."
         action={
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={busy === 'clear-jobs' || jobs.length === 0}
-            onClick={() => void onClear()}
-          >
-            {busy === 'clear-jobs' ? (
-              <RefreshCw className="size-3.5 animate-spin" aria-hidden />
-            ) : (
-              <Trash2 className="size-3.5" aria-hidden />
-            )}
-            Clear records
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" aria-label="Job history actions" />}>
+              <MoreHorizontal />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent>
+              <DropdownMenuGroup>
+                <DropdownMenuItem
+                  variant="destructive"
+                  disabled={busy !== null || jobs.length === 0}
+                  onClick={() => setConfirm(true)}
+                >
+                  <Trash2 />
+                  Clear records…
+                </DropdownMenuItem>
+              </DropdownMenuGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
         }
       />
-
-      {/* Toolbar */}
-      <div className="border-border bg-card/30 flex shrink-0 items-center gap-3 border-b px-4 py-2.5">
-        <div className="relative max-w-xs flex-1">
-          <Search
-            className="text-muted-foreground/50 absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2"
-            aria-hidden
-          />
-          <input
-            className="border-border bg-secondary text-foreground placeholder:text-muted-foreground/50 focus:border-primary/50 focus:ring-primary/20 h-8 w-full rounded border pr-7 pl-8 text-sm transition outline-none focus:ring-1"
-            placeholder="Search by job ID, printer, or key…"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            aria-label="Search jobs"
-          />
-          {query && (
-            <button
-              type="button"
-              onClick={() => setQuery('')}
-              className="text-muted-foreground/50 hover:text-foreground absolute top-1/2 right-1.5 -translate-y-1/2 rounded p-0.5 transition-colors"
-              aria-label="Clear search"
-            >
-              <X className="size-3.5" aria-hidden />
-            </button>
-          )}
-        </div>
-
-        <div className="flex items-center gap-1">
-          {STATE_OPTIONS.map((opt) => (
-            <button
-              key={opt.value}
-              type="button"
-              onClick={() => setStateFilter(opt.value)}
-              className={cn(
-                'rounded px-2.5 py-1 text-xs font-medium transition-colors',
-                stateFilter === opt.value
-                  ? 'bg-secondary text-foreground'
-                  : 'text-muted-foreground hover:text-foreground',
-              )}
-            >
-              {opt.label}
-            </button>
+      <Toolbar>
+        <SearchField label="Search print jobs" value={query} onChange={setQuery} />
+        <select aria-label="Delivery state" value={filter} onChange={(e) => setFilter(e.target.value)}>
+          {['all', 'queued', 'received', 'submitted', 'failed', 'cancelled'].map((state) => (
+            <option key={state} value={state}>
+              {state === 'all' ? 'All states' : titleCase(state)}
+            </option>
           ))}
-        </div>
-
-        <span className="text-muted-foreground/60 ml-auto text-xs">
-          {filtered.length} {filtered.length === 1 ? 'job' : 'jobs'}
-        </span>
-      </div>
-
-      <div className="flex flex-1 overflow-hidden">
-        {/* Table */}
-        <div className={cn('flex flex-col overflow-hidden', selected ? 'flex-1' : 'w-full')}>
-          {filtered.length === 0 ? (
+        </select>
+        <select aria-label="Sort jobs" value={order} onChange={(e) => setOrder(e.target.value)}>
+          <option value="newest">Newest first</option>
+          <option value="oldest">Oldest first</option>
+        </select>
+        <span className="text-muted-foreground text-xs">{filtered.length} records</span>
+      </Toolbar>
+      <MasterDetail
+        storageKey="oppa-job-inspector-width"
+        master={
+          !filtered.length ? (
             <EmptyState
-              title="No matching jobs"
+              title="No matching print jobs"
               description={
-                query || stateFilter !== 'all'
-                  ? 'Try adjusting the search or state filter.'
-                  : 'Jobs will appear here once the agent receives work from the server.'
+                jobs.length
+                  ? 'Adjust the search or delivery-state filter.'
+                  : 'Jobs appear here when your server sends work to this agent.'
               }
             />
           ) : (
-            <div className="flex-1 overflow-y-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-background/95 sticky top-0 z-10 backdrop-blur-sm">
-                  <tr className="border-border border-b text-left">
-                    <th className="text-muted-foreground px-5 py-2.5 text-xs font-medium">State</th>
-                    <th className="text-muted-foreground px-3 py-2.5 text-xs font-medium">Job ID</th>
-                    <th className="text-muted-foreground hidden px-3 py-2.5 text-xs font-medium lg:table-cell">
-                      Printer
-                    </th>
-                    <th className="text-muted-foreground hidden px-3 py-2.5 text-xs font-medium xl:table-cell">
-                      Attempts
-                    </th>
-                    <th className="text-muted-foreground px-3 py-2.5 text-right text-xs font-medium">Updated</th>
+            <div className="min-h-0 flex-1 overflow-auto">
+              <table className="history-table" aria-label="Print job history">
+                <thead>
+                  <tr>
+                    <th>Printer</th>
+                    <th className="w-28">Delivery</th>
+                    <th className="w-24">Updated</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.map((job) => (
-                    <tr
-                      key={job.id}
-                      className={cn(
-                        'cursor-pointer border-b border-border/50 transition-colors',
-                        selectedId === job.id ? 'bg-primary/5' : 'hover:bg-accent/30',
-                      )}
-                      onClick={() => setSelectedId((prev) => (prev === job.id ? null : job.id))}
-                      tabIndex={0}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault();
-                          setSelectedId((prev) => (prev === job.id ? null : job.id));
+                  {filtered.map((job, index) => (
+                    <ContextMenu key={job.id}>
+                      <ContextMenuTrigger
+                        render={<tr />}
+                        className="history-row"
+                        data-row-id={job.id}
+                        tabIndex={
+                          job.id === selectedId || (!filtered.some((item) => item.id === selectedId) && index === 0)
+                            ? 0
+                            : -1
                         }
-                      }}
-                    >
-                      <td className="px-5 py-3">
-                        <StateBadge state={job.state} />
-                      </td>
-                      <td className="px-3 py-3">
-                        <p className="text-foreground/90 font-mono text-xs">{job.id}</p>
-                        <p className="text-muted-foreground/60 mt-0.5 max-w-[180px] truncate font-mono text-xs">
-                          {job.idempotencyKey}
-                        </p>
-                      </td>
-                      <td className="hidden px-3 py-3 lg:table-cell">
-                        <span className="text-foreground/80">{job.printerName}</span>
-                      </td>
-                      <td className="hidden px-3 py-3 xl:table-cell">
-                        <span className="text-muted-foreground">{job.attempts}</span>
-                      </td>
-                      <td className="text-muted-foreground px-3 py-3 text-right text-xs">
-                        {formatRelativeTime(job.updatedAt)}
-                      </td>
-                    </tr>
+                        aria-selected={job.id === selectedId}
+                        onClick={() => select(job.id)}
+                        onKeyDown={(event) => listNavigation(event, select)}
+                      >
+                        <td>
+                          <p className="truncate font-medium">{job.printerName}</p>
+                          {job.error ? (
+                            <p className="text-error mt-1 line-clamp-2 text-xs" title={job.error}>
+                              {job.error}
+                            </p>
+                          ) : job.attempts > 1 ? (
+                            <p className="text-muted-foreground mt-1 text-xs">{job.attempts} attempts</p>
+                          ) : null}
+                        </td>
+                        <td>
+                          <StateBadge state={job.state} />
+                        </td>
+                        <td>
+                          <time
+                            className="text-muted-foreground text-xs"
+                            dateTime={job.updatedAt}
+                            title={new Date(job.updatedAt).toLocaleString()}
+                          >
+                            {formatRelativeTime(job.updatedAt)}
+                          </time>
+                        </td>
+                      </ContextMenuTrigger>
+                      <ContextMenuContent>
+                        <ContextMenuGroup>
+                          <ContextMenuItem onClick={() => select(job.id)}>Inspect job</ContextMenuItem>
+                          <ContextMenuItem onClick={() => void navigator.clipboard.writeText(job.id)}>
+                            Copy job ID
+                          </ContextMenuItem>
+                        </ContextMenuGroup>
+                      </ContextMenuContent>
+                    </ContextMenu>
                   ))}
                 </tbody>
               </table>
             </div>
-          )}
-        </div>
-
-        {/* Detail pane */}
-        {selected && (
-          <div className="border-border w-72 shrink-0 overflow-y-auto border-l xl:w-80">
-            <JobDetail job={selected} onClose={() => setSelectedId(null)} />
-          </div>
-        )}
+          )
+        }
+        detail={selected ? <JobInspector job={selected} onClose={() => select(null)} /> : null}
+      />
+      <div className="border-border text-muted-foreground shrink-0 border-t px-6 py-2 text-xs">
+        Submitted means accepted by the local transport. Physical printing is not confirmed.
       </div>
+      <ConfirmAction
+        open={confirm}
+        onOpenChange={setConfirm}
+        title="Clear local job records?"
+        description="This removes retained history from this computer. It does not cancel jobs, clear the durable delivery queue, or change server delivery policies."
+        busy={busy !== null}
+        action={async () => {
+          await onClear();
+          select(null);
+        }}
+      />
     </ScreenContainer>
   );
 }
-
-function JobDetail({ job, onClose }: { job: JobSummary; onClose: () => void }) {
-  const lifecycle: Array<{ label: string; done: boolean; active: boolean }> = [
-    { label: 'received', done: true, active: job.state === 'received' },
-    {
-      label: 'persisted',
-      done: !['queued'].includes(job.state),
-      active: false,
-    },
-    {
-      label: 'submitted',
-      done: job.state === 'submitted',
-      active: job.state === 'submitted',
-    },
-  ];
-
+function JobInspector({ job, onClose }: { job: JobSummary; onClose: () => void }) {
   return (
     <>
-      <div className="border-border flex items-center justify-between border-b px-4 py-3">
-        <p className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">Job detail</p>
-        <button
-          type="button"
-          onClick={onClose}
-          className="text-muted-foreground hover:text-foreground rounded p-0.5 transition-colors"
-          aria-label="Close detail"
-        >
-          <X className="size-3.5" />
-        </button>
+      <div className="inspector-heading">
+        <h2 className="text-sm font-semibold">Job details</h2>
+        <Button variant="ghost" size="icon-sm" onClick={onClose} aria-label="Close job inspector">
+          <X />
+        </Button>
       </div>
-
-      <div className="space-y-4 p-4 text-sm">
-        {/* State */}
-        <div>
-          <StateBadge state={job.state} />
-          {job.error && (
-            <p className="mt-2 rounded border border-[var(--color-error)]/20 bg-[var(--color-error)]/5 px-2 py-1.5 font-mono text-xs leading-4 text-[var(--color-error)]/80">
-              {job.error}
-            </p>
-          )}
-        </div>
-
-        {/* Identifiers */}
-        <Section title="Identifiers">
-          <KV label="Job ID">{job.id}</KV>
-          <KV label="Idempotency key">{job.idempotencyKey}</KV>
-          <KV label="Printer">{job.printerName}</KV>
-          <KV label="Printer ID">{job.printerId}</KV>
-        </Section>
-
-        {/* Timing */}
-        <Section title="Timing">
-          <KV label="Received">{formatRelativeTime(job.receivedAt)}</KV>
-          <KV label="Last update">{formatRelativeTime(job.updatedAt)}</KV>
-          <KV label="Attempts">{String(job.attempts)}</KV>
-        </Section>
-
-        {/* Lifecycle */}
-        <Section title="Lifecycle">
-          <div className="space-y-2 pt-1">
-            {lifecycle.map((step) => (
-              <div key={step.label} className="flex items-center gap-2">
-                <span
-                  className={cn(
-                    'size-1.5 rounded-full',
-                    step.active
-                      ? 'bg-[var(--color-connected)]'
-                      : step.done
-                        ? 'bg-[var(--color-connected)]/40'
-                        : 'bg-muted',
-                  )}
-                />
-                <span
-                  className={cn(
-                    'font-mono text-xs uppercase tracking-wide',
-                    step.done ? 'text-foreground/70' : 'text-muted-foreground/40',
-                  )}
-                >
-                  {step.label}
-                </span>
-              </div>
-            ))}
-          </div>
-        </Section>
-      </div>
+      <section className="inspector-section">
+        <StateBadge state={job.state} />
+        <p className="mt-3 text-sm font-medium">{job.printerName}</p>
+        {job.error && (
+          <p data-selectable role="alert" className="text-error mt-3 text-sm leading-5 break-words">
+            {job.error}
+          </p>
+        )}
+      </section>
+      <section className="inspector-section">
+        <h3>Recorded lifecycle</h3>
+        <ol className="border-border ml-1 flex flex-col gap-5 border-l pl-4 text-sm">
+          <li>
+            <p>Received by local agent</p>
+            <time className="text-muted-foreground mt-1 block text-xs" dateTime={job.receivedAt}>
+              {new Date(job.receivedAt).toLocaleString()}
+            </time>
+          </li>
+          <li>
+            <p>Latest recorded state · {titleCase(job.state)}</p>
+            <time className="text-muted-foreground mt-1 block text-xs" dateTime={job.updatedAt}>
+              {new Date(job.updatedAt).toLocaleString()}
+            </time>
+          </li>
+        </ol>
+        <p className="text-muted-foreground mt-4 text-xs leading-5">
+          Intermediate stage timestamps are not recorded. Submission confirms transport acceptance, not physical output.
+        </p>
+        <dl className="mt-3">
+          <KeyValue label="Attempts" value={String(job.attempts)} />
+        </dl>
+      </section>
+      <section className="inspector-section">
+        <h3>Technical identifiers</h3>
+        <dl className="flex flex-col gap-3">
+          <KeyValue label="Job ID" value={job.id} copy />
+          <KeyValue label="Idempotency key" value={job.idempotencyKey} copy />
+          <KeyValue label="Printer ID" value={job.printerId} copy />
+        </dl>
+      </section>
     </>
-  );
-}
-
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <p className="text-muted-foreground/50 mb-2 text-xs font-semibold tracking-wider uppercase">{title}</p>
-      <div className="space-y-1.5">{children}</div>
-    </div>
-  );
-}
-
-function KV({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="flex flex-col gap-0.5">
-      <span className="text-muted-foreground/60 text-xs">{label}</span>
-      <span className="text-foreground/80 font-mono text-xs break-all">{children}</span>
-    </div>
   );
 }

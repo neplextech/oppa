@@ -1,10 +1,18 @@
-import { Clipboard, Database, Download, RefreshCw, ShieldCheck, Trash2 } from 'lucide-react';
+import { Copy, Download, MoreHorizontal, RefreshCw, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 
-import { ScreenContainer, ScreenHeader, SectionHeader, StatusDot } from '@/components/ui';
+import { EmptyState, ScreenContainer, ScreenHeader, StatusDot } from '@/components/ui';
 import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { ConfirmAction, KeyValue, SearchField, Toolbar } from '@/components/workspace';
 import type { Diagnostics } from '@/lib/types';
-import { cn, formatRelativeTime, titleCase } from '@/lib/utils';
+import { formatRelativeTime, titleCase } from '@/lib/utils';
 
 export function DiagnosticsScreen({
   diagnostics,
@@ -19,206 +27,179 @@ export function DiagnosticsScreen({
   onExport: () => Promise<string>;
   onClearLogs: () => Promise<void>;
 }) {
-  const [exportedPath, setExportedPath] = useState<string | null>(null);
-
-  async function copyDiagnostics() {
-    const text = [
-      `Agent: v${diagnostics.agentVersion}`,
-      `Product: ${diagnostics.productId}`,
-      `Platform: ${diagnostics.platform}`,
-      `Connection: ${diagnostics.connectionState}`,
-      `Database: ${diagnostics.databaseHealthy ? 'healthy' : 'unhealthy'}`,
-      `Migration: ${diagnostics.migrationVersion}`,
-      '',
-      ...diagnostics.logs.map((e) => `${e.timestamp} ${e.level.toUpperCase()} ${e.target}: ${e.message}`),
-    ].join('\n');
-    await navigator.clipboard.writeText(text);
-  }
-
+  const [query, setQuery] = useState('');
+  const [severity, setSeverity] = useState('all');
+  const [clear, setClear] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+  const logs = diagnostics.logs.filter(
+    (entry) =>
+      (severity === 'all' || entry.level === severity) &&
+      `${entry.target} ${entry.message}`.toLowerCase().includes(query.toLowerCase()),
+  );
+  const copy = (value: string) => {
+    void navigator.clipboard
+      .writeText(value)
+      .then(() => setNotice('Copied sanitized diagnostics.'))
+      .catch(() => setNotice('Unable to copy. Select the entry text and copy it manually.'));
+  };
   return (
     <ScreenContainer>
       <ScreenHeader
         title="Logs"
-        description="Sanitized operational diagnostics. Credentials and full print payloads are never included."
+        description="Sanitized local diagnostics. Credentials and print payloads are excluded."
         action={
-          <div className="flex items-center gap-2">
-            <Button variant="ghost" size="sm" disabled={busy === 'reload'} onClick={() => void onReload()}>
-              {busy === 'reload' ? (
-                <RefreshCw className="size-3.5 animate-spin" aria-hidden />
-              ) : (
-                <RefreshCw className="size-3.5" aria-hidden />
-              )}
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" disabled={busy !== null} onClick={() => void onReload()}>
+              <RefreshCw />
               Refresh
             </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={busy === 'clear-logs' || diagnostics.logs.length === 0}
-              onClick={() => void onClearLogs()}
-            >
-              {busy === 'clear-logs' ? (
-                <RefreshCw className="size-3.5 animate-spin" aria-hidden />
-              ) : (
-                <Trash2 className="size-3.5" aria-hidden />
-              )}
-              Clear logs
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => void copyDiagnostics()}>
-              <Clipboard className="size-3.5" aria-hidden />
+            <Button variant="outline" size="sm" onClick={() => copy(JSON.stringify(diagnostics, null, 2))}>
+              <Copy />
               Copy
             </Button>
             <Button
               size="sm"
-              disabled={busy === 'export-diagnostics'}
-              onClick={() => {
-                void onExport().then((exportData) => {
-                  setExportedPath(exportData);
-                });
-              }}
+              disabled={busy !== null}
+              onClick={() =>
+                void onExport()
+                  .then((path) => setNotice(`Diagnostics: ${path}`))
+                  .catch((cause: unknown) =>
+                    setNotice(cause instanceof Error ? cause.message : 'Unable to export diagnostics.'),
+                  )
+              }
             >
-              {busy === 'export-diagnostics' ? (
-                <RefreshCw className="size-3.5 animate-spin" aria-hidden />
-              ) : (
-                <Download className="size-3.5" aria-hidden />
-              )}
-              Export bundle
+              <Download />
+              Export
             </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" aria-label="Log actions" />}>
+                <MoreHorizontal />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent>
+                <DropdownMenuGroup>
+                  <DropdownMenuItem
+                    variant="destructive"
+                    disabled={busy !== null || !diagnostics.logs.length}
+                    onClick={() => setClear(true)}
+                  >
+                    <Trash2 />
+                    Clear logs…
+                  </DropdownMenuItem>
+                </DropdownMenuGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         }
       />
-
-      {exportedPath && (
-        <div className="flex shrink-0 items-center gap-2 border-b border-[var(--color-connected)]/20 bg-[var(--color-connected)]/5 px-5 py-2.5 text-xs">
-          <span className="text-[var(--color-connected)]">Bundle exported:</span>
-          <span className="text-muted-foreground font-mono select-all">{exportedPath}</span>
-        </div>
+      {notice && (
+        <p role="status" className="border-border text-muted-foreground shrink-0 border-b px-6 py-2 text-xs break-all">
+          {notice}
+        </p>
       )}
-
-      <div className="flex flex-1 overflow-hidden">
-        {/* Left: system info + providers */}
-        <div className="border-border bg-card/30 w-56 shrink-0 overflow-y-auto border-r xl:w-64">
-          {/* System info */}
-          <div className="border-border border-b px-4 py-3">
-            <SectionHeader title="System" className="mb-3" />
-            <div className="space-y-2 text-xs">
-              <InfoRow label="Agent" value={`v${diagnostics.agentVersion}`} />
-              <InfoRow label="Product" value={diagnostics.productId} />
-              <InfoRow label="Platform" value={diagnostics.platform} />
-              <InfoRow label="Connection" value={titleCase(diagnostics.connectionState)} />
-              <InfoRow label="Migration" value={String(diagnostics.migrationVersion)} />
-            </div>
-          </div>
-
-          {/* Database */}
-          <div className="border-border border-b px-4 py-3">
-            <div className="flex items-center gap-2 text-xs">
-              <Database className="text-muted-foreground size-3.5 shrink-0" aria-hidden />
-              <span className="text-muted-foreground font-medium">Database</span>
-              <span
-                className={cn(
-                  'ml-auto font-mono',
-                  diagnostics.databaseHealthy ? 'text-[var(--color-connected)]' : 'text-[var(--color-error)]',
-                )}
-              >
-                {diagnostics.databaseHealthy ? 'healthy' : 'unhealthy'}
-              </span>
-            </div>
-          </div>
-
-          {/* Discovery providers */}
-          <div className="px-4 py-3">
-            <SectionHeader title="Discovery" className="mb-3" />
-            <div className="space-y-2.5">
-              {diagnostics.discoveryProviders.map((provider) => (
-                <div key={provider.name} className="text-xs">
-                  <div className="flex items-center gap-1.5">
-                    <StatusDot tone={provider.available ? 'connected' : 'error'} />
-                    <span className="text-foreground/80 font-medium">{provider.name}</span>
-                  </div>
-                  <p className="text-muted-foreground/60 mt-0.5 ml-4 text-xs leading-4">{provider.detail}</p>
-                  <p className="text-muted-foreground/40 ml-4 text-xs">{formatRelativeTime(provider.lastScanAt)}</p>
+      <details className="border-border shrink-0 border-b">
+        <summary className="text-muted-foreground cursor-pointer px-6 py-3 text-xs">
+          System & discovery · {diagnostics.databaseHealthy ? 'Database healthy' : 'Database needs attention'} ·{' '}
+          {diagnostics.discoveryProviders.filter((p) => p.available).length} providers available
+        </summary>
+        <div className="grid max-h-64 gap-6 overflow-auto px-6 pb-4 md:grid-cols-2">
+          <section>
+            <h2 className="mb-3 text-sm font-semibold">System</h2>
+            <dl className="grid grid-cols-2 gap-3">
+              <KeyValue label="Version" value={diagnostics.agentVersion} />
+              <KeyValue label="Platform" value={diagnostics.platform} />
+              <KeyValue label="Product" value={diagnostics.productId} />
+              <KeyValue label="Connection" value={titleCase(diagnostics.connectionState)} />
+            </dl>
+          </section>
+          <section>
+            <h2 className="mb-3 text-sm font-semibold">Discovery providers</h2>
+            {diagnostics.discoveryProviders.map((provider) => (
+              <div key={provider.name} className="mb-3 flex items-start gap-2">
+                <span className="mt-1.5">
+                  <StatusDot tone={provider.available ? 'connected' : 'warning'} />
+                </span>
+                <div>
+                  <p className="text-sm">{provider.name}</p>
+                  <p className="text-muted-foreground mt-1 text-xs">
+                    {provider.detail} · {formatRelativeTime(provider.lastScanAt)}
+                  </p>
                 </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Redaction notice */}
-          <div className="border-border mt-auto border-t px-4 py-3">
-            <div className="text-muted-foreground/60 flex items-start gap-1.5 text-xs">
-              <ShieldCheck className="mt-0.5 size-3.5 shrink-0" aria-hidden />
-              <p>Private keys, pairing codes, signatures, and document contents are excluded.</p>
-            </div>
-          </div>
-        </div>
-
-        {/* Right: log stream */}
-        <div className="flex flex-1 flex-col overflow-hidden">
-          <div className="border-border flex shrink-0 items-center justify-between border-b px-5 py-2">
-            <SectionHeader title="Log stream" description="Bounded local operational history" />
-            <span className="text-muted-foreground/50 font-mono text-xs">{diagnostics.logs.length} entries</span>
-          </div>
-
-          <div className="flex-1 overflow-y-auto">
-            {diagnostics.logs.length === 0 ? (
-              <div className="text-muted-foreground/50 flex items-center justify-center py-12 text-sm">
-                No log entries
               </div>
-            ) : (
-              <table className="w-full font-mono text-xs">
-                <thead className="bg-background/95 sticky top-0 backdrop-blur-sm">
-                  <tr className="border-border border-b text-left">
-                    <th className="text-muted-foreground/60 px-5 py-2.5 font-medium whitespace-nowrap">Time</th>
-                    <th className="text-muted-foreground/60 px-3 py-2.5 font-medium">Level</th>
-                    <th className="text-muted-foreground/60 px-3 py-2.5 font-medium">Target</th>
-                    <th className="text-muted-foreground/60 px-3 py-2.5 font-medium">Message</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {diagnostics.logs.map((entry, index) => (
-                    <tr
-                      key={`${entry.timestamp}-${index}`}
-                      className="border-border/30 hover:bg-accent/20 border-b transition-colors"
-                    >
-                      <td className="text-muted-foreground/50 px-5 py-2 whitespace-nowrap">
-                        {new Intl.DateTimeFormat(undefined, {
-                          hour: '2-digit',
-                          minute: '2-digit',
-                          second: '2-digit',
-                        }).format(new Date(entry.timestamp))}
-                      </td>
-                      <td className="px-3 py-2">
-                        <span
-                          className={cn(
-                            'uppercase tracking-wide',
-                            entry.level === 'error'
-                              ? 'text-[var(--color-error)]'
-                              : entry.level === 'warn'
-                                ? 'text-[var(--color-warning)]'
-                                : 'text-muted-foreground/60',
-                          )}
-                        >
-                          {entry.level}
-                        </span>
-                      </td>
-                      <td className="text-muted-foreground/60 px-3 py-2 whitespace-nowrap">{entry.target}</td>
-                      <td className="text-foreground/70 px-3 py-2 leading-5">{entry.message}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </div>
+            ))}
+          </section>
         </div>
+      </details>
+      <Toolbar>
+        <SearchField label="Search logs" value={query} onChange={setQuery} />
+        <select aria-label="Log severity" value={severity} onChange={(e) => setSeverity(e.target.value)}>
+          <option value="all">All severities</option>
+          <option value="error">Error</option>
+          <option value="warn">Warning</option>
+          <option value="info">Info</option>
+        </select>
+        <span className="text-muted-foreground text-xs">{logs.length} entries</span>
+      </Toolbar>
+      <div className="min-h-0 flex-1 overflow-auto">
+        {!logs.length ? (
+          <EmptyState
+            title="No matching logs"
+            description={
+              diagnostics.logs.length
+                ? 'Adjust the search or severity filter.'
+                : 'Operational events will appear here as the agent runs.'
+            }
+          />
+        ) : (
+          logs.map((entry, index) => (
+            <details className="log-entry" key={`${entry.timestamp}-${entry.target}-${index}`}>
+              <summary>
+                <time
+                  className="text-muted-foreground text-xs tabular-nums"
+                  title={new Date(entry.timestamp).toLocaleString()}
+                >
+                  {new Date(entry.timestamp).toLocaleTimeString(undefined, {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit',
+                  })}
+                </time>
+                <span
+                  className={
+                    entry.level === 'error'
+                      ? 'text-error text-xs'
+                      : entry.level === 'warn'
+                        ? 'text-warning text-xs'
+                        : 'text-muted-foreground text-xs'
+                  }
+                >
+                  {entry.level === 'warn' ? 'Warning' : titleCase(entry.level)}
+                </span>
+                <span className="text-muted-foreground truncate font-mono text-xs">{entry.target}</span>
+                <span className="truncate font-mono text-xs">{entry.message}</span>
+              </summary>
+              <div className="bg-card px-6 py-4">
+                <p className="mb-3 font-mono text-xs leading-6 break-all whitespace-pre-wrap">{entry.message}</p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => copy(`${entry.timestamp} [${entry.level}] ${entry.target}: ${entry.message}`)}
+                >
+                  <Copy />
+                  Copy entry
+                </Button>
+              </div>
+            </details>
+          ))
+        )}
       </div>
+      <ConfirmAction
+        open={clear}
+        onOpenChange={setClear}
+        title="Clear local logs?"
+        description="The bounded local diagnostic history will be removed. Job delivery records are unaffected."
+        busy={busy !== null}
+        action={onClearLogs}
+      />
     </ScreenContainer>
-  );
-}
-
-function InfoRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-center justify-between gap-2">
-      <span className="text-muted-foreground/60 shrink-0">{label}</span>
-      <span className="text-foreground/80 truncate text-right font-mono">{value}</span>
-    </div>
   );
 }

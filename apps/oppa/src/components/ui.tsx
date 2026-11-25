@@ -6,7 +6,7 @@ import type { ButtonHTMLAttributes, HTMLAttributes, ReactNode } from 'react';
  * Thin wrappers and compositions over shadcn components.
  */
 import { Switch } from '@/components/ui/switch';
-import { cn } from '@/lib/utils';
+import { cn, titleCase } from '@/lib/utils';
 
 /* ── Status dot ─────────────────────────────────────────────────── */
 
@@ -53,17 +53,18 @@ export function StateBadge({
   return (
     <span
       className={cn(
-        'inline-flex items-center rounded px-1.5 py-0.5 font-mono text-xs font-medium tracking-wide uppercase',
-        state === 'submitted' && 'bg-[var(--color-connected)]/10 text-[var(--color-connected)]',
-        state === 'failed' && 'bg-[var(--color-error)]/10 text-[var(--color-error)]',
-        state === 'queued' && 'bg-[var(--color-pending)]/10 text-[var(--color-pending)]',
-        state === 'received' && 'bg-[var(--color-pending)]/10 text-[var(--color-pending)]',
-        state === 'cancelled' && 'bg-muted text-muted-foreground',
-        !['submitted', 'failed', 'queued', 'received', 'cancelled'].includes(state) && 'bg-muted text-muted-foreground',
+        'inline-flex items-center gap-1.5 text-xs font-medium whitespace-nowrap',
+        state === 'submitted' && 'text-[var(--color-connected)]',
+        state === 'failed' && 'text-[var(--color-error)]',
+        state === 'queued' && 'text-[var(--color-pending)]',
+        state === 'received' && 'text-[var(--color-pending)]',
+        state === 'cancelled' && 'text-muted-foreground',
+        !['submitted', 'failed', 'queued', 'received', 'cancelled'].includes(state) && 'text-muted-foreground',
         className,
       )}
     >
-      {state}
+      <span className="size-1.5 rounded-full bg-current" aria-hidden />
+      {titleCase(state)}
     </span>
   );
 }
@@ -108,7 +109,7 @@ export function SectionHeader({
   return (
     <div className={cn('flex items-start justify-between gap-4', className)}>
       <div>
-        <h2 className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">{title}</h2>
+        <h2 className="text-muted-foreground text-xs font-semibold">{title}</h2>
         {description && <p className="text-muted-foreground/70 mt-0.5 text-xs">{description}</p>}
       </div>
       {action}
@@ -119,7 +120,7 @@ export function SectionHeader({
 /* ── Screen wrapper ──────────────────────────────────────────────── */
 
 export function ScreenContainer({ children, className }: HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn('flex h-full flex-col', className)}>{children}</div>;
+  return <div className={cn('flex h-full min-h-0 min-w-0 flex-col', className)}>{children}</div>;
 }
 
 export function ScreenHeader({
@@ -132,9 +133,9 @@ export function ScreenHeader({
   action?: ReactNode;
 }) {
   return (
-    <div className="border-border flex shrink-0 items-start justify-between gap-4 border-b px-5 py-5">
+    <div className="border-border flex shrink-0 flex-wrap items-start justify-between gap-4 border-b px-6 py-5">
       <div>
-        <h1 className="text-foreground text-base font-semibold">{title}</h1>
+        <h1 className="text-foreground text-[22px] leading-7 font-semibold">{title}</h1>
         {description && <p className="text-muted-foreground mt-0.5 text-sm">{description}</p>}
       </div>
       {action && <div className="shrink-0">{action}</div>}
@@ -158,7 +159,10 @@ export function EmptyState({ title, description, action }: { title: string; desc
 
 export function ErrorBanner({ message, onRetry }: { message: string; onRetry?: () => void }) {
   return (
-    <div className="flex items-start gap-3 border-b border-[var(--color-error)]/20 bg-[var(--color-error)]/5 px-5 py-3 text-xs">
+    <div
+      role="alert"
+      className="flex items-start gap-3 border-b border-[var(--color-error)]/20 bg-[var(--color-error)]/5 px-5 py-3 text-xs"
+    >
       <span className="mt-0.5 size-[6px] shrink-0 rounded-full bg-[var(--color-error)]" />
       <span className="min-w-0 flex-1 text-[var(--color-error)]/90">{message}</span>
       {onRetry && (
@@ -194,12 +198,14 @@ export function Toggle({
   checked,
   onChange,
   label,
+  disabled,
 }: {
   checked: boolean;
   onChange: (checked: boolean) => void;
   label: string;
+  disabled?: boolean;
 }) {
-  return <Switch size="sm" checked={checked} onCheckedChange={onChange} aria-label={label} />;
+  return <Switch disabled={disabled} size="sm" checked={checked} onCheckedChange={onChange} aria-label={label} />;
 }
 
 /* ── Field label ─────────────────────────────────────────────────── */
@@ -213,4 +219,4 @@ export function FieldLabel({ htmlFor, children }: { htmlFor: string; children: R
 }
 
 export const inputClass =
-  'h-9 w-full rounded border border-border bg-secondary px-3 text-sm text-foreground outline-none placeholder:text-muted-foreground/50 focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition disabled:opacity-50';
+  'h-9 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground outline-none placeholder:text-muted-foreground/50 focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition disabled:opacity-50';

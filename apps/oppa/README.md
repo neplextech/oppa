@@ -57,3 +57,37 @@ the updater public-key placeholder in `src-tauri/tauri.conf.json` before publish
 The initial application provides setup, overview, printer management, virtual output, job history,
 diagnostics, settings, tray behavior, and start-on-login integration. Physical behavior still
 depends on the selected platform and installed printer backend.
+
+## Onboarding and design foundation
+
+Setup uses three exclusive stages: server discovery, explicit identity verification and pairing,
+then printer authorization. Server URLs start from the embedded product configuration. Recent
+servers and validated deep links use the same flow; changing an existing pairing requires a
+confirmation before its credential is removed by the existing agent operation.
+
+Only the stage, server address, and computer name persist as view preferences. Pairing codes remain
+in memory. Resuming pairing re-discovers the service identity. Newly paired computers start with
+printer access disabled until the user selects printers. Step 3 uses the existing typed printer
+configuration operation; printer delivery and protocol semantics are unchanged.
+
+The shared foundation defines light/dark surfaces, 13 px body text, 12 px secondary text, 36 px
+inputs, 6 px control radii, and 10 px dialogs. The onboarding title bar uses a minimal mode of the
+existing native-aware chrome. The remaining screens use the same foundation; see the desktop review below.
+
+See [the phase 1 and 2 design review](design-review/README.md) for screenshots, reference interfaces,
+validation evidence, and the development-only visual fixture.
+
+## Operational desktop workspace
+
+The shell, overview, device registry, delivery history, virtual capture workspace, preferences, logs,
+and tray use one compact visual language. See [the phases 3–9 desktop review](design-review/desktop/README.md)
+for rendered screenshots, interaction checks, narrow native changes, and verification limits.
+
+Inspector dividers support pointer dragging and arrow keys. Sidebar collapse state, selections, and
+inspector widths persist as local UI preferences. At narrow widths an inspector temporarily replaces
+its list. Contextual commands use Cmd+K on macOS and Ctrl+K elsewhere.
+
+Virtual output remains developer-only and product-capability gated. Existing raster captures expose
+bounded multipage previews, fit/zoom/pan, local export, and rendering information. Original binary
+payloads remain private; diagnostic export strips all captured history. Native webview download
+behavior and physical printing require separate platform acceptance testing.
