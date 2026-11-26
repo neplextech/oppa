@@ -2,6 +2,32 @@
 
 All notable changes to OPPA and OpenPrinter are documented here.
 
+## oppa-v0.4.0 — 2026-11-26
+
+### Features
+
+- Android and iOS support in the existing OPPA application, sharing
+  pairing, authentication, durable jobs, rendering, and network
+  printing with the desktop agent.
+- Android foreground service, Keystore-backed credentials, network
+  discovery, and signed APK downloads with user-approved updates.
+- iOS Keychain credentials, Bonjour discovery, keep-awake controls,
+  and reconnect and recovery on resume. Continuous unattended
+  background printing is not supported on iOS.
+- Responsive mobile navigation, branded launch screens, diagnostics
+  sharing, and mobile pairing deep links.
+- Android APK distribution alongside desktop installers, with
+  cross-platform CI and unsigned iOS simulator build validation.
+
+### Bug Fixes
+
+- Keep generated documentation imports out of version control so
+  installation does not invalidate protocol artifact checks.
+- Run the installed Tauri CLI directly from Xcode build phases to
+  avoid package-manager reinstalls in the build environment.
+- Preserve iOS permission-request lifetime and support Xcode 27's
+  Swift toolchain when building the native bridge.
+
 ## oppa-v0.3.1 — 2026-11-26
 
 ### Features
