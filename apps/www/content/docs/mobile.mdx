@@ -1,0 +1,170 @@
+---
+title: Android and iOS
+description:
+  How OPPA runs on phones and tablets, what each platform allows in
+  the background, and how mobile builds are produced and distributed.
+---
+
+OPPA runs on Android and iOS from the same application as the desktop
+agent. The Rust agent, the OpenPrinter protocol, pairing, durable job
+storage, deduplication, ESC/POS rendering, and PDF rasterization are
+shared. Only platform services differ.
+
+## What works on mobile
+
+| Capability                                                     | Android                                    | iOS                                   |
+| -------------------------------------------------------------- | ------------------------------------------ | ------------------------------------- |
+| Pairing and deep links (`oppa://pair`, cold and warm launch)   | Yes                                        | Yes                                   |
+| Raw TCP (ESC/POS) network printers by IP address and port      | Yes                                        | Yes                                   |
+| Network printer discovery (DNS-SD)                             | `NsdManager`                               | `NWBrowser` (Bonjour)                 |
+| ESC/POS receipt rendering, virtual printers, previews, history | Yes                                        | Yes                                   |
+| PDF printing                                                   | Page-raster (virtual office) printers      | Page-raster (virtual office) printers |
+| Test prints, diagnostics, printer status                       | Yes (share sheet for diagnostics)          | Yes (share sheet for diagnostics)     |
+| Background operation                                           | Foreground service                         | Only while the app is active          |
+| Updates                                                        | Signed APK download, user-approved install | App Store (not yet published)         |
+| Operating-system print queues (CUPS, Windows spooler)          | No                                         | No                                    |
+| USB and Bluetooth printers                                     | Not yet                                    | Not yet                               |
+
+The app reports these capabilities at runtime. Controls for a
+capability the platform lacks are not shown, and a product
+configuration can disable a capability but never enable one the
+platform lacks.
+
+PDF documents are not converted to ESC/POS raster commands for raw
+thermal printers on any platform yet. Jobs that require that route
+fail with a structured error.
+
+## Credentials
+
+The paired Ed25519 private key never leaves secure storage:
+
+- **Android**: encrypted with a non-exportable AES-256-GCM key held by
+  the Android Keystore. Only ciphertext is stored, in app-private
+  preferences excluded from cloud backup and device transfer.
+- **iOS**: a Keychain item with `AfterFirstUnlockThisDeviceOnly`
+  accessibility that is never synchronized to iCloud Keychain.
+
+Updating the app keeps pairing, printers, and history. Uninstalling it
+removes them; a backup restored to another device requires pairing
+again.
+
+## Android background operation
+
+OPPA keeps its OpenPrinter connection while you use other apps or the
+screen is locked by running a `connectedDevice` foreground service. A
+persistent notification shows the server, the connection state,
+pending jobs, and printer availability, and offers **Stop agent**.
+
+- The agent belongs to the process, not to a window. Android may
+  destroy and recreate the screen; the same agent continues without a
+  second connection or duplicate job processing.
+- Network changes trigger a reconnect. Pending work resumes after each
+  authenticated handshake.
+- If Android ends the process, the notification asks you to reopen
+  OPPA. The agent reconnects and recovers pending jobs on launch.
+- Android 13 and newer ask for notification permission after pairing.
+  Without it the service still runs, but its notification and Stop
+  action are hidden.
+- **Settings → General** shows battery-optimization status and, for
+  manufacturers with aggressive battery managers (Xiaomi,
+  Huawei/Honor, Samsung, OnePlus/OPPO/realme, vivo, ASUS),
+  device-specific steps.
+
+Turning off **Keep running in background** stops the service; OPPA
+then receives jobs only while it is open.
+
+## iOS lifecycle
+
+iOS suspends apps shortly after they leave the screen and does not
+allow continuous unattended background printing. OPPA does not use
+audio, location, VoIP, or other unrelated background modes to stay
+alive.
+
+- Keep OPPA open on screen to receive jobs. **Keep screen awake** in
+  Settings prevents auto-lock while the agent is paired.
+- When OPPA leaves the screen with jobs in flight, it requests the
+  limited background time iOS grants to finish them.
+- When OPPA becomes active again it reconnects and the server
+  redelivers pending work; duplicates are suppressed by idempotency
+  keys.
+- The first connection to a local printer triggers the **Local
+  Network** permission prompt. If it is denied, Settings explains how
+  to allow it.
+
+## Building
+
+Prerequisites: the Rust toolchain with mobile targets, Node.js and
+pnpm, the Android SDK and NDK with JDK 17 for Android, and Xcode with
+an installed iOS simulator runtime for iOS (iOS 15 or newer).
+
+```bash
+rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
+rustup target add aarch64-apple-ios aarch64-apple-ios-sim
+
+# Android (project committed under apps/oppa/src-tauri/gen/android)
+export NDK_HOME="$ANDROID_HOME/ndk/<version>"
+pnpm oppa:android:dev                      # emulator or device
+pnpm oppa:android:build --debug --apk      # debug APK
+
+# iOS (project generated locally and in CI)
+pnpm oppa:ios:init
+pnpm oppa:ios:brand                        # icons and launch screen
+pnpm oppa:ios:dev                          # simulator or device
+```
+
+Mobile builds always use the default product's application identifier,
+because the generated Android Kotlin package and the Rust JNI symbols
+derive from it. Debug builds are told apart by a `-dev` version name
+and by the debug signing key, which Android never lets replace a
+release-signed install.
+
+If Xcode reports that the iOS platform is not installed, install the
+simulator runtime in **Xcode → Settings → Components**, or run
+`xcodebuild -downloadPlatform iOS`. Accept Xcode's license and finish
+its first-launch setup before building.
+
+The `oppa:ios:*` scripts select SwiftPM's native build backend for the
+`swift-rs` bridge. This preserves iOS cross-compilation with Xcode 27,
+whose default Swift Build backend otherwise selects a macOS host
+target.
+
+For a physical iOS device, set your development team with
+`APPLE_DEVELOPMENT_TEAM` or in Xcode. Simulator builds need no
+signing.
+
+## Android release signing
+
+Release APKs are signed in CI from repository secrets; signing
+material is never committed. See
+[Release Process](/docs/release-process) for the secrets and the
+published `latest-android.json` update manifest.
+
+Local release builds read
+`apps/oppa/src-tauri/gen/android/app/keystore.properties`
+(git-ignored) or the file named by `OPPA_ANDROID_SIGNING_PROPERTIES`:
+
+```properties
+storeFile=/absolute/path/to/release.jks
+storePassword=…
+keyAlias=…
+keyPassword=…
+```
+
+Keep the same keystore for every release. Android refuses to update an
+installed app with an APK signed by a different key, and OPPA's update
+flow checks the certificate before opening the installer.
+
+## Manual verification
+
+These checks require physical hardware or store accounts and are not
+covered by CI:
+
+- a physical ESC/POS printer on Wi-Fi receives jobs from Android and
+  iOS;
+- Android keeps printing with the screen locked for several hours on
+  the target devices, including vendor battery managers;
+- DNS-SD discovery finds printers on a real network (emulators use
+  NAT);
+- an APK update installs over the previous release and keeps pairing;
+- iOS local network permission prompt and denial guidance on a device;
+- iOS reconnect after suspension on a device.

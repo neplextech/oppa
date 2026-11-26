@@ -1,3 +1,5 @@
+import type { PlatformCapabilities } from '@/lib/platform';
+
 export type JobState = 'queued' | 'received' | 'submitted' | 'failed' | 'cancelled';
 
 export interface ProductSummary {
@@ -55,6 +57,52 @@ export interface AgentStatus {
   serverConfiguration: OpenPrinterServerConfiguration;
   connectedService: ConnectedServiceSummary | null;
   connectionState: OpenPrinterConnectionState;
+  /** Capabilities of the host platform; only these features may be shown. */
+  capabilities: PlatformCapabilities;
+}
+
+/** Android battery-manager guidance for one manufacturer. */
+export interface BatteryGuidance {
+  vendor: string;
+  steps: string[];
+  referenceUrl: string;
+}
+
+export interface MobileSettings {
+  backgroundAgent: boolean;
+  keepAwake: boolean;
+}
+
+/** Mobile lifecycle state, permissions, and platform limitations. */
+export interface MobileLifecycleStatus {
+  platform: 'android' | 'ios';
+  backgroundExecution: 'foreground_service' | 'foreground_only';
+  settings: MobileSettings;
+  backgroundServiceRunning: boolean;
+  notificationsGranted: boolean | null;
+  ignoringBatteryOptimizations: boolean | null;
+  localNetworkAccess: 'granted' | 'denied' | 'undetermined' | null;
+  batteryGuidance: BatteryGuidance | null;
+  limitations: string[];
+}
+
+/** A printer service found on the local network. */
+export interface DiscoveredNetworkPrinter {
+  name: string;
+  host: string;
+  port: number;
+  serviceType: string;
+  assumedPort: boolean;
+  alreadyAdded: boolean;
+}
+
+/** A direct-download Android update offer. */
+export interface MobileUpdate {
+  currentVersion: string;
+  version: string;
+  notes: string | null;
+  publishedAt: string | null;
+  sizeBytes: number;
 }
 
 export type PrinterConnectionType = 'system_queue' | 'network' | 'virtual' | 'usb';

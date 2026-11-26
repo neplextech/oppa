@@ -1,13 +1,18 @@
 //! Portable interfaces for operating-system capabilities used by OPPA.
 //!
 //! Secure credentials and application data paths have concrete cross-platform
-//! implementations. Other host integrations have explicit interfaces and
+//! implementations: the `keyring` crate on desktop, [`AppleKeychainCredentialStore`]
+//! on iOS, and a host-supplied Android Keystore bridge implementing
+//! [`CredentialStore`] on Android, because the Keystore is only reachable
+//! through the Android runtime. Other host integrations have explicit interfaces and
 //! return [`PlatformError::Unsupported`] until a platform host supplies a real
 //! implementation; unsupported behavior is never silently accepted.
 
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+#[cfg(any(target_os = "ios", target_os = "macos"))]
+mod apple_keychain;
 mod credentials;
 mod identity;
 mod notifications;
@@ -16,9 +21,11 @@ mod startup;
 
 use thiserror::Error;
 
-pub use credentials::{
-    CredentialStore, KeyringCredentialStore, MemoryCredentialStore, SecretValue,
-};
+#[cfg(any(target_os = "ios", target_os = "macos"))]
+pub use apple_keychain::AppleKeychainCredentialStore;
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+pub use credentials::KeyringCredentialStore;
+pub use credentials::{CredentialStore, MemoryCredentialStore, SecretValue};
 pub use identity::{PlatformInfo, platform_info};
 pub use notifications::{
     Notification, NotificationLevel, NotificationService, UnsupportedNotificationService,
@@ -66,20 +73,32 @@ pub trait BrowserOpener: Send + Sync {
     fn open(&self, url: &url::Url) -> PlatformResult<()>;
 }
 
-/// Default product-link integration based on the operating-system URL handler.
+/// Rejects URLs that a product-link opener must never hand to a browser.
+///
+/// Only HTTP(S) URLs without embedded credentials are accepted. Mobile hosts
+/// call this before forwarding a URL to their native URL handler.
+pub fn validate_browser_url(url: &url::Url) -> PlatformResult<()> {
+    if !matches!(url.scheme(), "http" | "https")
+        || !url.username().is_empty()
+        || url.password().is_some()
+    {
+        return Err(PlatformError::InvalidInput(
+            "browser URL must be HTTP(S) and must not embed credentials".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
+/// Default desktop product-link integration based on the operating-system
+/// URL handler. Mobile hosts open URLs through their native runtime instead.
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 #[derive(Debug, Clone, Copy, Default)]
 pub struct SystemBrowser;
 
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 impl BrowserOpener for SystemBrowser {
     fn open(&self, url: &url::Url) -> PlatformResult<()> {
-        if !matches!(url.scheme(), "http" | "https")
-            || !url.username().is_empty()
-            || url.password().is_some()
-        {
-            return Err(PlatformError::InvalidInput(
-                "browser URL must be HTTP(S) and must not embed credentials".to_owned(),
-            ));
-        }
+        validate_browser_url(url)?;
         open::that_detached(url.as_str()).map_err(|error| PlatformError::Browser(error.to_string()))
     }
 }

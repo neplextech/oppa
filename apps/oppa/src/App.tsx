@@ -290,6 +290,7 @@ export default function App() {
     case 'printers':
       content = (
         <PrintersScreen
+          capabilities={status.capabilities}
           jobs={jobs}
           printers={printers}
           busy={busy}
@@ -329,6 +330,7 @@ export default function App() {
     case 'diagnostics':
       content = (
         <DiagnosticsScreen
+          canExportFile={status.capabilities.diagnosticsFileExport}
           diagnostics={diagnostics}
           busy={busy}
           onReload={actions.reload}

@@ -165,6 +165,7 @@ impl PrinterCatalog {
     }
 
     /// Lightweight native-tray counts; does not clone documents or render virtual previews.
+    #[cfg(not(target_os = "ios"))]
     pub(crate) async fn availability_counts(&self) -> (usize, usize) {
         let state = self.state.read().await;
         let enabled = state
@@ -178,6 +179,21 @@ impl PrinterCatalog {
                 .count(),
             enabled.count(),
         )
+    }
+
+    /// Host and port of every configured raw TCP network printer.
+    #[cfg_attr(desktop, allow(dead_code))]
+    pub(crate) async fn network_endpoints(&self) -> Vec<(String, u16)> {
+        self.state
+            .read()
+            .await
+            .printers
+            .iter()
+            .filter_map(|printer| match &printer.reference.connection {
+                PrinterConnection::Network { host, port } => Some((host.clone(), *port)),
+                _ => None,
+            })
+            .collect()
     }
 
     pub async fn list(&self) -> Result<Vec<PrinterSummary>, CommandError> {

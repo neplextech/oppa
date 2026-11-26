@@ -21,6 +21,8 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { ConfirmAction, KeyValue, MasterDetail, SearchField, Toolbar } from '@/components/workspace';
+import { copyText } from '@/lib/clipboard';
+import type { PlatformCapabilities } from '@/lib/platform';
 import type {
   JobSummary,
   ManualPrinterInput,
@@ -32,6 +34,7 @@ import { formatRelativeTime, titleCase } from '@/lib/utils';
 import { listNavigation, useSelection } from '@/lib/workspace';
 
 interface PrinterScreenProps {
+  capabilities: PlatformCapabilities;
   printers: PrinterSummary[];
   jobs: JobSummary[];
   busy: string | null;
@@ -184,12 +187,21 @@ export function PrintersScreen(props: PrinterScreenProps) {
               description={
                 printers.length
                   ? 'Try a different search or filter.'
-                  : 'Refresh discovery for installed queues or add an ESC/POS network printer.'
+                  : props.capabilities.systemPrintQueues
+                    ? 'Refresh discovery for installed queues or add an ESC/POS network printer.'
+                    : 'Add an ESC/POS network printer by IP address, or scan this network for printers.'
               }
               action={
-                <Button size="sm" variant="outline" onClick={() => void onRefresh().catch(() => undefined)}>
-                  Refresh discovery
-                </Button>
+                props.capabilities.systemPrintQueues || printers.length ? (
+                  <Button size="sm" variant="outline" onClick={() => void onRefresh().catch(() => undefined)}>
+                    Refresh discovery
+                  </Button>
+                ) : (
+                  <Button size="sm" onClick={() => setShowAdd(true)}>
+                    <Plus />
+                    Add printer
+                  </Button>
+                )
               }
             />
           )
@@ -206,7 +218,14 @@ export function PrintersScreen(props: PrinterScreenProps) {
           ) : null
         }
       />
-      <AddPrinterDialog open={showAdd} onOpenChange={setShowAdd} onAdd={onAddManual} busy={busy !== null} />
+      <AddPrinterDialog
+        open={showAdd}
+        onOpenChange={setShowAdd}
+        onAdd={onAddManual}
+        busy={busy !== null}
+        networkDiscovery={props.capabilities.networkServiceDiscovery}
+        systemQueues={props.capabilities.systemPrintQueues}
+      />
       <ConfirmAction
         open={removeId !== null}
         onOpenChange={(open) => {
@@ -250,9 +269,7 @@ function PrinterInspector({
             </DropdownMenuTrigger>
             <DropdownMenuContent>
               <DropdownMenuGroup>
-                <DropdownMenuItem onClick={() => void navigator.clipboard.writeText(printer.id)}>
-                  Copy printer ID
-                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => void copyText(printer.id)}>Copy printer ID</DropdownMenuItem>
                 {printer.connectionType === 'network' && (
                   <DropdownMenuItem variant="destructive" onClick={onRequestRemove}>
                     Remove printer…

@@ -1,6 +1,7 @@
 import { ArrowRight, CheckCircle2, CircleAlert, LoaderCircle, MoreHorizontal, Printer, RefreshCw } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
+import { MobileLifecycleNotice } from '@/components/mobile-lifecycle';
 import { EmptyState, ScreenContainer, ScreenHeader, StateBadge, StatusDot } from '@/components/ui';
 import { Button } from '@/components/ui/button';
 import {
@@ -53,13 +54,13 @@ export function OverviewScreen({
             ? 'The agent needs attention'
             : 'Ready for print jobs';
   const description = needsPairing
-    ? 'Verify your server and pair this computer again.'
+    ? 'Verify your server and pair this device again.'
     : !connected
       ? 'The local agent is running. Incoming jobs resume when the connection is restored.'
       : !enabled.length
         ? 'Enable a local printer to allow your server to send it print jobs.'
         : unavailable
-          ? `${unavailable} enabled printer${unavailable === 1 ? ' is' : 's are'} unavailable. Check the connection or system queue.`
+          ? `${unavailable} enabled printer${unavailable === 1 ? ' is' : 's are'} unavailable. Check the connection${status.capabilities.systemPrintQueues ? ' or system queue' : ''}.`
           : 'All enabled printers are available.';
   const recent = [...jobs].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, 6);
   return (
@@ -84,16 +85,24 @@ export function OverviewScreen({
           </DropdownMenu>
         }
       />
-      <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6">
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6 sm:py-6">
+        {status.capabilities.mobile && (
+          <div className="mb-5">
+            <MobileLifecycleNotice onOpenSettings={() => void navigate('/settings?category=General')} />
+          </div>
+        )}
         <section className="flex flex-wrap items-start justify-between gap-4">
           <div className="flex min-w-0 items-start gap-3">
-            <span
-              className={
-                healthy
-                  ? 'bg-connected/10 flex size-10 shrink-0 items-center justify-center rounded-full'
-                  : 'bg-warning/10 flex size-10 shrink-0 items-center justify-center rounded-full'
-              }
-            >
+            <span className="relative flex size-10 shrink-0 items-center justify-center rounded-full">
+              {/* An opacity layer tints the badge without color-mix(), which older Android WebViews lack. */}
+              <span
+                aria-hidden
+                className={
+                  healthy
+                    ? 'bg-connected absolute inset-0 rounded-full opacity-10'
+                    : 'bg-warning absolute inset-0 rounded-full opacity-10'
+                }
+              />
               <Icon
                 className={
                   healthy

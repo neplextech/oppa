@@ -11,6 +11,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { copyText } from '@/lib/clipboard';
 
 /** Persistent inspector with pointer and keyboard resizing; narrow workspaces show the inspector alone. */
 export function MasterDetail({
@@ -130,8 +131,7 @@ export function KeyValue({ label, value, copy = false }: { label: string; value:
           aria-label={`Copy ${label}`}
           title={error ? 'Copy failed; select the value to copy' : copied ? 'Copied' : `Copy ${label}`}
           onClick={() => {
-            void navigator.clipboard
-              .writeText(value)
+            void copyText(value)
               .then(() => {
                 setCopied(true);
                 setError(false);

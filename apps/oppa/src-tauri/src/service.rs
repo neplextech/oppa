@@ -11,10 +11,7 @@ use chrono::Utc;
 use oppa_agent::{Agent, AgentBuilder, AgentHandle, AgentSnapshot, AgentState, ProcessOutcome};
 use oppa_auth::{AgentKeyManager, PairingClient};
 use oppa_core::{PrintJobId, Timestamp};
-use oppa_platform::{
-    AppPaths, BrowserOpener, CredentialStore, KeyringCredentialStore, SystemBrowser, platform_info,
-    resolve_app_paths,
-};
+use oppa_platform::{AppPaths, CredentialStore, platform_info};
 use oppa_product::{ProductConfig, embedded_product};
 use oppa_protocol::{
     AgentMessageKind, JobDocument, MAX_PDF_DOCUMENT_BYTES, PrintDocument, PrintJob, PrintSection,
@@ -36,12 +33,14 @@ use crate::{
     error::{CommandError, sanitize},
     job_ledger::JobLedger,
     models::{
-        AgentStatus, ConnectedServiceSummary, DesktopJobState, DiagnosticExport, Diagnostics,
-        DiscoveredServiceSummary, FeatureAvailability, JobSummary, ManualPrinterInput,
-        OpenPrinterConnectionState, PrinterSummary, ProductLink, ProductSummary, RecentServer,
-        VirtualPrinterInput, VirtualPrinterMode,
+        AgentStatus, ConnectedServiceSummary, DiagnosticExport, Diagnostics,
+        DiscoveredServiceSummary, FeatureAvailability, JobDisplayState, JobSummary,
+        ManualPrinterInput, OpenPrinterConnectionState, PrinterSummary, ProductLink,
+        ProductSummary, RecentServer, VirtualPrinterInput, VirtualPrinterMode,
     },
+    platform::{PlatformCapabilities, display_operating_system},
     printer_catalog::PrinterCatalog,
+    runtime_owner::TaskLease,
     server_configuration::{
         CONNECTION_SETTING, LEGACY_SERVER_CONFIGURATION_SETTING, OpenPrinterConnection,
         OpenPrinterServerConfiguration, OpenPrinterServerConfigurationInput,
@@ -58,8 +57,27 @@ pub const JOBS_CHANGED_EVENT: &str = "oppa://jobs-changed";
 
 const OUTBOUND_CHANNEL_CAPACITY: usize = 256;
 
-/// Long-lived desktop host for the shell-independent agent runtime.
-pub struct DesktopService {
+/// Platform services selected by the Tauri host before the agent starts.
+pub struct HostEnvironment {
+    /// Product-scoped data, cache, and log directories.
+    pub paths: AppPaths,
+    /// Operating-system secure storage for the paired private key.
+    pub credential_store: Arc<dyn CredentialStore>,
+    /// Capabilities of the compiled platform.
+    pub capabilities: PlatformCapabilities,
+}
+
+/// Receivers handed to the connection supervisor when the service starts.
+type SupervisorChannels = (
+    mpsc::Receiver<OutboundRequest>,
+    mpsc::Receiver<ConnectionControl>,
+);
+
+/// Long-lived, process-owned host for the shell-independent agent runtime.
+///
+/// One instance exists per process on every platform. On Android it outlives
+/// activities and web views; see [`crate::runtime_owner`].
+pub struct AgentService {
     pub(crate) app: AppHandle,
     pub(crate) product: ProductConfig,
     pub(crate) storage: SqliteStorage,
@@ -84,15 +102,27 @@ pub struct DesktopService {
     pub(crate) provider_generation: AtomicU64,
     connection_control: mpsc::Sender<ConnectionControl>,
     virtual_spooler: Arc<PerPrinterVirtualSpooler>,
+    pub(crate) capabilities: PlatformCapabilities,
+    supervisor_lease: TaskLease,
+    supervisor_channels: std::sync::Mutex<Option<SupervisorChannels>>,
 }
 
-impl DesktopService {
+impl AgentService {
     #[allow(clippy::too_many_lines)]
-    pub async fn initialize(app: AppHandle) -> Result<Arc<Self>, CommandError> {
-        let product = embedded_product()
+    pub async fn initialize(
+        app: AppHandle,
+        host: HostEnvironment,
+    ) -> Result<Arc<Self>, CommandError> {
+        let mut product = embedded_product()
             .map_err(|error| CommandError::internal(error.to_string()))?
             .clone();
-        let paths = resolve_paths(&product)?;
+        // Features the platform lacks stay disabled whatever the product says.
+        product.features = host.capabilities.effective_features(product.features);
+        let HostEnvironment {
+            paths,
+            credential_store,
+            capabilities,
+        } = host;
         let storage = SqliteStorage::open(
             paths.data_dir.join("oppa.sqlite3"),
             DEFAULT_MAX_PENDING_JOBS,
@@ -110,7 +140,11 @@ impl DesktopService {
         let log = Arc::new(DiagnosticLog::default());
         log.info(
             "application",
-            format!("{} desktop runtime is starting.", product.product_name),
+            format!(
+                "{} agent runtime is starting on {}.",
+                product.product_name,
+                platform_label()
+            ),
         );
         let mut migrated_legacy = false;
         let stored_configuration = storage
@@ -136,10 +170,6 @@ impl DesktopService {
             OpenPrinterServerConfiguration::default()
         };
 
-        let credential_store: Arc<dyn CredentialStore> = Arc::new(
-            KeyringCredentialStore::new(product.application_id.clone())
-                .map_err(|error| CommandError::internal(error.to_string()))?,
-        );
         let key_manager = AgentKeyManager::new(Arc::clone(&credential_store));
         if migrated_legacy {
             credential_store
@@ -221,7 +251,7 @@ impl DesktopService {
                 printer_id: stored.printer_id.to_string(),
                 printer_name,
                 idempotency_key: stored.idempotency_key,
-                state: DesktopJobState::Received,
+                state: JobDisplayState::Received,
                 received_at: stored.received_at.to_string(),
                 updated_at: stored.updated_at.to_string(),
                 attempts: stored.retry_attempts,
@@ -295,21 +325,43 @@ impl DesktopService {
             provider_generation: AtomicU64::new(0),
             connection_control,
             virtual_spooler,
+            capabilities,
+            supervisor_lease: TaskLease::default(),
+            supervisor_channels: std::sync::Mutex::new(Some((outbound_receiver, control_receiver))),
         });
+        Ok(service)
+    }
 
-        service.spawn_observers();
+    /// Starts the observers, connection supervisor, and initial discovery.
+    ///
+    /// Returns `false` without side effects when they are already running, so
+    /// a host that re-runs setup (for example after an Android activity is
+    /// recreated) can never create a competing supervisor or job processor.
+    pub fn start(self: &Arc<Self>) -> bool {
+        if !self.supervisor_lease.claim() {
+            return false;
+        }
+        let Some((outbound_receiver, control_receiver)) = self
+            .supervisor_channels
+            .lock()
+            .ok()
+            .and_then(|mut channels| channels.take())
+        else {
+            return false;
+        };
+        self.spawn_observers();
         tauri::async_runtime::spawn(run_connection_supervisor(
-            Arc::clone(&service),
+            Arc::clone(self),
             outbound_receiver,
             control_receiver,
         ));
-        let discovery_service = Arc::clone(&service);
+        let discovery_service = Arc::clone(self);
         tauri::async_runtime::spawn(async move {
             if let Err(error) = discovery_service.refresh_printers().await {
                 discovery_service.log.warn("discovery", error.to_string());
             }
         });
-        Ok(service)
+        true
     }
 
     pub async fn status(&self, start_on_login: bool, version: String) -> AgentStatus {
@@ -329,6 +381,7 @@ impl DesktopService {
             server_configuration: self.server_configuration.read().await.clone(),
             connected_service: self.connected_service.read().await.clone(),
             connection_state: *self.connection_state.read().await,
+            capabilities: self.capabilities,
         }
     }
 
@@ -625,7 +678,7 @@ impl DesktopService {
             printer_id: printer.reference.id.to_string(),
             printer_name: printer.reference.display_name.clone(),
             idempotency_key: idempotency_key.clone(),
-            state: DesktopJobState::Received,
+            state: JobDisplayState::Received,
             received_at: now.clone(),
             updated_at: now.clone(),
             attempts: 0,
@@ -647,7 +700,7 @@ impl DesktopService {
                 self.jobs
                     .update(
                         &job_id,
-                        DesktopJobState::Submitted,
+                        JobDisplayState::Submitted,
                         None,
                         Some(1),
                         Timestamp::now().to_string(),
@@ -659,7 +712,7 @@ impl DesktopService {
                 self.jobs
                     .update(
                         &job_id,
-                        DesktopJobState::Failed,
+                        JobDisplayState::Failed,
                         Some(message.clone()),
                         Some(1),
                         Timestamp::now().to_string(),
@@ -724,7 +777,7 @@ impl DesktopService {
             printer_id: printer.reference.id.to_string(),
             printer_name: printer.reference.display_name.clone(),
             idempotency_key: format!("pdf_test_{}", Uuid::new_v4()),
-            state: DesktopJobState::Received,
+            state: JobDisplayState::Received,
             received_at: now.clone(),
             updated_at: now.clone(),
             attempts: 0,
@@ -744,7 +797,7 @@ impl DesktopService {
                 self.jobs
                     .update(
                         &job_id,
-                        DesktopJobState::Submitted,
+                        JobDisplayState::Submitted,
                         None,
                         Some(1),
                         Timestamp::now().to_string(),
@@ -758,7 +811,7 @@ impl DesktopService {
                 self.jobs
                     .update(
                         &job_id,
-                        DesktopJobState::Failed,
+                        JobDisplayState::Failed,
                         Some(message.clone()),
                         Some(1),
                         Timestamp::now().to_string(),
@@ -809,7 +862,13 @@ impl DesktopService {
         }
     }
 
-    pub async fn export_diagnostics(&self) -> Result<String, CommandError> {
+    /// Builds the sanitized diagnostics bundle as pretty-printed JSON.
+    pub async fn diagnostics_bundle(&self) -> Result<String, CommandError> {
+        let bytes = self.diagnostics_bundle_bytes().await?;
+        String::from_utf8(bytes).map_err(|error| CommandError::internal(error.to_string()))
+    }
+
+    async fn diagnostics_bundle_bytes(&self) -> Result<Vec<u8>, CommandError> {
         let mut printers = self.catalog.list().await?;
         for printer in &mut printers {
             if printer.is_virtual {
@@ -829,8 +888,19 @@ impl DesktopService {
                 remote_diagnostics: self.product.features.remote_diagnostics,
             },
         };
-        let bytes = serde_json::to_vec_pretty(&export)
-            .map_err(|error| CommandError::internal(error.to_string()))?;
+        serde_json::to_vec_pretty(&export)
+            .map_err(|error| CommandError::internal(error.to_string()))
+    }
+
+    /// Writes the sanitized diagnostics bundle to the log directory.
+    pub async fn export_diagnostics(&self) -> Result<String, CommandError> {
+        if !self.capabilities.diagnostics_file_export {
+            return Err(CommandError::new(
+                "feature_unavailable",
+                "Diagnostics files cannot be exported on this platform; copy the bundle instead.",
+            ));
+        }
+        let bytes = self.diagnostics_bundle_bytes().await?;
         let filename = format!(
             "{}-diagnostics-{}.json",
             self.product.product_id,
@@ -1084,7 +1154,8 @@ impl DesktopService {
         self.agent.handle().set_active_errors(errors).await;
     }
 
-    pub fn open_product_link(&self, link: ProductLink) -> Result<(), CommandError> {
+    /// Resolves a validated product link; the host opens it natively.
+    pub fn product_link_url(&self, link: ProductLink) -> Result<url::Url, CommandError> {
         let url = match link {
             ProductLink::Documentation => &self.product.branding.documentation_url,
             ProductLink::Support => &self.product.branding.support_url,
@@ -1101,9 +1172,15 @@ impl DesktopService {
                 )
             })?,
         };
-        SystemBrowser
-            .open(url)
-            .map_err(|error| CommandError::new("browser_failed", error.to_string()))
+        oppa_platform::validate_browser_url(url)
+            .map_err(|error| CommandError::new("browser_failed", error.to_string()))?;
+        Ok(url.clone())
+    }
+
+    /// Paths owned by this runtime.
+    #[cfg_attr(not(target_os = "android"), allow(dead_code))]
+    pub(crate) fn paths(&self) -> &AppPaths {
+        &self.paths
     }
 
     pub async fn shutdown(&self) {
@@ -1226,7 +1303,7 @@ impl DesktopService {
                             Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
                                 job_service.log.warn(
                                     "job",
-                                    format!("Desktop job observer skipped {skipped} event(s)."),
+                                    format!("Job observer skipped {skipped} event(s)."),
                                 );
                                 job_service.emit(JOBS_CHANGED_EVENT);
                             }
@@ -1243,7 +1320,7 @@ impl DesktopService {
         outcome: &ProcessOutcome,
     ) -> Result<(), CommandError> {
         let (state, error) = match outcome {
-            ProcessOutcome::Submitted { .. } => (DesktopJobState::Submitted, None),
+            ProcessOutcome::Submitted { .. } => (JobDisplayState::Submitted, None),
             ProcessOutcome::Failed { message, .. } => {
                 let error = message.as_ref().and_then(|message| {
                     let AgentMessageKind::JobFailed(failed) = &message.kind else {
@@ -1251,17 +1328,17 @@ impl DesktopService {
                     };
                     Some(failed.error.message.clone())
                 });
-                (DesktopJobState::Failed, error)
+                (JobDisplayState::Failed, error)
             }
-            ProcessOutcome::Cancelled { .. } => (DesktopJobState::Cancelled, None),
+            ProcessOutcome::Cancelled { .. } => (JobDisplayState::Cancelled, None),
             ProcessOutcome::Skipped { state, .. } => {
                 let state = match state {
                     oppa_core::JobState::Received | oppa_core::JobState::Submitting => {
-                        DesktopJobState::Received
+                        JobDisplayState::Received
                     }
-                    oppa_core::JobState::Submitted => DesktopJobState::Submitted,
-                    oppa_core::JobState::Failed => DesktopJobState::Failed,
-                    oppa_core::JobState::Cancelled => DesktopJobState::Cancelled,
+                    oppa_core::JobState::Submitted => JobDisplayState::Submitted,
+                    oppa_core::JobState::Failed => JobDisplayState::Failed,
+                    oppa_core::JobState::Cancelled => JobDisplayState::Cancelled,
                 };
                 (state, None)
             }
@@ -1278,16 +1355,18 @@ impl DesktopService {
     }
 }
 
-fn resolve_paths(product: &ProductConfig) -> Result<AppPaths, CommandError> {
+/// Resolves the established desktop data directories for a product.
+#[cfg(desktop)]
+pub(crate) fn resolve_desktop_paths(product: &ProductConfig) -> Result<AppPaths, CommandError> {
     let segments = product.application_id.split('.').collect::<Vec<_>>();
     let qualifier = segments.first().copied().unwrap_or("com");
     let organization = segments.get(1).copied().unwrap_or("neplextech");
     let application = segments.last().copied().unwrap_or("oppa");
-    resolve_app_paths(qualifier, organization, application)
+    oppa_platform::resolve_app_paths(qualifier, organization, application)
         .map_err(|error| CommandError::internal(error.to_string()))
 }
 
-fn platform_label() -> String {
+pub(crate) fn platform_label() -> String {
     platform_info().map_or_else(
         |_| format!("{} {}", std::env::consts::OS, std::env::consts::ARCH),
         |platform| {
@@ -1298,15 +1377,6 @@ fn platform_label() -> String {
             )
         },
     )
-}
-
-fn display_operating_system(value: &str) -> &str {
-    match value {
-        "macos" => "macOS",
-        "windows" => "Windows",
-        "linux" => "Linux",
-        other => other,
-    }
 }
 
 fn test_document(width: ReceiptWidth, product_name: &str) -> PrintDocument {
@@ -1325,7 +1395,7 @@ fn test_document(width: ReceiptWidth, product_name: &str) -> PrintDocument {
                 bold: None,
             },
             PrintSection::Text {
-                value: "Submitted by the local desktop agent.".to_owned(),
+                value: "Submitted by the local agent.".to_owned(),
                 align: None,
                 bold: None,
             },
@@ -1337,7 +1407,7 @@ fn test_document(width: ReceiptWidth, product_name: &str) -> PrintDocument {
 
 #[cfg(test)]
 mod tests {
-    use super::{display_operating_system, test_document};
+    use super::test_document;
     use oppa_protocol::{ReceiptWidth, Validate};
 
     #[test]
@@ -1352,11 +1422,5 @@ mod tests {
                 .validate()
                 .is_ok()
         );
-    }
-
-    #[test]
-    fn platform_labels_are_user_facing() {
-        assert_eq!(display_operating_system("macos"), "macOS");
-        assert_eq!(display_operating_system("windows"), "Windows");
     }
 }

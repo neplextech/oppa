@@ -12,6 +12,7 @@ import {
   PackageOpen,
   RefreshCw,
   ShieldCheck,
+  Smartphone,
 } from 'lucide-react';
 import Link from 'next/link';
 import type { ComponentType, SVGProps } from 'react';
@@ -33,6 +34,8 @@ import { useOppaRelease } from './use-oppa-release';
 function detectPlatform(): DownloadPlatform | null {
   if (typeof navigator === 'undefined') return null;
   const ua = navigator.userAgent;
+  if (/Android/i.test(ua)) return 'Android';
+  if (/iPhone|iPad|iPod/i.test(ua) || (/Mac/i.test(ua) && navigator.maxTouchPoints > 1)) return null;
   if (/Mac/i.test(ua)) return 'macOS';
   if (/Win/i.test(ua)) return 'Windows';
   if (/Linux/i.test(ua)) return 'Linux';
@@ -49,6 +52,7 @@ function pickBestAsset(assets: DownloadAsset[], platform: DownloadPlatform): Dow
 
 function platformLabel(platform: DownloadPlatform): string {
   if (platform === 'macOS') return 'Download for Mac';
+  if (platform === 'Android') return 'Download for Android';
   if (platform === 'Windows') return 'Download for Windows';
   return 'Download for Linux';
 }
@@ -73,6 +77,12 @@ const PLATFORM_DETAILS: Record<DownloadPlatform, PlatformDetails> = {
     description: 'Choose the standard installer or an MSI package for managed systems.',
     accent: 'text-sky-300 bg-sky-400/10 border-sky-400/20',
   },
+  Android: {
+    icon: Smartphone,
+    eyebrow: 'Android 8 and newer',
+    description: 'Download the signed APK, then allow installation from your browser. Google Play is not required.',
+    accent: 'text-lime-300 bg-lime-400/10 border-lime-400/20',
+  },
   Linux: {
     icon: LinuxPlatformIcon,
     eyebrow: 'Desktop Linux',
@@ -92,9 +102,7 @@ export function DownloadsClient() {
   const releaseNotes = formatReleaseNotes(latestRelease?.body ?? null);
 
   const detectedPlatform = useMemo(() => detectPlatform(), []);
-  const allAssets = downloadRelease
-    ? (['macOS', 'Windows', 'Linux'] as DownloadPlatform[]).flatMap((p) => downloadRelease.assetsByPlatform[p])
-    : [];
+  const allAssets = downloadRelease ? PLATFORMS.flatMap((p) => downloadRelease.assetsByPlatform[p]) : [];
   const suggestedAsset = detectedPlatform && !loading ? pickBestAsset(allAssets, detectedPlatform) : null;
   const suggestedPlatformDetails = detectedPlatform ? PLATFORM_DETAILS[detectedPlatform] : null;
   const SuggestedPlatformIcon = suggestedPlatformDetails?.icon ?? ArrowDownToLine;
@@ -110,7 +118,7 @@ export function DownloadsClient() {
             <div>
               <div className="flex items-center gap-2 font-mono text-[11px] tracking-[0.14em] text-stone-500 uppercase">
                 <span className="size-1.5 rounded-full bg-emerald-400" />
-                OPPA desktop
+                OPPA
               </div>
               <h1 className="mt-5 max-w-2xl text-[2.65rem] leading-[1.03] font-semibold tracking-[-0.035em] text-balance sm:text-[3.4rem]">
                 Your local printers,
@@ -203,7 +211,7 @@ export function DownloadsClient() {
             <DownloadSkeleton />
           ) : downloadRelease ? (
             <>
-              <div className="mt-9 grid gap-4 lg:grid-cols-3">
+              <div className="mt-9 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
                 {PLATFORMS.map((platform) => (
                   <PlatformCard
                     key={platform}
@@ -322,7 +330,7 @@ function ReleaseSummary({
         <>
           <div className="mt-5 flex items-baseline gap-3">
             <span className="text-2xl font-semibold tracking-[-0.03em] text-stone-100">{formatVersion(tagName)}</span>
-            <span className="font-mono text-[10px] text-stone-600">{releaseName ?? 'OPPA desktop'}</span>
+            <span className="font-mono text-[10px] text-stone-600">{releaseName ?? 'OPPA'}</span>
           </div>
           <p className="mt-2 font-mono text-[10px] text-stone-500">Published {formatReleaseDate(publishedAt)}</p>
         </>
@@ -497,7 +505,7 @@ function NoRelease({ error }: { error: string | null }) {
         </h3>
         <p className="mt-2 text-[12.5px] leading-5 text-stone-500">
           {error ??
-            'The downloads will appear here as soon as the first stable desktop release is published. You can build OPPA from source in the meantime.'}
+            'The downloads will appear here as soon as the first stable release is published. You can build OPPA from source in the meantime.'}
         </p>
         <div className="mt-6 flex flex-wrap justify-center gap-3">
           <a
@@ -524,7 +532,7 @@ function NoRelease({ error }: { error: string | null }) {
 
 function DownloadSkeleton() {
   return (
-    <div className="mt-9 grid gap-4 lg:grid-cols-3" aria-label="Loading the latest release">
+    <div className="mt-9 grid gap-4 sm:grid-cols-2 xl:grid-cols-4" aria-label="Loading the latest release">
       {PLATFORMS.map((platform) => (
         <div key={platform} className="min-h-80 animate-pulse rounded-lg border border-white/10 bg-white/[0.02] p-5">
           <div className="flex items-center gap-3.5">

@@ -48,11 +48,16 @@ pub trait CredentialStore: Send + Sync {
 
 /// Native secure-store implementation backed by macOS Keychain, Windows
 /// Credential Manager, or freedesktop Secret Service.
+///
+/// Desktop only: mobile hosts use [`crate::AppleKeychainCredentialStore`] on
+/// iOS and an Android Keystore bridge implementing [`CredentialStore`].
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 #[derive(Debug, Clone)]
 pub struct KeyringCredentialStore {
     service: Arc<str>,
 }
 
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 impl KeyringCredentialStore {
     /// Creates a product-scoped store.
     pub fn new(service: impl Into<String>) -> PlatformResult<Self> {
@@ -70,6 +75,7 @@ impl KeyringCredentialStore {
     }
 }
 
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 #[async_trait]
 impl CredentialStore for KeyringCredentialStore {
     async fn set(&self, account: &str, secret: SecretValue) -> PlatformResult<()> {
@@ -117,7 +123,7 @@ impl CredentialStore for KeyringCredentialStore {
     }
 }
 
-fn validate_key(field: &str, value: &str) -> PlatformResult<()> {
+pub(crate) fn validate_key(field: &str, value: &str) -> PlatformResult<()> {
     if value.trim().is_empty() || value.trim() != value || value.len() > 256 {
         return Err(PlatformError::InvalidInput(format!(
             "{field} must be 1 to 256 bytes without surrounding whitespace"

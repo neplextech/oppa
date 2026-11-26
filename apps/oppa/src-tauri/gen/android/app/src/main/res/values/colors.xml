@@ -1,0 +1,8 @@
+<resources>
+    <!-- Matches the background and primary colors of the web theme. -->
+    <color name="oppa_background">#FFFFFF</color>
+    <color name="oppa_primary">#C45B26</color>
+    <!-- Brand tile color from the OPPA mark. -->
+    <color name="oppa_brand">#29282B</color>
+    <color name="ic_launcher_background">#29282B</color>
+</resources>

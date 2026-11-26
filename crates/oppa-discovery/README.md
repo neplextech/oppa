@@ -28,6 +28,11 @@ or timed-out query reports native PDF submission without claiming media or
 duplex support. Windows queues advertise the rasterized PDF route, and
 virtual printers advertise PDF only through their configured profiles.
 
+The system-queue provider uses CUPS only where `build.rs` sets the `cups`
+configuration (macOS, Linux, and the BSDs). On Android and iOS it reports the
+provider as unavailable; mobile hosts discover network printers through
+platform DNS-SD APIs instead.
+
 ## Primary APIs
 
 - `DiscoveryProvider`

@@ -1,9 +1,14 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 
+import { DESKTOP_CAPABILITIES } from '@/lib/platform';
+
 import type {
   AgentStatus,
   DeepLinkPairing,
+  DiscoveredNetworkPrinter,
+  MobileLifecycleStatus,
+  MobileUpdate,
   PdfPrintSettings,
   DiscoveredServiceSummary,
   Diagnostics,
@@ -42,7 +47,7 @@ const demoPrintDocument: PrintDocument = {
     { type: 'divider' },
     {
       type: 'text',
-      value: 'Submitted by the local desktop agent.',
+      value: 'Submitted by the local agent.',
       align: 'center',
     },
     { type: 'qr', value: 'https://openprinter.dev/test/job_demo_1042' },
@@ -190,6 +195,7 @@ const demoStatus: AgentStatus = {
     serverUrl: 'http://127.0.0.1:8787/',
   },
   connectionState: 'connected',
+  capabilities: DESKTOP_CAPABILITIES,
   connectedService: {
     name: 'Acme POS',
     serverId: 'openprinter-example',
@@ -546,6 +552,67 @@ export const agentClient = {
 
   async exportDiagnostics(): Promise<string> {
     return isTauri() ? command('export_diagnostics') : 'Diagnostics export is available in the desktop application.';
+  },
+
+  /** Sanitized diagnostics bundle as JSON text, for copying or sharing on mobile. */
+  async getDiagnosticsBundle(): Promise<string> {
+    return isTauri() ? command('get_diagnostics_bundle') : JSON.stringify({ diagnostics: demoDiagnostics }, null, 2);
+  },
+
+  /** Opens the system share sheet with the sanitized diagnostics bundle (mobile). */
+  async shareDiagnostics(): Promise<void> {
+    await command('share_diagnostics');
+  },
+
+  async quitApplication(): Promise<void> {
+    if (isTauri()) await command('quit_application');
+  },
+
+  async discoverNetworkPrinters(): Promise<DiscoveredNetworkPrinter[]> {
+    return isTauri() ? command('discover_network_printers') : [];
+  },
+
+  async getMobileLifecycle(): Promise<MobileLifecycleStatus | null> {
+    if (!isTauri()) return null;
+    return command('get_mobile_lifecycle');
+  },
+
+  async setBackgroundAgent(enabled: boolean): Promise<void> {
+    await command('set_background_agent', { enabled });
+  },
+
+  async setKeepAwake(enabled: boolean): Promise<void> {
+    await command('set_keep_awake', { enabled });
+  },
+
+  async requestNotificationPermission(): Promise<boolean> {
+    return command('request_notification_permission');
+  },
+
+  async requestBatteryExemption(): Promise<void> {
+    await command('request_battery_exemption');
+  },
+
+  /** Opens the host-selected battery guide for this device's manufacturer. */
+  async openBatteryGuide(): Promise<void> {
+    await command('open_battery_guide');
+  },
+
+  async openAppSettings(): Promise<void> {
+    await command('open_app_settings');
+  },
+
+  async requestLocalNetworkAccess(): Promise<string> {
+    return command('request_local_network_access');
+  },
+
+  async checkMobileUpdate(): Promise<MobileUpdate | null> {
+    return command('check_mobile_update');
+  },
+
+  /** Returns `installer_opened` or `permission_required`. */
+  async installMobileUpdate(): Promise<'installer_opened' | 'permission_required'> {
+    return command('install_mobile_update');
   },
 
   async setStartOnLogin(enabled: boolean): Promise<boolean> {

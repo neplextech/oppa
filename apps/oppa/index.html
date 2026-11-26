@@ -3,8 +3,23 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/png" href="/oppa-icon.png" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="OPPA securely connects OpenPrinter services to printers on this computer." />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content"
+    />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="description" content="OPPA securely connects OpenPrinter services to local printers." />
+    <style>
+      /* First paint before the stylesheet loads; matches --background. */
+      html {
+        background: #ffffff;
+      }
+      @media (prefers-color-scheme: dark) {
+        html {
+          background: #141414;
+        }
+      }
+    </style>
     <title>OPPA — Open Printer Proxy Agent</title>
   </head>
 

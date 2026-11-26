@@ -5,6 +5,7 @@ import { ReceiptPreview } from '@/components/receipt-preview';
 import { Button } from '@/components/ui/button';
 import { KeyValue } from '@/components/workspace';
 import { previewZoom, type PreviewFit } from '@/lib/document-zoom';
+import { isMobileRuntime } from '@/lib/platform';
 import type { VirtualOutput, VirtualPrinterSummary } from '@/lib/types';
 import { formatRelativeTime } from '@/lib/utils';
 
@@ -57,7 +58,8 @@ function DocumentCanvas({ output, printer }: { output: VirtualOutput; printer: V
     output.receiptWidthMm !== undefined ||
     (printer.virtualProfile?.type === 'esc-pos-receipt' && output.format !== 'pdf');
   const [presentation, setPresentation] = useState<'receipt' | 'raw'>('receipt');
-  const [fit, setFit] = useState<PreviewFit>(thermal ? 'actual' : 'window');
+  // Phones start receipts at full width; desktop keeps physical scale.
+  const [fit, setFit] = useState<PreviewFit>(thermal ? (isMobileRuntime() ? 'width' : 'actual') : 'window');
   const [height, setHeight] = useState(300);
   const canvas = useRef<HTMLDivElement>(null);
   const paper = useRef<HTMLDivElement>(null);

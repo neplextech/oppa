@@ -5,7 +5,7 @@
 //! value value` lines for both PPD and driverless IPP queues. Parsing is kept
 //! separate from process execution so it can be tested with captured output.
 
-#![cfg_attr(not(unix), allow(dead_code))]
+#![cfg_attr(not(cups), allow(dead_code))]
 
 use std::time::Duration;
 

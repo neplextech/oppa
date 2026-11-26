@@ -67,6 +67,26 @@ Replace the updater public-key placeholder in
 `apps/oppa/src-tauri/tauri.conf.json` with the matching public key
 before the first release.
 
+The same workflow builds a universal Android APK (ARM64, ARMv7, and
+x86_64), verifies its signature with `apksigner`, and uploads it with
+`latest-android.json` to the draft before finalization. The Android
+app reads that manifest, offers only newer semantic versions, verifies
+the download's size and SHA-256, and requires the APK to carry the
+installed app's package name and signing certificate before Android's
+installer asks the user to approve it. No Google Play services are
+involved. Configure these repository secrets:
+
+- `OPPA_ANDROID_KEYSTORE_BASE64`: the release keystore, base64 encoded
+- `OPPA_ANDROID_KEYSTORE_PASSWORD`
+- `OPPA_ANDROID_KEY_ALIAS`
+- `OPPA_ANDROID_KEY_PASSWORD`
+- `OPPA_ANDROID_CERT_SHA256` (recommended): the release certificate's
+  SHA-256 fingerprint. The build fails if the APK is signed with any
+  other certificate, which protects the stable signing identity.
+
+iOS artifacts are not published yet. Validation builds the iOS
+simulator target without signing; see [Android and iOS](/docs/mobile).
+
 `publish-npm.yml` builds and publishes `@openprinter/protocol`,
 `@openprinter/server`, and `openprinter` sdk using npm OIDC trusted
 publishing. Register that workflow as a trusted publisher for all

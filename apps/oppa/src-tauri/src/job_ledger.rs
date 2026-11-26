@@ -7,7 +7,7 @@ use tokio::sync::RwLock;
 
 use crate::{
     error::{CommandError, sanitize},
-    models::{DesktopJobState, JobSummary},
+    models::{JobDisplayState, JobSummary},
 };
 
 const JOB_HISTORY_SETTING: &str = "desktop.recent-jobs.v1";
@@ -82,7 +82,7 @@ impl JobLedger {
         if is_terminal(job.state) {
             return Ok(());
         }
-        job.state = DesktopJobState::Failed;
+        job.state = JobDisplayState::Failed;
         job.updated_at = oppa_core::Timestamp::now().to_string();
         job.error = Some(sanitize(error.as_ref()));
         drop(jobs);
@@ -113,7 +113,7 @@ impl JobLedger {
     pub async fn update(
         &self,
         job_id: &str,
-        state: DesktopJobState,
+        state: JobDisplayState,
         error: Option<String>,
         attempts: Option<u32>,
         updated_at: String,
@@ -139,13 +139,13 @@ impl JobLedger {
         let now = oppa_core::Timestamp::now().to_string();
         match event {
             AgentEvent::JobReceived { job_id } => {
-                self.update(job_id.as_str(), DesktopJobState::Received, None, None, now)
+                self.update(job_id.as_str(), JobDisplayState::Received, None, None, now)
                     .await
             }
             AgentEvent::JobSubmitting { job_id } => {
                 self.update(
                     job_id.as_str(),
-                    DesktopJobState::Received,
+                    JobDisplayState::Received,
                     None,
                     Some(1),
                     now,
@@ -153,7 +153,7 @@ impl JobLedger {
                 .await
             }
             AgentEvent::JobSubmitted { job_id } => {
-                self.update(job_id.as_str(), DesktopJobState::Submitted, None, None, now)
+                self.update(job_id.as_str(), JobDisplayState::Submitted, None, None, now)
                     .await
             }
             AgentEvent::JobFailed {
@@ -163,7 +163,7 @@ impl JobLedger {
             } => {
                 self.update(
                     job_id.as_str(),
-                    DesktopJobState::Failed,
+                    JobDisplayState::Failed,
                     Some(format!("Print job failed ({code}).")),
                     None,
                     now,
@@ -171,7 +171,7 @@ impl JobLedger {
                 .await
             }
             AgentEvent::JobCancelled { job_id } => {
-                self.update(job_id.as_str(), DesktopJobState::Cancelled, None, None, now)
+                self.update(job_id.as_str(), JobDisplayState::Cancelled, None, None, now)
                     .await
             }
             AgentEvent::PendingJobsChanged { .. }
@@ -201,10 +201,10 @@ fn merge_delivery(existing: &mut JobSummary, incoming: JobSummary) {
     }
 }
 
-fn is_terminal(state: DesktopJobState) -> bool {
+fn is_terminal(state: JobDisplayState) -> bool {
     matches!(
         state,
-        DesktopJobState::Submitted | DesktopJobState::Failed | DesktopJobState::Cancelled
+        JobDisplayState::Submitted | JobDisplayState::Failed | JobDisplayState::Cancelled
     )
 }
 
@@ -225,7 +225,7 @@ mod tests {
                     printer_id: "printer".to_owned(),
                     printer_name: "Receipt".to_owned(),
                     idempotency_key: format!("key-{index}"),
-                    state: DesktopJobState::Received,
+                    state: JobDisplayState::Received,
                     received_at: "2026-01-01T00:00:00Z".to_owned(),
                     updated_at: "2026-01-01T00:00:00Z".to_owned(),
                     attempts: 0,
@@ -240,14 +240,14 @@ mod tests {
         ledger
             .update(
                 "job-2",
-                DesktopJobState::Failed,
+                JobDisplayState::Failed,
                 Some("failure".to_owned()),
                 Some(1),
                 "2026-01-01T00:00:01Z".to_owned(),
             )
             .await
             .expect("update");
-        assert_eq!(ledger.list().await[0].state, DesktopJobState::Failed);
+        assert_eq!(ledger.list().await[0].state, JobDisplayState::Failed);
     }
 
     #[tokio::test]
@@ -259,20 +259,20 @@ mod tests {
             printer_id: "printer".to_owned(),
             printer_name: "Receipt".to_owned(),
             idempotency_key: "key".to_owned(),
-            state: DesktopJobState::Submitted,
+            state: JobDisplayState::Submitted,
             received_at: "2026-01-01T00:00:00Z".to_owned(),
             updated_at: "2026-01-01T00:00:01Z".to_owned(),
             attempts: 1,
             error: None,
         };
         ledger.insert(summary.clone()).await.expect("terminal");
-        summary.state = DesktopJobState::Queued;
+        summary.state = JobDisplayState::Queued;
         summary.updated_at = "2026-01-01T00:00:02Z".to_owned();
         summary.attempts = 0;
         ledger.insert(summary).await.expect("duplicate");
 
         let retained = &ledger.list().await[0];
-        assert_eq!(retained.state, DesktopJobState::Submitted);
+        assert_eq!(retained.state, JobDisplayState::Submitted);
         assert_eq!(retained.attempts, 1);
         assert_eq!(retained.updated_at, "2026-01-01T00:00:01Z");
     }
@@ -286,7 +286,7 @@ mod tests {
             printer_id: "printer-original".to_owned(),
             printer_name: "Original".to_owned(),
             idempotency_key: "key-original".to_owned(),
-            state: DesktopJobState::Submitted,
+            state: JobDisplayState::Submitted,
             received_at: "2026-01-01T00:00:00Z".to_owned(),
             updated_at: "2026-01-01T00:00:01Z".to_owned(),
             attempts: 1,
