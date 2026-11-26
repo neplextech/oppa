@@ -2,6 +2,31 @@
 
 All notable changes to OPPA and OpenPrinter are documented here.
 
+## oppa-v0.4.2, @openprinter/protocol 0.4.1, @openprinter/server 0.4.1 — 2026-11-26
+
+### Bug Fixes
+
+- Advance the OPPA inventory revision under the catalog state lock, so
+  a snapshot can no longer report changed printers at the previous
+  revision and get the gateway session closed.
+- Close the active gateway connection before installing a desktop
+  update and relaunching. Downloads complete while the agent keeps
+  printing; durable jobs and undelivered reports are recovered after
+  relaunch. Quit and Android Stop agent also wait, bounded, for the
+  connection to close.
+
+### Documentation
+
+- Formalize printer inventory revisions as session-scoped: a new
+  authenticated session may start at any revision, and revisions may
+  not regress within one session. The contract is documented for
+  third-party agents and gateways, with no wire changes.
+
+### Testing
+
+- Server SDK regression tests for cross-session and within-session
+  inventory revision handling.
+
 ## oppa-v0.4.1 — 2026-11-26
 
 ### Features
