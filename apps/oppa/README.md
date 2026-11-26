@@ -80,8 +80,15 @@ Discovery supplies the current pairing and gateway endpoints. Plain HTTP is acce
 loopback development; production discovery/pairing requires HTTPS and the gateway resolves to WSS.
 Changing or forgetting the service deletes the local key and requires a new pairing code.
 
-Update artifacts are fetched from GitHub Releases and verified by the native Tauri updater. Replace
-the updater public-key placeholder in `src-tauri/tauri.conf.json` before publishing a release.
+Release builds discover updates through the Neplex update server, which serves the artifacts published
+to GitHub Releases:
+
+- desktop: `https://updates.neplex.com.np/oppa/stable/tauri/{{target}}/{{arch}}/{{current_version}}`,
+  verified by the native Tauri updater against the public key in `src-tauri/tauri.conf.json`;
+- Android: `https://updates.neplex.com.np/oppa/stable/android/latest.json`, overridable at compile time
+  with `OPPA_ANDROID_UPDATE_MANIFEST`.
+
+HTTP 204 from either endpoint means no update is available. Development builds disable update checks.
 
 ## Status
 

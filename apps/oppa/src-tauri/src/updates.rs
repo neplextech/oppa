@@ -1,12 +1,14 @@
 //! Direct-download Android update discovery and verification.
 //!
 //! The desktop build uses the signed Tauri updater. Android builds are
-//! distributed as signed APKs on GitHub Releases, so the flow is different:
+//! distributed as signed APKs (published on GitHub Releases and served by the
+//! Neplex update server), so the flow is different:
 //!
-//! 1. fetch `latest-android.json` over HTTPS;
+//! 1. fetch the Android release manifest over HTTPS; HTTP 204 means no update;
 //! 2. offer the update only when its version is newer than the installed app;
-//! 3. download the APK over HTTPS into the private update cache with a size
-//!    bound and an explicit timeout, verifying its SHA-256 digest;
+//! 3. download the APK over HTTPS (following HTTPS-only redirects) into the
+//!    private update cache with a size bound and an explicit timeout,
+//!    verifying its SHA-256 digest;
 //! 4. hand it to the system installer, which (after a native check) only
 //!    accepts an APK with this app's package name and signing certificate and
 //!    always asks the user to approve installation.
@@ -23,6 +25,9 @@ use sha2::{Digest as _, Sha256};
 pub const MAX_APK_BYTES: u64 = 256 * 1024 * 1024;
 /// Upper bound for the update manifest.
 pub const MAX_MANIFEST_BYTES: usize = 64 * 1024;
+/// Maximum redirects followed for a manifest or APK request. Every hop must
+/// also use HTTPS.
+pub const MAX_REDIRECTS: usize = 10;
 
 /// Release manifest published next to the APK assets.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -63,6 +68,36 @@ pub enum UpdateError {
     ChecksumMismatch,
     #[error("the downloaded update exceeded its published size")]
     SizeExceeded,
+    #[error("the update server responded with HTTP {0}")]
+    UnexpectedStatus(u16),
+}
+
+/// Whether a manifest response with `status` carries a body worth reading.
+///
+/// HTTP 204 means the server has no newer release for this installation.
+/// Any other non-2xx status is an error.
+pub fn manifest_status_has_body(status: u16) -> Result<bool, UpdateError> {
+    match status {
+        204 => Ok(false),
+        200..=299 => Ok(true),
+        _ => Err(UpdateError::UnexpectedStatus(status)),
+    }
+}
+
+/// Interprets a manifest response, returning the manifest and an offer when
+/// a newer, valid release is available.
+pub fn interpret_manifest_response(
+    status: u16,
+    body: &[u8],
+    current_version: &str,
+) -> Result<Option<(AndroidUpdateManifest, MobileUpdate)>, UpdateError> {
+    if !manifest_status_has_body(status)? {
+        return Ok(None);
+    }
+    let manifest = AndroidUpdateManifest::parse(body)?;
+    Ok(manifest
+        .offer(current_version)
+        .map(|offer| (manifest, offer)))
 }
 
 impl AndroidUpdateManifest {
@@ -173,7 +208,10 @@ pub mod android {
 
     use tokio::io::AsyncWriteExt as _;
 
-    use super::{AndroidUpdateManifest, MAX_MANIFEST_BYTES, MobileUpdate, VerifiedDownload};
+    use super::{
+        AndroidUpdateManifest, MAX_MANIFEST_BYTES, MAX_REDIRECTS, MobileUpdate, VerifiedDownload,
+        interpret_manifest_response, manifest_status_has_body,
+    };
     use crate::error::CommandError;
 
     /// Release manifest location, fixed at compile time for release builds.
@@ -183,9 +221,7 @@ pub mod android {
     } else {
         match option_env!("OPPA_ANDROID_UPDATE_MANIFEST") {
             Some(url) => Some(url),
-            None => Some(
-                "https://github.com/neplextech/oppa/releases/latest/download/latest-android.json",
-            ),
+            None => Some("https://updates.neplex.com.np/oppa/stable/android/latest.json"),
         }
     };
 
@@ -195,6 +231,9 @@ pub mod android {
     fn client(timeout: Duration) -> Result<reqwest::Client, CommandError> {
         reqwest::Client::builder()
             .https_only(true)
+            // Release assets are served through redirects; reqwest applies
+            // `https_only` to every hop, so a downgrade is refused.
+            .redirect(reqwest::redirect::Policy::limited(MAX_REDIRECTS))
             .connect_timeout(Duration::from_secs(15))
             .timeout(timeout)
             .build()
@@ -212,8 +251,13 @@ pub mod android {
             .get(url)
             .send()
             .await
-            .and_then(reqwest::Response::error_for_status)
             .map_err(|error| CommandError::new("update_check_failed", error.to_string()))?;
+        let status = response.status().as_u16();
+        let check_failed =
+            |error: super::UpdateError| CommandError::new("update_check_failed", error.to_string());
+        if !manifest_status_has_body(status).map_err(check_failed)? {
+            return Ok(None);
+        }
         let mut body = Vec::new();
         while let Some(chunk) = response
             .chunk()
@@ -228,11 +272,7 @@ pub mod android {
                 ));
             }
         }
-        let manifest = AndroidUpdateManifest::parse(&body)
-            .map_err(|error| CommandError::new("update_check_failed", error.to_string()))?;
-        Ok(manifest
-            .offer(current_version)
-            .map(|offer| (manifest, offer)))
+        interpret_manifest_response(status, &body, current_version).map_err(check_failed)
     }
 
     /// Downloads and verifies the APK into `cache_dir/updates`.
@@ -337,6 +377,78 @@ mod tests {
         ] {
             assert!(AndroidUpdateManifest::parse(&bytes).is_err());
         }
+    }
+
+    #[test]
+    fn no_content_means_no_update_without_parsing_a_body() {
+        assert_eq!(interpret_manifest_response(204, b"", "0.4.0"), Ok(None));
+        // A 204 is never parsed, even if an intermediary attached bytes.
+        assert_eq!(
+            interpret_manifest_response(204, b"garbage", "0.4.0"),
+            Ok(None)
+        );
+    }
+
+    #[test]
+    fn successful_responses_are_parsed_and_compared() {
+        let body = manifest(
+            "0.5.0",
+            "https://updates.neplex.com.np/oppa/stable/android/oppa.apk",
+            SHA_OF_ABC,
+            3,
+        );
+        let (parsed, offer) = interpret_manifest_response(200, &body, "0.4.0")
+            .expect("valid")
+            .expect("offer");
+        assert_eq!(parsed.version, "0.5.0");
+        assert_eq!(offer.current_version, "0.4.0");
+        assert_eq!(interpret_manifest_response(200, &body, "0.5.0"), Ok(None));
+    }
+
+    #[test]
+    fn unavailable_servers_and_malformed_bodies_are_errors() {
+        for status in [404, 500, 502, 503] {
+            assert_eq!(
+                interpret_manifest_response(status, b"<html>Site not available</html>", "0.4.0"),
+                Err(UpdateError::UnexpectedStatus(status))
+            );
+        }
+        for body in [
+            &b""[..],
+            b"<!DOCTYPE html>",
+            b"{}",
+            b"{\"version\":\"0.5.0\"}",
+        ] {
+            assert!(matches!(
+                interpret_manifest_response(200, body, "0.4.0"),
+                Err(UpdateError::InvalidManifest(_))
+            ));
+        }
+    }
+
+    #[test]
+    fn desktop_updater_uses_the_dynamic_stable_endpoint_and_dev_disables_it() {
+        let release: serde_json::Value =
+            serde_json::from_str(include_str!("../tauri.conf.json")).expect("release config");
+        let updater = &release["plugins"]["updater"];
+        assert_eq!(
+            updater["endpoints"],
+            serde_json::json!([
+                "https://updates.neplex.com.np/oppa/stable/tauri/{{target}}/{{arch}}/{{current_version}}"
+            ])
+        );
+        assert!(
+            updater["pubkey"]
+                .as_str()
+                .is_some_and(|key| !key.is_empty())
+        );
+
+        let dev: serde_json::Value =
+            serde_json::from_str(include_str!("../tauri.conf.dev.json")).expect("dev config");
+        assert_eq!(
+            dev["plugins"]["updater"]["endpoints"],
+            serde_json::json!([])
+        );
     }
 
     #[test]

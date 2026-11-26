@@ -67,6 +67,20 @@ Replace the updater public-key placeholder in
 `apps/oppa/src-tauri/tauri.conf.json` with the matching public key
 before the first release.
 
+Installed releases discover updates through the Neplex update server
+rather than GitHub directly. Desktop builds query
+`https://updates.neplex.com.np/oppa/stable/tauri/{{target}}/{{arch}}/{{current_version}}`
+and Android builds read
+`https://updates.neplex.com.np/oppa/stable/android/latest.json`
+(overridable at build time with `OPPA_ANDROID_UPDATE_MANIFEST`). The
+server answers HTTP 204 when the installed version is current. It
+reads `latest.json`, `latest-android.json`, the signed artifacts, and
+`SHA256SUMS.txt` straight from GitHub Releases, so keep publishing all
+of them. Older installations still read the GitHub `latest` endpoints
+directly. Desktop updates must carry a valid updater signature, and an
+Android APK must match its published size and SHA-256 and carry the
+installed app's package name and signing certificate.
+
 The same workflow builds a universal Android APK (ARM64, ARMv7, and
 x86_64), verifies its signature with `apksigner`, and uploads it with
 `latest-android.json` to the draft before finalization. The Android
