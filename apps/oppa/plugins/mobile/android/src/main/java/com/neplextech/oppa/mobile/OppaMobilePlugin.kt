@@ -13,6 +13,7 @@ import android.os.PowerManager
 import android.provider.Settings
 import android.webkit.WebView
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationManagerCompat
 import app.tauri.PermissionState
 import app.tauri.annotation.Command
@@ -202,6 +203,19 @@ class OppaMobilePlugin(private val activity: Activity) : Plugin(activity) {
             resolveBoolean(invoke, NotificationManagerCompat.from(context).areNotificationsEnabled())
             return
         }
+        if (activity.isDestroyed) {
+            // Tauri's permission launcher belongs to the destroyed first
+            // activity. Ask from the live one; onResume re-posts the
+            // notification once the user answers.
+            val current = AgentBridge.activity
+            if (current != null) {
+                ActivityCompat.requestPermissions(
+                    current, arrayOf(Manifest.permission.POST_NOTIFICATIONS), NOTIFICATION_REQUEST
+                )
+            }
+            resolveBoolean(invoke, NotificationManagerCompat.from(context).areNotificationsEnabled())
+            return
+        }
         requestPermissionForAlias("notifications", invoke, "notificationPermissionResult")
     }
 
@@ -295,7 +309,7 @@ class OppaMobilePlugin(private val activity: Activity) : Plugin(activity) {
     fun installApk(invoke: Invoke) {
         val args = invoke.parseArgs(PathArgs::class.java)
         try {
-            ApkInstaller.install(activity, args.path)
+            ApkInstaller.install(AgentBridge.activity ?: activity, args.path)
             invoke.resolve()
         } catch (error: IllegalArgumentException) {
             invoke.reject(error.message ?: "the update could not be verified")
@@ -319,10 +333,11 @@ class OppaMobilePlugin(private val activity: Activity) : Plugin(activity) {
 
     /**
      * Tauri binds plugins to the first activity, which may since have been
-     * recreated, so fall back to a new task from the application context.
+     * recreated, so prefer the newest live activity and fall back to a new
+     * task from the application context.
      */
     private fun launch(intent: Intent): Boolean = try {
-        activity.startActivity(intent)
+        (AgentBridge.activity ?: activity).startActivity(intent)
         true
     } catch (error: Exception) {
         try {
@@ -340,6 +355,7 @@ class OppaMobilePlugin(private val activity: Activity) : Plugin(activity) {
     }
 
     companion object {
+        private const val NOTIFICATION_REQUEST = 7412
         private val SERVICE_TYPE = Regex("^_[a-z0-9-]{1,32}\\._(tcp|udp)$")
 
         @Volatile

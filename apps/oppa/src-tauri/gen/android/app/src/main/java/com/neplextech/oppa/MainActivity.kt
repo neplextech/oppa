@@ -7,6 +7,7 @@ import androidx.core.content.ContextCompat
 import androidx.activity.enableEdgeToEdge
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import com.neplextech.oppa.mobile.OppaActivityHost
 
 class MainActivity : TauriActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
@@ -15,6 +16,9 @@ class MainActivity : TauriActivity() {
     enableEdgeToEdge()
     super.onCreate(savedInstanceState)
     applySystemInsets(findViewById(android.R.id.content))
+    // The process may outlive this activity (foreground service). Tell the
+    // Rust host so it rebuilds the web view window for a recreated activity.
+    OppaActivityHost.onActivityCreated(this)
   }
 
   /** Paints the theme background until the page renders, avoiding a white flash. */
