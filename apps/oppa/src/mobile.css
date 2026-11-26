@@ -14,6 +14,8 @@ html[data-runtime='mobile'] {
   text-size-adjust: 100%;
   -webkit-tap-highlight-color: transparent;
   overscroll-behavior: none;
+  /* The app is not zoomable: allow panning but block pinch and double-tap zoom. */
+  touch-action: pan-x pan-y;
 }
 
 html[data-runtime='mobile'] body {
