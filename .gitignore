@@ -19,3 +19,6 @@ diagnostics-*.zip
 .env*
 .DS_Store
 docs/scratchpad
+
+# Fumadocs regenerates these imports during install and typecheck.
+apps/www/.source/

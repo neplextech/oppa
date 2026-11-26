@@ -5,7 +5,8 @@
 // configuration cannot express is applied here:
 //
 // - the opaque, App Store-ready icon set from `src-tauri/icons/ios`;
-// - the centered launch mark and background, matching the Android splash.
+// - the centered launch mark and background, matching the Android splash;
+// - a direct Tauri CLI build phase that never installs packages from Xcode.
 //
 // Info.plist keys (local network privacy, Bonjour services, export
 // compliance) are merged by the Tauri CLI from `src-tauri/Info.ios.plist`.
@@ -13,6 +14,8 @@ import { constants } from 'node:fs';
 import { access, copyFile, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+import { patchIosBuildPhase } from './ios-xcode-script.mjs';
 
 const BRAND_TILE = { red: 0x29 / 255, green: 0x28 / 255, blue: 0x2b / 255 };
 
@@ -55,9 +58,14 @@ const projectFiles = await findFiles(
 );
 for (const path of projectFiles) {
   const source = await readFile(path, 'utf8');
-  const updated = path.endsWith('project.pbxproj')
+  const configured = path.endsWith('project.pbxproj')
     ? source.replace(/IPHONEOS_DEPLOYMENT_TARGET = [0-9.]+;/g, `IPHONEOS_DEPLOYMENT_TARGET = ${minimumIosVersion};`)
     : source.replace(/(deploymentTarget:\s*\n\s*iOS:) [0-9.]+/, `$1 ${minimumIosVersion}`);
+  const updated = patchIosBuildPhase(
+    configured,
+    join(appDirectory, 'scripts/ios-xcode-script.mjs'),
+    path.endsWith('project.pbxproj'),
+  );
   if (updated !== source) await writeFile(path, updated, 'utf8');
 }
 
