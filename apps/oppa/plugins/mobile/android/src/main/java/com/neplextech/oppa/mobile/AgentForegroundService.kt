@@ -141,6 +141,10 @@ class AgentForegroundService : Service() {
         }
         observer.startWatching()
         statusObserver = observer
+        // The agent may have rewritten the file between the first read in
+        // onStartCommand and startWatching; catch up so the notification
+        // never stays on a stale state such as "Connecting".
+        onStatusEvent(file.name, file.name)
     }
 
     private fun onStatusEvent(name: String?, expected: String) {

@@ -169,7 +169,12 @@ fn desktop_plugins(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri:
 /// webview loads. macOS uses its native overlay title bar; Windows uses the
 /// frame plugin over an undecorated window; Linux uses the custom webview
 /// title bar. Mobile windows fill the screen and carry no window chrome.
-fn create_main_window(app: &tauri::App) -> tauri::Result<()> {
+///
+/// A no-op while the window exists. On Android, Tauri drops the window when
+/// its activity is destroyed (for example when the task is swiped away while
+/// the foreground service keeps the process alive), so the mobile host calls
+/// this again for the recreated activity.
+pub(crate) fn create_main_window<M: Manager<tauri::Wry>>(app: &M) -> tauri::Result<()> {
     let product_name = oppa_product::embedded_product()
         .ok()
         .map_or_else(|| "OPPA".to_owned(), |p| p.product_name.clone());

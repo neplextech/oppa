@@ -35,6 +35,7 @@ function connectionSummary(state: OpenPrinterConnectionState): { label: string; 
       return { label: 'Connecting', tone: 'busy' };
     case 'authentication_failed':
     case 'credential_revoked':
+    case 'credential_not_found':
       return { label: 'Needs pairing', tone: 'warn' };
     default:
       return { label: 'Offline', tone: 'warn' };

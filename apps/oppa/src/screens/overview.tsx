@@ -37,7 +37,9 @@ export function OverviewScreen({
   const connected = status.connectionState === 'connected';
   const connecting = ['connecting', 'authenticating', 'paired'].includes(status.connectionState);
   const unavailable = enabled.length - available.length;
-  const needsPairing = ['authentication_failed', 'credential_revoked'].includes(status.connectionState);
+  const needsPairing = ['authentication_failed', 'credential_revoked', 'credential_not_found'].includes(
+    status.connectionState,
+  );
   const healthy = connected && enabled.length > 0 && !unavailable && !status.activeErrors.length;
   const Icon = healthy ? CheckCircle2 : connecting ? LoaderCircle : CircleAlert;
   const heading = needsPairing

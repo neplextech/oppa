@@ -84,6 +84,9 @@ pub enum OpenPrinterConnectionState {
     Connected,
     AuthenticationFailed,
     CredentialRevoked,
+    /// The server no longer has this agent's credential, for example after
+    /// its credential store was reset. Only pairing again recovers.
+    CredentialNotFound,
 }
 
 /// Safe discovery projection shown before the user submits a pairing code.
@@ -517,6 +520,10 @@ mod tests {
             (
                 OpenPrinterConnectionState::CredentialRevoked,
                 "credential_revoked",
+            ),
+            (
+                OpenPrinterConnectionState::CredentialNotFound,
+                "credential_not_found",
             ),
         ];
         for (state, expected) in states {

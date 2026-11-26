@@ -157,6 +157,7 @@ fn observe_tray_status(
                 crate::models::OpenPrinterConnectionState::Connecting
                 | crate::models::OpenPrinterConnectionState::Authenticating => "Connecting",
                 crate::models::OpenPrinterConnectionState::CredentialRevoked
+                | crate::models::OpenPrinterConnectionState::CredentialNotFound
                 | crate::models::OpenPrinterConnectionState::AuthenticationFailed => {
                     "Pairing needs attention"
                 }

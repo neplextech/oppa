@@ -183,11 +183,37 @@ fn spawn_event_loop(app: AppHandle, service: Arc<AgentService>, host: Arc<Mobile
                 }
                 MobileEvent::StopRequested => LifecycleEvent::StopRequested,
                 MobileEvent::BackgroundTaskExpired => LifecycleEvent::BackgroundTaskExpired,
-                MobileEvent::ActivityAvailable | MobileEvent::ActivityDestroyed => continue,
+                MobileEvent::ActivityAvailable => {
+                    restore_main_window(&app, &service);
+                    continue;
+                }
+                MobileEvent::ActivityDestroyed => continue,
             };
             handle_lifecycle(&app, &service, &host, lifecycle_event).await;
         }
     });
+}
+
+/// Rebuilds the web view window for an activity Android recreated while the
+/// process-owned runtime kept running. Without it the new activity has no
+/// window and stays blank. Events are handled one at a time on this task, so
+/// two notifications for the same activity cannot create two windows.
+fn restore_main_window(app: &AppHandle, service: &AgentService) {
+    if app.get_webview_window("main").is_some() {
+        return;
+    }
+    match crate::create_main_window(app) {
+        Ok(()) => service
+            .log
+            .info("application", "Restored the interface for a new activity."),
+        Err(error) => service.log.warn(
+            "application",
+            format!(
+                "The interface could not be restored: {}",
+                sanitize(&error.to_string())
+            ),
+        ),
+    }
 }
 
 async fn handle_lifecycle(
@@ -348,7 +374,8 @@ async fn write_status(service: &AgentService, host: &MobileHost) {
             "Connecting…"
         }
         OpenPrinterConnectionState::AuthenticationFailed
-        | OpenPrinterConnectionState::CredentialRevoked => "Pairing needs attention",
+        | OpenPrinterConnectionState::CredentialRevoked
+        | OpenPrinterConnectionState::CredentialNotFound => "Pairing needs attention",
         _ => "Reconnecting…",
     };
     let title = match server {

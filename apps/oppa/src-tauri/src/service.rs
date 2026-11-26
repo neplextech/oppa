@@ -1211,7 +1211,13 @@ impl AgentService {
         self.emit(STATE_CHANGED_EVENT);
     }
 
-    pub(crate) async fn authentication_failed(&self, message: impl AsRef<str>, revoked: bool) {
+    /// Records a gateway authentication failure. `state` must be one of the
+    /// failed authentication phases.
+    pub(crate) async fn authentication_failed(
+        &self,
+        message: impl AsRef<str>,
+        state: OpenPrinterConnectionState,
+    ) {
         let message = sanitize(message.as_ref());
         let current = self.agent.handle().snapshot().await.state;
         if matches!(
@@ -1224,11 +1230,7 @@ impl AgentService {
                 .transition(AgentState::Disconnected)
                 .await;
         }
-        *self.connection_state.write().await = if revoked {
-            OpenPrinterConnectionState::CredentialRevoked
-        } else {
-            OpenPrinterConnectionState::AuthenticationFailed
-        };
+        *self.connection_state.write().await = state;
         self.agent
             .handle()
             .set_active_errors(vec![message.clone()])

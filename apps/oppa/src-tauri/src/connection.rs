@@ -218,7 +218,7 @@ pub async fn run_connection_supervisor(
             service
                 .authentication_failed(
                     "The configured URL now identifies a different server. Forget it and pair again.",
-                    false,
+                    OpenPrinterConnectionState::AuthenticationFailed,
                 )
                 .await;
             automatic_reconnect = false;
@@ -309,7 +309,7 @@ pub async fn run_connection_supervisor(
                 service
                     .authentication_failed(
                         "Gateway did not send an authentication challenge.",
-                        false,
+                        OpenPrinterConnectionState::AuthenticationFailed,
                     )
                     .await;
                 automatic_reconnect = false;
@@ -317,7 +317,10 @@ pub async fn run_connection_supervisor(
             }
             Err(error) => {
                 service
-                    .authentication_failed(error.to_string(), false)
+                    .authentication_failed(
+                        error.to_string(),
+                        OpenPrinterConnectionState::AuthenticationFailed,
+                    )
                     .await;
                 automatic_reconnect = false;
                 continue;
@@ -331,7 +334,10 @@ pub async fn run_connection_supervisor(
             Ok(signature) => signature,
             Err(error) => {
                 service
-                    .authentication_failed(error.to_string(), false)
+                    .authentication_failed(
+                        error.to_string(),
+                        OpenPrinterConnectionState::AuthenticationFailed,
+                    )
                     .await;
                 automatic_reconnect = false;
                 continue;
@@ -357,17 +363,19 @@ pub async fn run_connection_supervisor(
                 if accepted.agent_id == connection.agent_id => {}
             Ok(_) => {
                 service
-                    .authentication_failed("Gateway authentication response was invalid.", false)
+                    .authentication_failed(
+                        "Gateway authentication response was invalid.",
+                        OpenPrinterConnectionState::AuthenticationFailed,
+                    )
                     .await;
                 automatic_reconnect = false;
                 continue;
             }
             Err(TransportError::AuthenticationRejected { code }) => {
-                let revoked = code == "credential_revoked";
                 service
                     .authentication_failed(
                         format!("Gateway authentication failed: {code}"),
-                        revoked,
+                        rejection_state(&code),
                     )
                     .await;
                 automatic_reconnect = false;
@@ -1052,6 +1060,17 @@ async fn wait_delay_or_control(
     }
 }
 
+/// Maps a gateway rejection code to the phase shown to the user. Codes that
+/// mean the server no longer accepts this credential get distinct states so
+/// the interface can explain why pairing again is required.
+fn rejection_state(code: &str) -> OpenPrinterConnectionState {
+    match code {
+        "credential_revoked" => OpenPrinterConnectionState::CredentialRevoked,
+        "credential_not_found" => OpenPrinterConnectionState::CredentialNotFound,
+        _ => OpenPrinterConnectionState::AuthenticationFailed,
+    }
+}
+
 fn next_retry_delay(backoff: &mut ReconnectBackoff) -> Option<Duration> {
     backoff
         .next_delay()
@@ -1093,5 +1112,28 @@ mod tests {
 
         assert_ne!(first.message_id, second.message_id);
         assert!(first.validate().is_ok());
+    }
+
+    #[test]
+    fn rejection_codes_map_to_recoverable_states() {
+        use super::rejection_state;
+        use crate::models::OpenPrinterConnectionState as State;
+
+        assert_eq!(
+            rejection_state("credential_revoked"),
+            State::CredentialRevoked
+        );
+        assert_eq!(
+            rejection_state("credential_not_found"),
+            State::CredentialNotFound
+        );
+        assert_eq!(
+            rejection_state("invalid_signature"),
+            State::AuthenticationFailed
+        );
+        assert_eq!(
+            rejection_state("challenge_expired"),
+            State::AuthenticationFailed
+        );
     }
 }

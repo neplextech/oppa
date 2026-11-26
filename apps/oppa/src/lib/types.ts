@@ -25,7 +25,8 @@ export type OpenPrinterConnectionState =
   | 'authenticating'
   | 'connected'
   | 'authentication_failed'
-  | 'credential_revoked';
+  | 'credential_revoked'
+  | 'credential_not_found';
 
 export interface DiscoveredServiceSummary {
   name: string;

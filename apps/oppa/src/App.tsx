@@ -236,7 +236,8 @@ export default function App() {
     status.connectionState === 'unpaired' ||
     status.connectionState === 'pairing' ||
     status.connectionState === 'authentication_failed' ||
-    status.connectionState === 'credential_revoked';
+    status.connectionState === 'credential_revoked' ||
+    status.connectionState === 'credential_not_found';
 
   if (((isSetupState || onboardingActive) && !settingsFromSetup) || pendingDeepLink !== null) {
     return (

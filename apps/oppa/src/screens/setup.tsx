@@ -32,12 +32,20 @@ import type {
   AgentStatus,
   DeepLinkPairing,
   DiscoveredServiceSummary,
+  OpenPrinterConnectionState,
   OpenPrinterServerConfiguration,
   PrinterConfigurationChanges,
   PrinterSummary,
   RecentServer,
 } from '@/lib/types';
 import { titleCase } from '@/lib/utils';
+
+/** Phases where a saved pairing exists but the server no longer accepts it. */
+const PAIRING_RECOVERY_STATES: readonly OpenPrinterConnectionState[] = [
+  'authentication_failed',
+  'credential_revoked',
+  'credential_not_found',
+];
 
 function errorMessage(cause: unknown, fallback: string): string {
   return cause instanceof Error ? cause.message : fallback;
@@ -86,7 +94,7 @@ export function SetupScreen({
       saved &&
       ['pair', 'printers'].includes(saved.step) &&
       saved.serverUrl === status.serverConfiguration.serverUrl &&
-      !['authentication_failed', 'credential_revoked'].includes(status.connectionState);
+      !PAIRING_RECOVERY_STATES.includes(status.connectionState);
     return {
       step: canResumePrinters ? 'printers' : 'connect',
       serverUrl: saved?.serverUrl ?? status.serverConfiguration.serverUrl,
@@ -101,13 +109,14 @@ export function SetupScreen({
   const [recentServers, setRecentServers] = useState<RecentServer[]>([]);
   const [recentOpen, setRecentOpen] = useState(false);
   const [pendingSwitch, setPendingSwitch] = useState<{ serverUrl: string; code?: string } | null>(null);
+  const [confirmForget, setConfirmForget] = useState(false);
   const heading = useRef<HTMLHeadingElement>(null);
   const initialized = useRef(false);
   const previousStep = useRef(state.step);
   const lastLink = useRef<DeepLinkPairing | null>(null);
   const locked = working || busy !== null;
   const stepNumber = state.step === 'connect' ? 1 : state.step === 'pair' ? 2 : 3;
-  const needsPairingRecovery = ['authentication_failed', 'credential_revoked'].includes(status.connectionState);
+  const needsPairingRecovery = PAIRING_RECOVERY_STATES.includes(status.connectionState);
 
   useEffect(() => {
     localStorage.setItem(
@@ -308,7 +317,9 @@ export function SetupScreen({
                     <p className="text-warning text-xs leading-4">
                       {status.connectionState === 'credential_revoked'
                         ? `${capitalize(deviceNoun(status.capabilities))}’s access was revoked. Continue to verify the server and pair with a new code.`
-                        : 'Authentication failed. Continue to pair again, or retry the connection below.'}
+                        : status.connectionState === 'credential_not_found'
+                          ? `The server no longer recognizes ${deviceNoun(status.capabilities)}, for example because its pairing records were reset. Continue to pair with a new code.`
+                          : 'Authentication failed. Continue to pair again, or retry the connection below.'}
                     </p>
                   )}
                 </Field>
@@ -333,6 +344,11 @@ export function SetupScreen({
                     }}
                   >
                     Retry existing connection
+                  </Button>
+                )}
+                {needsPairingRecovery && status.agentId && (
+                  <Button variant="ghost" disabled={locked} onClick={() => setConfirmForget(true)}>
+                    Forget connection
                   </Button>
                 )}
               </div>
@@ -596,6 +612,46 @@ export function SetupScreen({
               }}
             >
               Continue
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog
+        open={confirmForget}
+        onOpenChange={(open) => {
+          if (!open && !locked) setConfirmForget(false);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Forget this connection?</DialogTitle>
+            <DialogDescription>
+              {capitalize(deviceNoun(status.capabilities))} disconnects and deletes its saved credential for this
+              server. Pair again with a new code to reconnect.
+            </DialogDescription>
+          </DialogHeader>
+          <p className="text-muted-foreground text-xs break-all">{status.serverConfiguration.serverUrl}</p>
+          <DialogFooter>
+            <Button variant="outline" disabled={locked} onClick={() => setConfirmForget(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={locked}
+              onClick={() => {
+                setWorking(true);
+                setError(null);
+                void onForget()
+                  .then(() => setConfirmForget(false))
+                  .catch((cause: unknown) => {
+                    setConfirmForget(false);
+                    setError(errorMessage(cause, 'The connection could not be forgotten.'));
+                  })
+                  .finally(() => setWorking(false));
+              }}
+            >
+              {working && <LoaderCircle className="animate-spin" />}
+              Forget connection
             </Button>
           </DialogFooter>
         </DialogContent>
