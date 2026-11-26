@@ -106,6 +106,7 @@ pub fn run() {
             commands::set_start_on_login,
             commands::reconnect,
             commands::quit_application,
+            commands::prepare_for_update,
             commands::set_server_configuration,
             commands::reset_server_configuration,
             commands::open_product_link,

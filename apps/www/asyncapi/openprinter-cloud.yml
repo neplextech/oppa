@@ -194,9 +194,16 @@ operations:
     summary: Publish a complete local printer inventory.
     description: |
       The agent sends a complete snapshot after the handshake and whenever a
-      full refresh is needed. `revision` increases with the agent's local
-      inventory state. Include `correlationId` when this snapshot answers
-      `server.request_printer_inventory`.
+      full refresh is needed. Include `correlationId` when this snapshot
+      answers `server.request_printer_inventory`.
+
+      `revision` is session-scoped. The first snapshot of a session may use
+      any revision, including one lower than or equal to a revision from an
+      earlier session, because agents may reset the counter on restart.
+      Within one session the revision never decreases and advances whenever
+      the inventory content changes; an identical snapshot may repeat the
+      current revision. A server replaces its session inventory with each
+      accepted snapshot.
     tags:
       - name: Agent to cloud
     messages:
@@ -209,8 +216,11 @@ operations:
     summary: Publish an incremental printer inventory update.
     description: |
       The agent sends additions, updates, and removals relative to the prior
-      inventory revision. A server applies the change only when the revision
-      advances without conflicting with its current registry.
+      inventory revision of the same session. A change requires an earlier
+      snapshot in that session, and its revision must be strictly greater than
+      the session's current revision; gaps are allowed. A server applies the
+      change only when it does not conflict with its current session
+      inventory.
     tags:
       - name: Agent to cloud
     messages:
@@ -543,9 +553,9 @@ components:
       name: agent.printer_inventory_changed
       title: Printer inventory changed
       description: |
-        A delta from the previous inventory revision. Apply additions and
-        updates, remove the listed IDs, and retain the new `revision` as the
-        current snapshot version.
+        A delta from the previous inventory revision in this session. Apply
+        additions and updates, remove the listed IDs, and retain the new
+        `revision` as the session's current inventory revision.
       payload:
         $ref: '#/components/schemas/AgentPrinterInventoryChanged'
       examples:
@@ -1134,6 +1144,11 @@ components:
             revision:
               type: integer
               minimum: 0
+              maximum: 9007199254740991
+              description: >-
+                Session-scoped inventory revision. Ordered only within one
+                authenticated session; a new session may restart it at any
+                value.
             printers:
               type: array
               maxItems: 512
@@ -1160,6 +1175,11 @@ components:
             revision:
               type: integer
               minimum: 0
+              maximum: 9007199254740991
+              description: >-
+                Session-scoped inventory revision. Ordered only within one
+                authenticated session; a new session may restart it at any
+                value.
             added:
               type: array
               maxItems: 512

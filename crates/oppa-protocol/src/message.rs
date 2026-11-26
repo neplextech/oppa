@@ -215,7 +215,12 @@ impl Validate for AgentHeartbeat {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PrinterInventory {
-    /// Monotonically increasing agent-local inventory revision.
+    /// Session-scoped inventory revision.
+    ///
+    /// Ordered only within one authenticated gateway session: it never
+    /// decreases within the session and advances whenever the inventory
+    /// content changes. The first snapshot of a new session may use any
+    /// value, including one lower than an earlier session's revision.
     pub revision: u64,
     /// Complete printers visible at this revision.
     pub printers: Vec<PrinterDescriptor>,
@@ -232,7 +237,9 @@ impl Validate for PrinterInventory {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PrinterInventoryChanged {
-    /// Monotonically increasing agent-local inventory revision.
+    /// Session-scoped inventory revision, strictly greater than the
+    /// session's current revision. Requires an earlier snapshot in the same
+    /// session.
     pub revision: u64,
     /// Newly discovered printers.
     pub added: Vec<PrinterDescriptor>,

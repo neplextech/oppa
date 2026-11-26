@@ -285,6 +285,33 @@ pub async fn quit_application(
     Ok(())
 }
 
+/// Stops the agent ahead of a signed desktop update so the installer and
+/// relaunch never cut an active gateway connection mid-session.
+///
+/// Resolves after the gateway socket is closed (or the bounded shutdown
+/// deadline passes). The agent stays stopped; the frontend installs the
+/// update and relaunches the process, which recovers durable jobs on start.
+/// Mobile updates go through the system installer and do not use this.
+#[tauri::command]
+pub async fn prepare_for_update(
+    app: AppHandle,
+    service: State<'_, Arc<AgentService>>,
+) -> Result<(), CommandError> {
+    #[cfg(desktop)]
+    {
+        crate::desktop::prepare_for_relaunch(&app, service.inner()).await;
+        Ok(())
+    }
+    #[cfg(mobile)]
+    {
+        let _ = (app, service);
+        Err(CommandError::new(
+            "feature_unavailable",
+            "In-app relaunch updates are available only on desktop.",
+        ))
+    }
+}
+
 #[tauri::command]
 pub async fn set_server_configuration(
     service: State<'_, Arc<AgentService>>,

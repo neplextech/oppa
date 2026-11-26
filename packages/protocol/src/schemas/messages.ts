@@ -99,7 +99,16 @@ export type AgentHeartbeatMessage = Static<typeof AgentHeartbeatMessageSchema>;
 /** Agent heartbeat payload without its wire envelope. */
 export type AgentHeartbeat = AgentHeartbeatMessage['payload'];
 
-/** Complete printer inventory, either periodic or request-correlated. */
+/**
+ * Complete printer inventory, either periodic or request-correlated.
+ *
+ * `revision` is session-scoped. It orders inventory messages within one
+ * authenticated gateway session only: it never decreases within a session and
+ * advances whenever the inventory content changes, while the first snapshot of
+ * a new session may use any value, including one lower than or equal to an
+ * earlier session's revision. An identical snapshot may repeat the current
+ * revision. Agents send a snapshot after every handshake.
+ */
 export const PrinterInventoryMessageSchema = optionallyCorrelatedMessageSchema(
   'agent.printer_inventory',
   Type.Object(
@@ -122,7 +131,13 @@ export type PrinterInventoryMessage = Static<typeof PrinterInventoryMessageSchem
 /** Complete printer inventory payload. */
 export type PrinterInventory = PrinterInventoryMessage['payload'];
 
-/** Incremental printer inventory update. */
+/**
+ * Incremental printer inventory update.
+ *
+ * Valid only after a snapshot in the same session, with a session-scoped
+ * `revision` strictly greater than the session's current revision. Gaps are
+ * allowed.
+ */
 export const PrinterInventoryChangedMessageSchema = messageSchema(
   'agent.printer_inventory_changed',
   Type.Object(

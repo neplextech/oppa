@@ -986,15 +986,15 @@ async fn send_inventory(
     correlation_id: Option<String>,
     version: ProtocolVersion,
 ) -> Result<(), TransportError> {
-    let printers = service
+    let (revision, printers) = service
         .catalog
-        .protocol_descriptors()
+        .inventory_snapshot()
         .await
         .map_err(|error| TransportError::ProtocolEncoding(error.to_string()))?;
     transport
         .send(envelope(
             AgentMessageKind::PrinterInventory(PrinterInventory {
-                revision: service.catalog.revision(),
+                revision,
                 printers: project_inventory(&printers, version),
             }),
             correlation_id,

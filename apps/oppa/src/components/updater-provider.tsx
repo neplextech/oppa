@@ -14,9 +14,14 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { UpdaterContext } from '@/components/updater-context';
+import { agentClient } from '@/lib/agent-client';
 import { detectMobileOs } from '@/lib/platform';
 
-type UpdatePhase = 'ready' | 'downloading' | 'installing' | 'failed';
+/**
+ * `stopped` means installation failed after the agent was already shut down,
+ * so the only safe recovery is relaunching the currently installed version.
+ */
+type UpdatePhase = 'ready' | 'downloading' | 'installing' | 'failed' | 'stopped';
 
 function isTauri(): boolean {
   return '__TAURI_INTERNALS__' in window;
@@ -87,7 +92,7 @@ function DesktopUpdaterProvider({ children }: PropsWithChildren) {
   }, [checkForUpdates]);
 
   async function closeUpdate() {
-    if (phase === 'downloading' || phase === 'installing') return;
+    if (phase === 'downloading' || phase === 'installing' || phase === 'stopped') return;
     await update?.close();
     setUpdate(null);
     setPhase('ready');
@@ -102,26 +107,35 @@ function DesktopUpdaterProvider({ children }: PropsWithChildren) {
     setDownloaded(0);
     setTotal(0);
     downloadedBytes.current = 0;
-    let contentLength = 0;
+    let agentStopped = false;
 
     try {
-      await update.downloadAndInstall((event) => {
+      // Download while the agent keeps serving jobs, so a failed or slow
+      // download never interrupts printing.
+      await update.download((event) => {
         if (event.event === 'Started') {
-          contentLength = event.data.contentLength ?? 0;
-          setTotal(contentLength);
+          setTotal(event.data.contentLength ?? 0);
           return;
         }
         if (event.event === 'Progress') {
           downloadedBytes.current += event.data.chunkLength;
           setDownloaded(downloadedBytes.current);
-          return;
         }
-        setPhase('installing');
       });
+      setPhase('installing');
+      // Close the gateway connection before the installer can replace or
+      // terminate the process. Durable jobs are recovered after relaunch.
+      await agentClient.prepareForUpdate();
+      agentStopped = true;
+      await update.install();
       await relaunch();
     } catch (cause) {
-      setError(errorMessage(cause));
-      setPhase('failed');
+      setError(
+        agentStopped
+          ? `${errorMessage(cause)} The agent is stopped; restart OPPA to resume printing.`
+          : errorMessage(cause),
+      );
+      setPhase(agentStopped ? 'stopped' : 'failed');
     }
   }
 
@@ -142,7 +156,9 @@ function DesktopUpdaterProvider({ children }: PropsWithChildren) {
       >
         <DialogContent showCloseButton={phase === 'ready' || phase === 'failed'}>
           <DialogHeader>
-            <DialogTitle>{phase === 'failed' ? 'Update failed' : 'OPPA update available'}</DialogTitle>
+            <DialogTitle>
+              {phase === 'failed' || phase === 'stopped' ? 'Update failed' : 'OPPA update available'}
+            </DialogTitle>
             <DialogDescription>
               {update
                 ? `Version ${update.version} is ready to replace ${update.currentVersion}.`
@@ -181,7 +197,7 @@ function DesktopUpdaterProvider({ children }: PropsWithChildren) {
             </div>
           ) : null}
 
-          {phase === 'failed' ? (
+          {phase === 'failed' || phase === 'stopped' ? (
             <div className="border-destructive/20 bg-destructive/5 text-destructive rounded-xl border p-4 text-xs leading-5">
               {error}
             </div>
@@ -203,6 +219,12 @@ function DesktopUpdaterProvider({ children }: PropsWithChildren) {
               <Button onClick={() => void installUpdate()}>
                 <RotateCcw className="size-4" aria-hidden />
                 Retry
+              </Button>
+            ) : null}
+            {phase === 'stopped' ? (
+              <Button onClick={() => void relaunch()}>
+                <RotateCcw className="size-4" aria-hidden />
+                Restart OPPA
               </Button>
             ) : null}
           </DialogFooter>

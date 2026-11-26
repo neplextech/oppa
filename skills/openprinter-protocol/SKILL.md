@@ -83,8 +83,12 @@ encoders. Use canonical unpadded RFC 4648 base64url helpers.
 ## Normal message lifecycle
 
 The server sends `server.hello` after a valid `agent.hello`.
-Heartbeats are correlated. Printer inventory is revisioned. Job
-semantics are deliberately precise:
+Heartbeats are correlated. Printer inventory is revisioned per
+session: send a full snapshot after every handshake, never decrease
+the revision within a session, and advance it whenever content
+changes. A new session may restart at any revision, so servers must
+not compare revisions across sessions and agents need no persistent
+counter. Job semantics are deliberately precise:
 
 - `agent.job_received`: job is durably stored by the agent
 - `agent.job_submitted`: a local backend accepted it

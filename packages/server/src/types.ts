@@ -54,7 +54,12 @@ export interface ConnectedAgent<Metadata> {
   readonly connectedAt: string;
   /** UTC time of the most recently validated agent message. */
   readonly lastSeenAt: string;
-  /** Latest full or incremental inventory revision, when one was received. */
+  /**
+   * Latest full or incremental inventory revision received on this session,
+   * or `null` before the session's first snapshot. Revisions are
+   * session-scoped: a new session for the same agent starts at `null` and may
+   * report a lower revision than an earlier session.
+   */
   readonly printerRevision: number | null;
 }
 
@@ -222,7 +227,7 @@ export interface PrintersChangedEvent<Metadata> {
   readonly agent: ConnectedAgent<Metadata>;
   /** Whether this message replaced or incrementally changed the inventory. */
   readonly kind: 'snapshot' | 'change';
-  /** Validated revision reported by the agent. */
+  /** Validated session-scoped revision reported by the agent; not comparable across sessions. */
   readonly revision: number;
   /** Complete current inventory after applying the message. */
   readonly printers: readonly PrinterDescriptor[];

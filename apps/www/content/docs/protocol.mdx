@@ -200,6 +200,46 @@ Servers can restrict the versions they accept with the
 `protocolVersions` option. Use `["1"]` to serve only base-protocol
 agents; `"1"` is always required.
 
+## Inventory revisions
+
+`agent.printer_inventory` and `agent.printer_inventory_changed` carry
+an integer `revision` from `0` to `Number.MAX_SAFE_INTEGER`. A
+revision is **session-scoped**: it orders inventory messages within
+one authenticated gateway session and means nothing across sessions.
+It is not a global, persistent, or lifetime counter.
+
+Agent implementations:
+
+- send a complete `agent.printer_inventory` snapshot after every
+  handshake, before any `agent.printer_inventory_changed`;
+- may start each session at any revision, including one lower than or
+  equal to a revision sent on an earlier session, so an in-memory
+  counter that resets on restart, reinstall, or update is valid;
+- never send a lower revision than the last one sent on the same
+  session;
+- advance the revision whenever the inventory content changes, and
+  send every incremental change with a revision strictly greater than
+  the current one. Gaps are allowed;
+- may repeat an identical snapshot at the current revision, for
+  example to answer `server.request_printer_inventory`.
+
+Gateway and server implementations:
+
+- start every newly authenticated session with no inventory and no
+  revision, and do not compare its revisions with an earlier or a
+  concurrent session for the same agent;
+- replace the session inventory on each accepted snapshot;
+- treat a lower revision, changed snapshot content at the current
+  revision, a delta whose revision does not advance, or a delta before
+  the session's first snapshot as a protocol violation;
+- ignore an identical snapshot at the current revision.
+
+Because the revision resets with the session, a host that keeps a
+printer registry beyond the session lifetime should key durable state
+on agent and printer IDs, and treat each session's first snapshot as
+authoritative instead of comparing revisions with stored values.
+`@openprinter/server` implements these rules.
+
 ## Delivery states
 
 Use **received**, **submitted**, and **failed** for agent

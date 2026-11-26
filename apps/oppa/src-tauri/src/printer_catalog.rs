@@ -61,6 +61,13 @@ pub struct PrinterCatalog {
     virtual_spooler: Arc<PerPrinterVirtualSpooler>,
     features: ProductFeatures,
     discovery_status: RwLock<Vec<DiscoveryProviderStatus>>,
+    /// Inventory revision sent with each snapshot.
+    ///
+    /// Revisions are session-scoped on the wire, so this counter is kept only
+    /// in memory: it restarts at 1 with each process, and every new gateway
+    /// session begins with a full snapshot. Within one process it only
+    /// increases, so it never regresses within a gateway session. It is
+    /// advanced only while the catalog state write lock is held.
     revision: AtomicU64,
     log: Arc<DiagnosticLog>,
 }
@@ -145,19 +152,23 @@ impl PrinterCatalog {
         Arc::clone(&self.resolver)
     }
 
-    pub fn revision(&self) -> u64 {
-        self.revision.load(Ordering::Relaxed)
+    /// Installs a new catalog state and advances the revision under the same
+    /// write lock, so [`Self::inventory_snapshot`] never observes changed
+    /// descriptors at the previous revision.
+    async fn replace_state(&self, next: PersistedCatalog) {
+        let mut state = self.state.write().await;
+        *state = next;
+        self.bump_revision();
     }
 
     // `fetch_update` is deprecated on newer toolchains, but its replacement needs Rust 1.95 and the workspace MSRV is 1.85.
     #[allow(deprecated)]
-    pub fn bump_revision(&self) -> u64 {
-        self.revision
+    fn bump_revision(&self) {
+        let _ = self
+            .revision
             .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
                 Some(current.saturating_add(1))
-            })
-            .unwrap_or_else(|current| current)
-            .saturating_add(1)
+            });
     }
 
     pub async fn discovery_status(&self) -> Vec<DiscoveryProviderStatus> {
@@ -389,7 +400,7 @@ impl PrinterCatalog {
         }
         self.persist_state(&next).await?;
         let printers = next.printers.clone();
-        *self.state.write().await = next;
+        self.replace_state(next).await;
 
         for printer in &printers {
             if self.is_active(printer) {
@@ -401,7 +412,6 @@ impl PrinterCatalog {
                 self.resolver.remove(&printer.reference.id).await;
             }
         }
-        self.bump_revision();
         self.log.info(
             "discovery",
             format!("Printer discovery completed with {failure_count} provider failure(s)."),
@@ -454,12 +464,11 @@ impl PrinterCatalog {
             printer.clone()
         };
         self.persist_state(&next).await?;
-        *self.state.write().await = next;
+        self.replace_state(next).await;
         self.resolver
             .upsert(updated.reference.clone())
             .await
             .map_err(|error| CommandError::internal(error.to_string()))?;
-        self.bump_revision();
         self.summary(&updated).await
     }
 
@@ -509,12 +518,11 @@ impl PrinterCatalog {
         let mut next = self.state.read().await.clone();
         next.printers.push(printer.clone());
         self.persist_state(&next).await?;
-        *self.state.write().await = next;
+        self.replace_state(next).await;
         self.resolver
             .upsert(printer.reference.clone())
             .await
             .map_err(|error| CommandError::internal(error.to_string()))?;
-        self.bump_revision();
         self.summary(&printer).await
     }
 
@@ -570,7 +578,7 @@ impl PrinterCatalog {
         let mut next = self.state.read().await.clone();
         next.printers.push(printer.clone());
         self.persist_state(&next).await?;
-        *self.state.write().await = next;
+        self.replace_state(next).await;
         self.virtual_spooler
             .register(id, VirtualPrinterMode::AlwaysSucceed, 0)
             .await;
@@ -578,7 +586,6 @@ impl PrinterCatalog {
             .upsert(printer.reference.clone())
             .await
             .map_err(|error| CommandError::internal(error.to_string()))?;
-        self.bump_revision();
         self.summary(&printer).await
     }
 
@@ -622,9 +629,8 @@ impl PrinterCatalog {
             printer.clone()
         };
         self.persist_state(&next).await?;
-        *self.state.write().await = next;
+        self.replace_state(next).await;
         self.virtual_spooler.register(id, mode, delay_ms).await;
-        self.bump_revision();
         self.summary(&updated).await
     }
 
@@ -668,12 +674,11 @@ impl PrinterCatalog {
             removed
         };
         self.persist_state(&next).await?;
-        *self.state.write().await = next;
+        self.replace_state(next).await;
         self.resolver.remove(&id).await;
         if removed.is_virtual() {
             self.virtual_spooler.remove(&id).await;
         }
-        self.bump_revision();
         Ok(())
     }
 
@@ -688,8 +693,19 @@ impl PrinterCatalog {
             .ok_or_else(|| CommandError::not_found("Printer"))
     }
 
-    pub async fn protocol_descriptors(&self) -> Result<Vec<PrinterDescriptor>, CommandError> {
+    /// Returns the inventory revision together with the descriptors it
+    /// describes, read under one lock so the pair is always consistent.
+    pub async fn inventory_snapshot(&self) -> Result<(u64, Vec<PrinterDescriptor>), CommandError> {
         let state = self.state.read().await;
+        let revision = self.revision.load(Ordering::Relaxed);
+        let printers = self.descriptors_of(&state)?;
+        Ok((revision, printers))
+    }
+
+    fn descriptors_of(
+        &self,
+        state: &PersistedCatalog,
+    ) -> Result<Vec<PrinterDescriptor>, CommandError> {
         state
             .printers
             .iter()
@@ -1699,5 +1715,44 @@ mod tests {
         .expect("explicit raw capabilities");
         assert_eq!(raw.system_driver, Some(true));
         assert_eq!(raw.esc_pos, Some(true));
+    }
+
+    #[tokio::test]
+    async fn inventory_snapshots_pair_each_change_with_an_advanced_revision() {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let storage =
+            oppa_storage::SqliteStorage::open(directory.path().join("catalog.sqlite3"), 16)
+                .await
+                .expect("storage");
+        let catalog = super::PrinterCatalog::load(
+            storage,
+            std::sync::Arc::new(crate::virtual_spooler::PerPrinterVirtualSpooler::default()),
+            ProductFeatures {
+                virtual_printer: true,
+                ..ProductFeatures::default()
+            },
+            std::sync::Arc::new(crate::diagnostics::DiagnosticLog::default()),
+        )
+        .await
+        .expect("catalog");
+
+        let (initial, printers) = catalog.inventory_snapshot().await.expect("snapshot");
+        assert_eq!(printers.len(), 0);
+
+        let created = catalog
+            .create_virtual(crate::models::VirtualPrinterInput {
+                display_name: "Test receipt".to_owned(),
+                profile: VirtualPrinterProfile::EscPosReceipt { width_mm: 80 },
+            })
+            .await
+            .expect("virtual printer");
+        let (added, printers) = catalog.inventory_snapshot().await.expect("snapshot");
+        assert!(added > initial);
+        assert_eq!(printers.len(), 1);
+
+        catalog.remove(&created.id).await.expect("remove");
+        let (removed, printers) = catalog.inventory_snapshot().await.expect("snapshot");
+        assert!(removed > added);
+        assert_eq!(printers.len(), 0);
     }
 }

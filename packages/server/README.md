@@ -108,6 +108,10 @@ const result = await session.sendJob({
 
 `sendJob` handing a frame to a live transport is not durable server storage. Keep the job in application-owned storage until the agent acknowledgement and apply application retry policy outside this SDK.
 
+## Printer inventory
+
+Inventory is tracked per session. `session.getPrinters()` and `agent.printerRevision` describe only the current session, and `onPrintersChanged` reports each accepted snapshot or change. Revisions are session-scoped: every newly authenticated session starts with no inventory, accepts any first snapshot revision (an agent that restarted may report a lower or equal revision than before), and rejects a regressed revision, changed content at the same revision, or a non-advancing delta only within that session. Do not compare revisions across sessions; key durable host state on agent and printer IDs.
+
 ## Protocol versions
 
 `createOpenPrinterServer` accepts `protocolVersions`. The default is every

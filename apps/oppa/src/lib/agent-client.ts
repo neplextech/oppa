@@ -568,6 +568,14 @@ export const agentClient = {
     if (isTauri()) await command('quit_application');
   },
 
+  /**
+   * Stops the desktop agent and closes its gateway connection before an
+   * update is installed. The agent stays stopped until the process relaunches.
+   */
+  async prepareForUpdate(): Promise<void> {
+    if (isTauri()) await command('prepare_for_update');
+  },
+
   async discoverNetworkPrinters(): Promise<DiscoveredNetworkPrinter[]> {
     return isTauri() ? command('discover_network_printers') : [];
   },

@@ -90,6 +90,9 @@ to GitHub Releases:
 
 HTTP 204 from either endpoint means no update is available. Development builds disable update checks.
 
+Desktop installation downloads first, then calls `prepare_for_update` to stop the agent and close the gateway
+connection, then installs and relaunches. Durable jobs and outbound reports are recovered on the next start.
+
 ## Status
 
 Android: built and exercised on an Android 13 emulator (pairing, deep links, foreground service,

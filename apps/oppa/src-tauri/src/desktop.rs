@@ -248,6 +248,19 @@ pub(crate) fn quit_application(app: &AppHandle) {
     });
 }
 
+/// Stops the agent before the updater replaces and relaunches the process.
+///
+/// Marks the process as quitting so a window close raised by the installer or
+/// relaunch exits instead of hiding to the tray, then waits for
+/// [`AgentService::shutdown`] to close the gateway connection.
+pub(crate) async fn prepare_for_relaunch(app: &AppHandle, service: &Arc<AgentService>) {
+    app.state::<QuitState>().0.store(true, Ordering::Release);
+    service
+        .log
+        .info("lifecycle", "Stopping the agent to install an update.");
+    service.shutdown().await;
+}
+
 pub fn handle_close_request(window: &tauri::Window, event: &tauri::WindowEvent) {
     let tauri::WindowEvent::CloseRequested { api, .. } = event else {
         return;

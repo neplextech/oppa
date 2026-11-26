@@ -21,7 +21,9 @@ The SDK owns:
 - public credential lookup and revocation boundaries
 - socket-bound Ed25519 challenge verification
 - hello/version negotiation, heartbeats, message validation, and
-  per-session printer inventory
+  per-session printer inventory (revisions are session-scoped: a new
+  session may report a lower revision; regressions are rejected only
+  within one session)
 - typed lifecycle and job acknowledgement callbacks
 
 The host owns:

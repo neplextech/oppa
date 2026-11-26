@@ -57,6 +57,11 @@ pub const JOBS_CHANGED_EVENT: &str = "oppa://jobs-changed";
 
 const OUTBOUND_CHANNEL_CAPACITY: usize = 256;
 
+/// Upper bound on waiting for the connection supervisor to close its gateway
+/// socket during shutdown. The transport bounds its own close handshake; this
+/// guards against a supervisor blocked elsewhere so exit is never held hostage.
+const SUPERVISOR_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
+
 /// Platform services selected by the Tauri host before the agent starts.
 pub struct HostEnvironment {
     /// Product-scoped data, cache, and log directories.
@@ -105,6 +110,9 @@ pub struct AgentService {
     pub(crate) capabilities: PlatformCapabilities,
     supervisor_lease: TaskLease,
     supervisor_channels: std::sync::Mutex<Option<SupervisorChannels>>,
+    /// Cancelled once a started connection supervisor has returned, which
+    /// happens only after it closed any active gateway socket.
+    supervisor_stopped: CancellationToken,
 }
 
 impl AgentService {
@@ -328,6 +336,7 @@ impl AgentService {
             capabilities,
             supervisor_lease: TaskLease::default(),
             supervisor_channels: std::sync::Mutex::new(Some((outbound_receiver, control_receiver))),
+            supervisor_stopped: CancellationToken::new(),
         });
         Ok(service)
     }
@@ -350,11 +359,14 @@ impl AgentService {
             return false;
         };
         self.spawn_observers();
-        tauri::async_runtime::spawn(run_connection_supervisor(
-            Arc::clone(self),
-            outbound_receiver,
-            control_receiver,
-        ));
+        let supervisor_service = Arc::clone(self);
+        let supervisor_stopped = self.supervisor_stopped.clone();
+        tauri::async_runtime::spawn(async move {
+            // Signals on every exit path, including an unwinding panic.
+            let _stopped = supervisor_stopped.drop_guard();
+            run_connection_supervisor(supervisor_service, outbound_receiver, control_receiver)
+                .await;
+        });
         let discovery_service = Arc::clone(self);
         tauri::async_runtime::spawn(async move {
             if let Err(error) = discovery_service.refresh_printers().await {
@@ -1183,18 +1195,42 @@ impl AgentService {
         &self.paths
     }
 
+    /// Stops the runtime and waits, bounded by
+    /// [`SUPERVISOR_SHUTDOWN_TIMEOUT`], until the connection supervisor has
+    /// closed any active gateway socket.
+    ///
+    /// Durable state is left untouched: received jobs stay queued, an
+    /// interrupted submission is recovered by `recover_interrupted` on the
+    /// next start, and undelivered terminal statuses remain in the durable
+    /// outbox until a later session delivers them. Safe to call repeatedly.
     pub async fn shutdown(&self) {
         self.shutdown.cancel();
+        // The supervisor also observes the cancelled token, so a full control
+        // channel never blocks shutdown.
         let _ = self
             .connection_control
-            .send(ConnectionControl::Shutdown)
-            .await;
+            .try_send(ConnectionControl::Shutdown);
         let _ = self
             .agent
             .handle()
             .transition(AgentState::ShuttingDown)
             .await;
         self.emit(STATE_CHANGED_EVENT);
+        if self.supervisor_channels_taken()
+            && !wait_for_stop(&self.supervisor_stopped, SUPERVISOR_SHUTDOWN_TIMEOUT).await
+        {
+            self.log.warn(
+                "lifecycle",
+                "The gateway connection did not close before the shutdown deadline.",
+            );
+        }
+    }
+
+    /// Whether [`Self::start`] handed the channels to a running supervisor.
+    fn supervisor_channels_taken(&self) -> bool {
+        self.supervisor_channels
+            .lock()
+            .map_or(true, |channels| channels.is_none())
     }
 
     pub(crate) fn emit(&self, event: &str) {
@@ -1407,8 +1443,34 @@ fn test_document(width: ReceiptWidth, product_name: &str) -> PrintDocument {
     }
 }
 
+/// Waits until `stopped` is cancelled, returning `false` when `limit` passes
+/// first.
+async fn wait_for_stop(stopped: &CancellationToken, limit: Duration) -> bool {
+    tokio::time::timeout(limit, stopped.cancelled())
+        .await
+        .is_ok()
+}
+
 #[cfg(test)]
 mod tests {
+
+    #[tokio::test]
+    async fn shutdown_wait_returns_once_the_supervisor_stops() {
+        let stopped = tokio_util::sync::CancellationToken::new();
+        let guard = stopped.clone().drop_guard();
+        let waiter = tokio::spawn({
+            let stopped = stopped.clone();
+            async move { super::wait_for_stop(&stopped, std::time::Duration::from_secs(5)).await }
+        });
+        drop(guard);
+        assert!(waiter.await.expect("waiter"));
+    }
+
+    #[tokio::test]
+    async fn shutdown_wait_is_bounded_when_the_supervisor_hangs() {
+        let stopped = tokio_util::sync::CancellationToken::new();
+        assert!(!super::wait_for_stop(&stopped, std::time::Duration::from_millis(20)).await);
+    }
     use super::test_document;
     use oppa_protocol::{ReceiptWidth, Validate};
 

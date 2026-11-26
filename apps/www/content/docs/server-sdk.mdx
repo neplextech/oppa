@@ -74,6 +74,13 @@ calling `sendJob`. If no worker owns the session, keep the job queued.
 Two sessions for one agent are independent; host code or a backplane
 decides affinity, replacement, and distributed delivery.
 
+Inventory belongs to the session. Each newly authenticated session
+starts with no printers and a `null` `printerRevision`, accepts any
+first snapshot revision, and rejects revision regressions only within
+the same session. An agent that restarts may therefore report a lower
+revision than its previous session. See
+[Inventory revisions](/docs/protocol#inventory-revisions).
+
 `agent.job_received` confirms local durable receipt.
 `agent.job_submitted` confirms backend acceptance, not universal
 physical completion.

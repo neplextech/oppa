@@ -53,3 +53,24 @@ structured error, never a panic.
 The desktop window can close while the agent remains active in the
 system tray. Choosing **Quit** is the explicit process shutdown
 action.
+
+Quit, Android **Stop agent**, and desktop update installation wait, up
+to a bounded deadline, for the connection supervisor to close the
+active gateway socket before the process exits. Shutdown does not
+modify durable job state: received jobs stay queued, a submission
+interrupted mid-flight is reconciled on the next start, and
+undelivered `received`, `submitted`, or `failed` reports stay in the
+durable outbox until a later session delivers them.
+
+## Updates
+
+A desktop update downloads while the agent keeps serving jobs. Only
+after the signed package is downloaded does OPPA stop the agent and
+close its gateway connection, then install the package and relaunch. A
+failed download leaves the agent running. A failed installation after
+the agent stopped offers a restart of the installed version.
+
+The relaunched process starts a new gateway session and a new
+in-memory inventory revision counter. Inventory revisions are
+session-scoped, so a server must accept the lower revision; see
+[Inventory revisions](/docs/protocol#inventory-revisions).
