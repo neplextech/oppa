@@ -31,10 +31,10 @@ fn start_on_login_enabled(app: &AppHandle) -> bool {
 }
 
 #[cfg(desktop)]
-fn desktop_only<T>(_capability: &str) -> Result<T, CommandError> {
+fn desktop_only<T>(capability: &str) -> Result<T, CommandError> {
     Err(CommandError::new(
         "feature_unavailable",
-        format!("{_capability} is only available on Android and iOS."),
+        format!("{capability} is only available on Android and iOS."),
     ))
 }
 
@@ -420,6 +420,23 @@ pub async fn request_battery_exemption(app: AppHandle) -> Result<(), CommandErro
     {
         let _ = app;
         desktop_only("Battery optimization settings")
+    }
+}
+
+/// Shares the sanitized diagnostics bundle (mobile only; desktop exports a file).
+#[tauri::command]
+pub async fn share_diagnostics(
+    app: AppHandle,
+    service: State<'_, Arc<AgentService>>,
+) -> Result<(), CommandError> {
+    #[cfg(mobile)]
+    {
+        crate::mobile::share_diagnostics(&app, &service).await
+    }
+    #[cfg(desktop)]
+    {
+        let _ = (app, service);
+        desktop_only("Sharing diagnostics")
     }
 }
 

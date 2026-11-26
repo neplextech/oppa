@@ -323,3 +323,55 @@ html[data-runtime='mobile'] .screen-header__title {
     color: var(--destructive);
   }
 }
+
+/* When a screen adds app-bar actions, the connection pill shrinks to its dot. */
+@media (max-width: 480px) {
+  .mobile-header-actions:not(:empty) + .mobile-connection {
+    padding: 0 10px;
+    min-width: 32px;
+  }
+  .mobile-header-actions:not(:empty) + .mobile-connection .mobile-connection__label,
+  .mobile-header-actions:not(:empty) + .mobile-connection svg {
+    display: none;
+  }
+}
+.mobile-header h1 {
+  min-width: 64px;
+}
+
+/* Virtual printer workspace on phones: captures become a strip above the canvas. */
+@media (max-width: 767px) {
+  html[data-runtime='mobile'] .virtual-documents {
+    flex-direction: column;
+  }
+  html[data-runtime='mobile'] .capture-history {
+    display: flex;
+    width: auto;
+    gap: 8px;
+    padding: 10px 16px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+  html[data-runtime='mobile'] .capture-history > p {
+    display: none;
+  }
+  html[data-runtime='mobile'] .capture-row {
+    flex: 0 0 auto;
+    width: auto;
+    min-width: 132px;
+    border: 1px solid var(--border);
+  }
+  html[data-runtime='mobile'] .document-canvas {
+    padding: 16px;
+  }
+}
+
+/* Horizontal tab strips keep scrolling without a desktop scrollbar. */
+html[data-runtime='mobile'] .overflow-x-auto {
+  scrollbar-width: none;
+}
+html[data-runtime='mobile'] .overflow-x-auto::-webkit-scrollbar {
+  display: none;
+}

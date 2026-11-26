@@ -24,7 +24,7 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
-      - run: node --test .github/scripts/check-desktop-release.test.mjs
+      - run: node --test .github/scripts/check-desktop-release.test.mjs .github/scripts/android-update-manifest.test.mjs
       - run: pnpm install --frozen-lockfile
       - run: pnpm protocol:generate
       - name: Verify generated protocol artifacts
@@ -55,3 +55,78 @@ jobs:
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets --all-features -- -D warnings
       - run: cargo test --workspace
+
+  android:
+    # Builds an unsigned-for-release (debug-signed) APK for every shipped ABI
+    # and lints the Rust host for Android. No signing secrets are used.
+    name: Android
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: oppa-android
+      - run: pnpm install --frozen-lockfile
+      - name: Build debug APK
+        env:
+          OPPA_PRODUCT_DIR: ${{ github.workspace }}/products/default
+        run: |
+          export NDK_HOME="${ANDROID_NDK_LATEST_HOME}"
+          node apps/oppa/scripts/run-tauri.mjs android build --debug --apk --target aarch64 armv7 x86_64
+      - name: Clippy (Android host)
+        run: |
+          toolchain="${ANDROID_NDK_LATEST_HOME}/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          export CC_aarch64_linux_android="${toolchain}/aarch64-linux-android26-clang"
+          export AR_aarch64_linux_android="${toolchain}/llvm-ar"
+          export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="${CC_aarch64_linux_android}"
+          export TAURI_ANDROID_PACKAGE_NAME_PREFIX=com_neplextech TAURI_ANDROID_PACKAGE_NAME_APP_NAME=oppa
+          cargo clippy -p oppa -p tauri-plugin-oppa-mobile --target aarch64-linux-android -- -D warnings
+      - uses: actions/upload-artifact@v4
+        with:
+          name: oppa-android-debug-apk
+          path: apps/oppa/src-tauri/gen/android/app/build/outputs/apk/universal/debug/*.apk
+          retention-days: 7
+
+  ios:
+    # Generates the Xcode project, applies branding, and builds for the
+    # simulator. No Apple Developer Program credentials are required.
+    name: iOS simulator
+    runs-on: macos-latest
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios-sim,aarch64-apple-ios
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: oppa-ios
+      - run: brew install xcodegen || true
+      - run: pnpm install --frozen-lockfile
+      - name: Generate Xcode project
+        run: pnpm oppa:ios:init --ci
+      - name: Apply iOS branding
+        run: pnpm oppa:ios:brand
+      - name: Build for the iOS simulator
+        env:
+          OPPA_PRODUCT_DIR: ${{ github.workspace }}/products/default
+        run: node apps/oppa/scripts/run-tauri.mjs ios build --debug --target aarch64-sim --ci

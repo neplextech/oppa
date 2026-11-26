@@ -1,4 +1,4 @@
-import { Copy, Download, MoreHorizontal, RefreshCw, Trash2 } from 'lucide-react';
+import { Copy, Download, MoreHorizontal, RefreshCw, Share2, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 
 import { EmptyState, ScreenContainer, ScreenHeader, StatusDot } from '@/components/ui';
@@ -11,6 +11,8 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { ConfirmAction, KeyValue, SearchField, Toolbar } from '@/components/workspace';
+import { agentClient } from '@/lib/agent-client';
+import { copyText } from '@/lib/clipboard';
 import type { Diagnostics } from '@/lib/types';
 import { formatRelativeTime, titleCase } from '@/lib/utils';
 
@@ -40,8 +42,7 @@ export function DiagnosticsScreen({
       `${entry.target} ${entry.message}`.toLowerCase().includes(query.toLowerCase()),
   );
   const copy = (value: string) => {
-    void navigator.clipboard
-      .writeText(value)
+    void copyText(value)
       .then(() => setNotice('Copied sanitized diagnostics.'))
       .catch(() => setNotice('Unable to copy. Select the entry text and copy it manually.'));
   };
@@ -60,6 +61,23 @@ export function DiagnosticsScreen({
               <Copy />
               Copy
             </Button>
+            {!canExportFile && (
+              <Button
+                size="sm"
+                disabled={busy !== null}
+                aria-label="Share diagnostics"
+                onClick={() =>
+                  void agentClient
+                    .shareDiagnostics()
+                    .catch((cause: unknown) =>
+                      setNotice(cause instanceof Error ? cause.message : 'Unable to share diagnostics.'),
+                    )
+                }
+              >
+                <Share2 />
+                Share
+              </Button>
+            )}
             {canExportFile && (
               <Button
                 size="sm"

@@ -1,4 +1,10 @@
 //! Native plugin registration and typed calls.
+//!
+//! Every fallible call returns [`MobileError`]: `Detached` when no Android
+//! activity can dispatch it, `Timeout` past its deadline, or `Native` when the
+//! Kotlin or Swift implementation rejects it. The variants are documented on
+//! the type rather than repeated on each method.
+#![allow(clippy::missing_errors_doc)]
 
 #[cfg(target_os = "android")]
 use std::collections::HashMap;
@@ -155,6 +161,12 @@ impl<R: Runtime> OppaMobile<R> {
         )
         .await
         .map(|endpoints| endpoints.services)
+    }
+
+    /// Opens the system share sheet for plain text.
+    pub async fn share_text(&self, title: &str, text: &str) -> Result<(), MobileError> {
+        self.call_unit("shareText", json!({ "title": title, "text": text }))
+            .await
     }
 
     /// Opens a validated HTTP(S) URL in the system browser.

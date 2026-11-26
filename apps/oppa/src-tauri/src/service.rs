@@ -76,7 +76,7 @@ type SupervisorChannels = (
 /// Long-lived, process-owned host for the shell-independent agent runtime.
 ///
 /// One instance exists per process on every platform. On Android it outlives
-/// activities and WebViews; see [`crate::runtime_owner`].
+/// activities and web views; see [`crate::runtime_owner`].
 pub struct AgentService {
     pub(crate) app: AppHandle,
     pub(crate) product: ProductConfig,

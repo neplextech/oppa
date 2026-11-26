@@ -559,6 +559,11 @@ export const agentClient = {
     return isTauri() ? command('get_diagnostics_bundle') : JSON.stringify({ diagnostics: demoDiagnostics }, null, 2);
   },
 
+  /** Opens the system share sheet with the sanitized diagnostics bundle (mobile). */
+  async shareDiagnostics(): Promise<void> {
+    await command('share_diagnostics');
+  },
+
   async quitApplication(): Promise<void> {
     if (isTauri()) await command('quit_application');
   },

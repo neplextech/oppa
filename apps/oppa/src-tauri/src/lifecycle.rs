@@ -173,6 +173,8 @@ impl LifecyclePolicy {
 mod tests {
     use super::*;
 
+    const NO_ACTIONS: Vec<LifecycleAction> = Vec::new();
+
     const PAIRED_CONNECTED: AgentFacts = AgentFacts {
         paired: true,
         connected: true,
@@ -191,10 +193,9 @@ mod tests {
     fn ios_reconnects_after_suspension() {
         let mut policy = ios();
         let start = Instant::now();
-        assert!(
-            policy
-                .on_event(LifecycleEvent::Backgrounded, PAIRED_CONNECTED, start)
-                .is_empty()
+        assert_eq!(
+            policy.on_event(LifecycleEvent::Backgrounded, PAIRED_CONNECTED, start),
+            NO_ACTIONS
         );
         let actions = policy.on_event(
             LifecycleEvent::Foregrounded,
@@ -215,7 +216,7 @@ mod tests {
             PAIRED_CONNECTED,
             start + Duration::from_secs(1),
         );
-        assert!(actions.is_empty());
+        assert_eq!(actions, NO_ACTIONS);
     }
 
     #[test]
@@ -228,8 +229,8 @@ mod tests {
             PAIRED_CONNECTED,
             start + Duration::from_secs(3_600),
         );
-        assert!(
-            actions.is_empty(),
+        assert_eq!(
+            actions, NO_ACTIONS,
             "a live service connection is not restarted"
         );
         let disconnected = AgentFacts {
@@ -254,14 +255,13 @@ mod tests {
             policy.on_event(LifecycleEvent::NetworkAvailable, PAIRED_CONNECTED, start),
             [LifecycleAction::Reconnect]
         );
-        assert!(
-            policy
-                .on_event(
-                    LifecycleEvent::NetworkAvailable,
-                    PAIRED_CONNECTED,
-                    start + Duration::from_millis(500)
-                )
-                .is_empty()
+        assert_eq!(
+            policy.on_event(
+                LifecycleEvent::NetworkAvailable,
+                PAIRED_CONNECTED,
+                start + Duration::from_millis(500)
+            ),
+            NO_ACTIONS
         );
         assert_eq!(
             policy.on_event(
@@ -279,10 +279,9 @@ mod tests {
         let start = Instant::now();
         policy.on_event(LifecycleEvent::Backgrounded, PAIRED_CONNECTED, start);
         policy.on_event(LifecycleEvent::NetworkLost, PAIRED_CONNECTED, start);
-        assert!(
-            policy
-                .on_event(LifecycleEvent::NetworkAvailable, PAIRED_CONNECTED, start)
-                .is_empty()
+        assert_eq!(
+            policy.on_event(LifecycleEvent::NetworkAvailable, PAIRED_CONNECTED, start),
+            NO_ACTIONS
         );
         assert_eq!(
             policy.on_event(
@@ -304,19 +303,17 @@ mod tests {
         let mut policy = ios();
         let start = Instant::now();
         policy.on_event(LifecycleEvent::Backgrounded, unpaired, start);
-        assert!(
-            policy
-                .on_event(
-                    LifecycleEvent::Foregrounded,
-                    unpaired,
-                    start + Duration::from_secs(60)
-                )
-                .is_empty()
+        assert_eq!(
+            policy.on_event(
+                LifecycleEvent::Foregrounded,
+                unpaired,
+                start + Duration::from_secs(60)
+            ),
+            NO_ACTIONS
         );
-        assert!(
-            policy
-                .on_event(LifecycleEvent::NetworkAvailable, unpaired, start)
-                .is_empty()
+        assert_eq!(
+            policy.on_event(LifecycleEvent::NetworkAvailable, unpaired, start),
+            NO_ACTIONS
         );
     }
 
@@ -324,10 +321,9 @@ mod tests {
     fn ios_requests_bounded_time_only_for_in_flight_jobs() {
         let mut policy = ios();
         let start = Instant::now();
-        assert!(
-            policy
-                .on_event(LifecycleEvent::Backgrounded, PAIRED_CONNECTED, start)
-                .is_empty()
+        assert_eq!(
+            policy.on_event(LifecycleEvent::Backgrounded, PAIRED_CONNECTED, start),
+            NO_ACTIONS
         );
         policy.on_event(LifecycleEvent::Foregrounded, PAIRED_CONNECTED, start);
 
@@ -339,20 +335,18 @@ mod tests {
             policy.on_event(LifecycleEvent::Backgrounded, busy, start),
             [LifecycleAction::BeginBackgroundTask]
         );
-        assert!(
-            policy
-                .on_event(LifecycleEvent::JobsDrained, busy, start)
-                .is_empty(),
+        assert_eq!(
+            policy.on_event(LifecycleEvent::JobsDrained, busy, start),
+            NO_ACTIONS,
             "the task stays open while jobs remain"
         );
         assert_eq!(
             policy.on_event(LifecycleEvent::JobsDrained, PAIRED_CONNECTED, start),
             [LifecycleAction::EndBackgroundTask]
         );
-        assert!(
-            policy
-                .on_event(LifecycleEvent::JobsDrained, PAIRED_CONNECTED, start)
-                .is_empty()
+        assert_eq!(
+            policy.on_event(LifecycleEvent::JobsDrained, PAIRED_CONNECTED, start),
+            NO_ACTIONS
         );
     }
 
@@ -381,10 +375,9 @@ mod tests {
             pending_jobs: 3,
             ..PAIRED_CONNECTED
         };
-        assert!(
-            policy
-                .on_event(LifecycleEvent::Backgrounded, busy, Instant::now())
-                .is_empty()
+        assert_eq!(
+            policy.on_event(LifecycleEvent::Backgrounded, busy, Instant::now()),
+            NO_ACTIONS
         );
     }
 

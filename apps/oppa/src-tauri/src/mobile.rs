@@ -62,6 +62,8 @@ pub fn resolve_paths(app: &AppHandle) -> Result<AppPaths, CommandError> {
 }
 
 /// Selects the platform's persistent secure credential store.
+// Only the iOS Keychain constructor can fail.
+#[cfg_attr(target_os = "android", allow(clippy::unnecessary_wraps))]
 pub fn credential_store(
     app: &AppHandle,
     product: &ProductConfig,
@@ -232,8 +234,10 @@ async fn begin_background_task(app: &AppHandle, service: &AgentService, host: &M
 }
 
 #[cfg(target_os = "android")]
+#[allow(clippy::unused_async)] // Signature shared with the iOS implementation.
 async fn begin_background_task(_app: &AppHandle, _service: &AgentService, _host: &MobileHost) {}
 
+#[cfg_attr(target_os = "android", allow(clippy::unused_async))]
 async fn end_background_task(app: &AppHandle, host: &MobileHost) {
     let task = host
         .background_task
@@ -405,6 +409,7 @@ fn mobile_host(app: &AppHandle) -> Result<Arc<MobileHost>, CommandError> {
         .ok_or_else(|| CommandError::internal("Mobile lifecycle is not initialized."))
 }
 
+#[allow(clippy::needless_pass_by_value)] // Used as a `map_err` adapter.
 fn native_error(error: tauri_plugin_oppa_mobile::MobileError) -> CommandError {
     CommandError::new("native_unavailable", sanitize(&error.to_string()))
 }
@@ -449,6 +454,7 @@ pub async fn set_background_agent(
 }
 
 /// iOS: keeps the screen awake while the agent is paired and active.
+#[cfg_attr(target_os = "android", allow(clippy::unused_async))]
 pub async fn set_keep_awake(
     app: &AppHandle,
     service: &Arc<AgentService>,
@@ -544,6 +550,7 @@ pub async fn open_app_settings(app: &AppHandle) -> Result<(), CommandError> {
 }
 
 /// iOS: triggers and reports the local network privacy decision.
+#[cfg_attr(target_os = "android", allow(clippy::unused_async))]
 pub async fn request_local_network_access(app: &AppHandle) -> Result<String, CommandError> {
     #[cfg(target_os = "ios")]
     {
@@ -598,6 +605,19 @@ pub async fn discover_network_printers(
         ),
     );
     Ok(printers)
+}
+
+/// Shares the sanitized diagnostics bundle through the system share sheet.
+pub async fn share_diagnostics(
+    app: &AppHandle,
+    service: &AgentService,
+) -> Result<(), CommandError> {
+    let bundle = service.diagnostics_bundle().await?;
+    let title = format!("{} diagnostics", service.product.product_name);
+    app.oppa_mobile()
+        .share_text(&title, &bundle)
+        .await
+        .map_err(native_error)
 }
 
 /// Opens a validated URL in the system browser.

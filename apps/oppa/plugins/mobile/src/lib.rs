@@ -49,13 +49,15 @@ pub enum MobileError {
 /// Initializes the plugin. Register it only on Android and iOS.
 pub fn init<R: Runtime>() -> TauriPlugin<R> {
     Builder::new("oppa-mobile")
-        .setup(|_app, _api| {
+        .setup(|app, api| {
             #[cfg(mobile)]
             {
                 use tauri::Manager as _;
-                let bridge = mobile::init(_app, &_api)?;
-                _app.manage(bridge);
+                let bridge = mobile::init(app, &api)?;
+                app.manage(bridge);
             }
+            #[cfg(not(mobile))]
+            let _ = (app, api);
             Ok(())
         })
         .build()

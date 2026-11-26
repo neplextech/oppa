@@ -84,7 +84,7 @@ export function MobileShell({
             aria-label={`${connection.label}. Reconnect`}
           >
             <span className="mobile-connection__dot" aria-hidden />
-            {connection.label}
+            <span className="mobile-connection__label">{connection.label}</span>
             {connection.tone !== 'ok' && <RefreshCw className="size-3.5" aria-hidden />}
           </button>
         )}

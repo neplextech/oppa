@@ -60,6 +60,12 @@ class UrlArgs {
 }
 
 @InvokeArg
+class ShareArgs {
+    lateinit var title: String
+    lateinit var text: String
+}
+
+@InvokeArg
 class PathArgs {
     lateinit var path: String
 }
@@ -257,6 +263,16 @@ class OppaMobilePlugin(private val activity: Activity) : Plugin(activity) {
             return
         }
         if (launch(Intent(Intent.ACTION_VIEW, uri))) invoke.resolve() else invoke.reject("no browser is available")
+    }
+
+    @Command
+    fun shareText(invoke: Invoke) {
+        val args = invoke.parseArgs(ShareArgs::class.java)
+        val send = Intent(Intent.ACTION_SEND)
+            .setType("text/plain")
+            .putExtra(Intent.EXTRA_SUBJECT, args.title)
+            .putExtra(Intent.EXTRA_TEXT, args.text)
+        if (launch(Intent.createChooser(send, args.title))) invoke.resolve() else invoke.reject("sharing is unavailable")
     }
 
     @Command

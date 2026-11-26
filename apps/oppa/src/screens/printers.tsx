@@ -21,6 +21,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { ConfirmAction, KeyValue, MasterDetail, SearchField, Toolbar } from '@/components/workspace';
+import { copyText } from '@/lib/clipboard';
 import type { PlatformCapabilities } from '@/lib/platform';
 import type {
   JobSummary,
@@ -191,9 +192,16 @@ export function PrintersScreen(props: PrinterScreenProps) {
                     : 'Add an ESC/POS network printer by IP address, or scan this network for printers.'
               }
               action={
-                <Button size="sm" variant="outline" onClick={() => void onRefresh().catch(() => undefined)}>
-                  Refresh discovery
-                </Button>
+                props.capabilities.systemPrintQueues || printers.length ? (
+                  <Button size="sm" variant="outline" onClick={() => void onRefresh().catch(() => undefined)}>
+                    Refresh discovery
+                  </Button>
+                ) : (
+                  <Button size="sm" onClick={() => setShowAdd(true)}>
+                    <Plus />
+                    Add printer
+                  </Button>
+                )
               }
             />
           )
@@ -261,9 +269,7 @@ function PrinterInspector({
             </DropdownMenuTrigger>
             <DropdownMenuContent>
               <DropdownMenuGroup>
-                <DropdownMenuItem onClick={() => void navigator.clipboard.writeText(printer.id)}>
-                  Copy printer ID
-                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => void copyText(printer.id)}>Copy printer ID</DropdownMenuItem>
                 {printer.connectionType === 'network' && (
                   <DropdownMenuItem variant="destructive" onClick={onRequestRemove}>
                     Remove printer…

@@ -102,6 +102,7 @@ pub fn run() {
             commands::get_diagnostics,
             commands::export_diagnostics,
             commands::get_diagnostics_bundle,
+            commands::share_diagnostics,
             commands::set_start_on_login,
             commands::reconnect,
             commands::quit_application,

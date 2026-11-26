@@ -1,4 +1,4 @@
-name: Release OPPA desktop
+name: Release OPPA
 
 on:
   workflow_dispatch:
@@ -13,6 +13,7 @@ on:
       - 'Cargo.lock'
       - '.github/workflows/release-desktop.yml'
       - '.github/scripts/check-desktop-release*'
+      - '.github/scripts/android-update-manifest*'
 
 permissions:
   contents: read
@@ -33,7 +34,7 @@ jobs:
           node-version: 24
           package-manager-cache: false
       - name: Test release version guards
-        run: node --test .github/scripts/check-desktop-release.test.mjs
+        run: node --test .github/scripts/check-desktop-release.test.mjs .github/scripts/android-update-manifest.test.mjs
       - name: Refuse published release versions
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -133,9 +134,122 @@ jobs:
           updaterJsonPreferNsis: true
           args: ${{ matrix.args }}
 
+  android:
+    # Builds the signed direct-download APK and attaches it, with the
+    # `latest-android.json` update manifest, to the draft created above.
+    # Signing material only exists in repository secrets and the runner's
+    # temporary directory; it is never written into the workspace.
+    needs: release
+    name: Release (Android APK)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Install Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: . -> target
+          cache-on-failure: true
+          shared-key: oppa-release-android
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Prepare release signing
+        env:
+          KEYSTORE_BASE64: ${{ secrets.OPPA_ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.OPPA_ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.OPPA_ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.OPPA_ANDROID_KEY_PASSWORD }}
+        run: |
+          for name in KEYSTORE_BASE64 KEYSTORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Android release signing secret ${name} is not configured."
+              exit 1
+            fi
+          done
+          signing_dir="${RUNNER_TEMP}/oppa-android-signing"
+          mkdir -p "${signing_dir}"
+          chmod 700 "${signing_dir}"
+          printf '%s' "${KEYSTORE_BASE64}" | base64 --decode > "${signing_dir}/release.jks"
+          {
+            echo "storeFile=${signing_dir}/release.jks"
+            echo "storePassword=${KEYSTORE_PASSWORD}"
+            echo "keyAlias=${KEY_ALIAS}"
+            echo "keyPassword=${KEY_PASSWORD}"
+          } > "${signing_dir}/signing.properties"
+          chmod 600 "${signing_dir}/release.jks" "${signing_dir}/signing.properties"
+          echo "OPPA_ANDROID_SIGNING_PROPERTIES=${signing_dir}/signing.properties" >> "${GITHUB_ENV}"
+
+      - name: Build signed universal APK
+        env:
+          OPPA_PRODUCT_DIR: ${{ github.workspace }}/products/default
+          OPPA_ANDROID_REQUIRE_SIGNING: 'true'
+        run: |
+          export NDK_HOME="${ANDROID_NDK_LATEST_HOME}"
+          node apps/oppa/scripts/run-tauri.mjs android build --apk --target aarch64 armv7 x86_64
+
+      - name: Verify the stable signing identity
+        env:
+          EXPECTED_CERT_SHA256: ${{ secrets.OPPA_ANDROID_CERT_SHA256 }}
+        run: |
+          apk="apps/oppa/src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk"
+          apksigner="$(ls -d "${ANDROID_HOME}"/build-tools/*/ | sort -V | tail -1)apksigner"
+          "${apksigner}" verify --verbose --print-certs "${apk}" | tee "${RUNNER_TEMP}/apksigner.txt"
+          if [ -n "${EXPECTED_CERT_SHA256}" ]; then
+            expected="$(echo "${EXPECTED_CERT_SHA256}" | tr -d ':' | tr 'A-F' 'a-f')"
+            grep -qi "certificate SHA-256 digest: ${expected}" "${RUNNER_TEMP}/apksigner.txt" || {
+              echo "::error::The APK is not signed with the pinned OPPA release certificate."
+              exit 1
+            }
+          else
+            echo "::warning::OPPA_ANDROID_CERT_SHA256 is not set; the signing certificate was not pinned."
+          fi
+
+      - name: Upload APK and update manifest to the draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          version="$(node -p "require('./apps/oppa/src-tauri/tauri.conf.json').version")"
+          tag="oppa-v${version}"
+          name="OPPA_${version}_android_universal.apk"
+          cp apps/oppa/src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk "${RUNNER_TEMP}/${name}"
+          OPPA_VERSION="${version}" OPPA_RELEASE_TAG="${tag}" OPPA_APK_NAME="${name}" \
+            node .github/scripts/android-update-manifest.mjs "${RUNNER_TEMP}/${name}" "${RUNNER_TEMP}/latest-android.json"
+          gh release upload "${tag}" "${RUNNER_TEMP}/${name}" "${RUNNER_TEMP}/latest-android.json" --clobber
+
+      - name: Remove signing material
+        if: always()
+        run: rm -rf "${RUNNER_TEMP}/oppa-android-signing"
+
   checksums:
     name: Finalize stable release
-    needs: release
+    needs: [release, android]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -162,6 +276,7 @@ jobs:
             -type f \
             ! -name '*.sig' \
             ! -name 'latest.json' \
+            ! -name 'latest-android.json' \
             ! -name 'SHA256SUMS.txt' \
             -print0 |
             LC_ALL=C sort -z |

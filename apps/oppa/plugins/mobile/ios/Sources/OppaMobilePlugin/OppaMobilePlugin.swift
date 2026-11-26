@@ -25,6 +25,11 @@ struct UrlArgs: Decodable {
     let url: String
 }
 
+struct ShareArgs: Decodable {
+    let title: String
+    let text: String
+}
+
 struct MobileEvent: Encodable {
     let type: String
 }
@@ -170,6 +175,25 @@ class OppaMobilePlugin: Plugin {
         }
     }
 
+    @objc public func shareText(_ invoke: Invoke) throws {
+        let args = try invoke.parseArgs(ShareArgs.self)
+        DispatchQueue.main.async {
+            guard let presenter = OppaMobilePlugin.topViewController() else {
+                invoke.reject("sharing is unavailable")
+                return
+            }
+            let sheet = UIActivityViewController(activityItems: [args.text], applicationActivities: nil)
+            sheet.setValue(args.title, forKey: "subject")
+            // iPad presents the sheet as a popover anchored to the view.
+            sheet.popoverPresentationController?.sourceView = presenter.view
+            sheet.popoverPresentationController?.sourceRect = CGRect(
+                x: presenter.view.bounds.midX, y: presenter.view.bounds.maxY - 1, width: 1, height: 1
+            )
+            presenter.present(sheet, animated: true)
+            invoke.resolve()
+        }
+    }
+
     @objc public func openAppSettings(_ invoke: Invoke) {
         DispatchQueue.main.async {
             if let url = URL(string: UIApplication.openSettingsURLString) {
@@ -177,6 +201,19 @@ class OppaMobilePlugin: Plugin {
             }
             invoke.resolve()
         }
+    }
+
+    /// The front-most view controller of the active window scene.
+    static func topViewController() -> UIViewController? {
+        let window = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap { $0.windows }
+            .first { $0.isKeyWindow }
+        var controller = window?.rootViewController
+        while let presented = controller?.presentedViewController {
+            controller = presented
+        }
+        return controller
     }
 
     static func isServiceType(_ value: String) -> Bool {

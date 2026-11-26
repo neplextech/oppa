@@ -24,6 +24,7 @@
     "oppa:android:dev": "node apps/oppa/scripts/run-tauri.mjs android dev",
     "oppa:android:build": "node apps/oppa/scripts/run-tauri.mjs android build",
     "oppa:ios:init": "node apps/oppa/scripts/run-tauri.mjs ios init",
+    "oppa:ios:brand": "node apps/oppa/scripts/apply-ios-branding.mjs",
     "oppa:ios:dev": "node apps/oppa/scripts/run-tauri.mjs ios dev",
     "oppa:ios:build": "node apps/oppa/scripts/run-tauri.mjs ios build",
     "protocol:generate": "pnpm --filter @openprinter/protocol generate",

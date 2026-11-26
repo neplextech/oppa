@@ -188,15 +188,21 @@ mod tests {
     fn ios_limitations_state_that_unattended_background_printing_is_unsupported() {
         let ios = limitations(PlatformCapabilities::for_platform(PlatformKind::Ios));
         assert!(ios[0].contains("does not allow continuous unattended background printing"));
-        assert!(limitations(PlatformCapabilities::for_platform(PlatformKind::Macos)).is_empty());
-        assert!(!limitations(PlatformCapabilities::for_platform(PlatformKind::Android)).is_empty());
+        assert_eq!(
+            limitations(PlatformCapabilities::for_platform(PlatformKind::Macos)),
+            Vec::<String>::new()
+        );
+        assert_ne!(
+            limitations(PlatformCapabilities::for_platform(PlatformKind::Android)),
+            Vec::<String>::new()
+        );
     }
 
     #[test]
     fn known_vendor_battery_managers_get_actionable_guidance() {
         let guidance = battery_guidance(" Xiaomi ").expect("xiaomi");
         assert_eq!(guidance.reference_url, "https://dontkillmyapp.com/xiaomi");
-        assert!(!guidance.steps.is_empty());
+        assert_ne!(guidance.steps, Vec::<String>::new());
         assert_eq!(battery_guidance("HONOR").expect("honor").vendor, "Huawei");
         assert!(battery_guidance("Google").is_none());
     }

@@ -18,6 +18,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { ConfirmAction, KeyValue, MasterDetail, SearchField, Toolbar } from '@/components/workspace';
+import { copyText } from '@/lib/clipboard';
 import type { JobSummary } from '@/lib/types';
 import { formatRelativeTime, titleCase } from '@/lib/utils';
 import { listNavigation, useSelection } from '@/lib/workspace';
@@ -152,9 +153,7 @@ export function JobsScreen({
                       <ContextMenuContent>
                         <ContextMenuGroup>
                           <ContextMenuItem onClick={() => select(job.id)}>Inspect job</ContextMenuItem>
-                          <ContextMenuItem onClick={() => void navigator.clipboard.writeText(job.id)}>
-                            Copy job ID
-                          </ContextMenuItem>
+                          <ContextMenuItem onClick={() => void copyText(job.id)}>Copy job ID</ContextMenuItem>
                         </ContextMenuGroup>
                       </ContextMenuContent>
                     </ContextMenu>

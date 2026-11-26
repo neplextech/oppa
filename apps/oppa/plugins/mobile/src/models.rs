@@ -9,11 +9,11 @@ use serde::{Deserialize, Serialize};
 /// runtime to the Rust host.
 ///
 /// Native code sends these through a Rust-owned Tauri channel, which does not
-/// require the WebView or an Android activity to be alive.
+/// require the web view or an Android activity to be alive.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum MobileEvent {
-    /// An Android activity (and its WebView) is available for plugin calls.
+    /// An Android activity (and its web view) is available for plugin calls.
     ActivityAvailable,
     /// The last Android activity was destroyed; the process may continue in
     /// the foreground service.
@@ -47,6 +47,7 @@ pub struct ServiceEndpoint {
 }
 
 /// Snapshot of Android background-execution prerequisites.
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AndroidBackgroundStatus {

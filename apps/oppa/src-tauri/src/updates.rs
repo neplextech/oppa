@@ -151,7 +151,13 @@ impl VerifiedDownload {
             return Err(UpdateError::ChecksumMismatch);
         }
         let digest = self.hasher.finalize();
-        let actual: String = digest.iter().map(|byte| format!("{byte:02x}")).collect();
+        let actual = digest
+            .iter()
+            .fold(String::with_capacity(64), |mut hex, byte| {
+                use std::fmt::Write as _;
+                let _ = write!(hex, "{byte:02x}");
+                hex
+            });
         if actual == self.expected_sha256 {
             Ok(())
         } else {
