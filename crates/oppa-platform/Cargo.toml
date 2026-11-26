@@ -10,18 +10,29 @@ readme = "README.md"
 async-trait = "0.1.91"
 directories = "6.0.0"
 hostname = "0.4.1"
-keyring = { version = "3.6.3", default-features = false }
-open = "5.3.3"
 thiserror = "2.0.19"
 tokio = { version = "1.53.1", features = ["rt", "sync"] }
 url = "2.5.8"
 zeroize = "1.8.2"
+
+# Desktop-only secure storage and URL handling. On Android `keyring` would
+# silently fall back to its non-persistent mock store, so mobile builds never
+# link it and use the explicit mobile credential stores instead.
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+keyring = { version = "3.6.3", default-features = false }
+open = "5.3.3"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 keyring = { version = "3.6.3", default-features = false, features = ["sync-secret-service", "crypto-rust"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 keyring = { version = "3.6.3", default-features = false, features = ["apple-native"] }
+security-framework = "3.7.0"
+security-framework-sys = "2.17.0"
+
+[target.'cfg(target_os = "ios")'.dependencies]
+security-framework = "3.7.0"
+security-framework-sys = "2.17.0"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 keyring = { version = "3.6.3", default-features = false, features = ["windows-native"] }

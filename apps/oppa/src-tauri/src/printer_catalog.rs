@@ -180,6 +180,21 @@ impl PrinterCatalog {
         )
     }
 
+    /// Host and port of every configured raw TCP network printer.
+    #[cfg_attr(desktop, allow(dead_code))]
+    pub(crate) async fn network_endpoints(&self) -> Vec<(String, u16)> {
+        self.state
+            .read()
+            .await
+            .printers
+            .iter()
+            .filter_map(|printer| match &printer.reference.connection {
+                PrinterConnection::Network { host, port } => Some((host.clone(), *port)),
+                _ => None,
+            })
+            .collect()
+    }
+
     pub async fn list(&self) -> Result<Vec<PrinterSummary>, CommandError> {
         let printers = self
             .state

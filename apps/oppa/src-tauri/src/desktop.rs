@@ -1,3 +1,6 @@
+//! Desktop-only shell integration: tray, application menu, and
+//! close-to-background window handling.
+
 use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
@@ -12,7 +15,7 @@ use tauri::{
 #[cfg(target_os = "macos")]
 use tauri::menu::Submenu;
 
-use crate::service::DesktopService;
+use crate::service::AgentService;
 
 const OPEN_ID: &str = "open";
 const PRINTERS_ID: &str = "printers";
@@ -44,8 +47,23 @@ impl Default for QuitState {
     }
 }
 
+/// Installs the system tray and, on macOS, the application menu.
+pub fn setup(app: &App, service: &AgentService) {
+    if let Err(error) = setup_tray(app) {
+        service
+            .log
+            .warn("desktop", format!("System tray is unavailable: {error}"));
+    }
+    #[cfg(target_os = "macos")]
+    if let Err(error) = setup_app_menu(app) {
+        service
+            .log
+            .warn("desktop", format!("App menu is unavailable: {error}"));
+    }
+}
+
 pub fn setup_tray(app: &App) -> tauri::Result<()> {
-    let service = app.state::<Arc<DesktopService>>();
+    let service = app.state::<Arc<AgentService>>();
     let product_name = service.product.product_name.as_str();
     let tray_id = format!("{}-tray", service.product.product_id);
     let open = MenuItem::with_id(
@@ -129,7 +147,7 @@ fn observe_tray_status(
         let reconnect = reconnect.clone();
         let tray_id = tray_id.clone();
         tauri::async_runtime::spawn(async move {
-            let service = Arc::clone(app.state::<Arc<DesktopService>>().inner());
+            let service = Arc::clone(app.state::<Arc<AgentService>>().inner());
             let status = service.status(false, String::new()).await;
             let (available, enabled) = service.catalog.availability_counts().await;
             let connected =
@@ -221,7 +239,7 @@ fn hide_main_window(app: &AppHandle) {
 /// Shuts the agent down gracefully and exits the process.
 pub(crate) fn quit_application(app: &AppHandle) {
     app.state::<QuitState>().0.store(true, Ordering::Release);
-    let service = Arc::clone(app.state::<Arc<DesktopService>>().inner());
+    let service = Arc::clone(app.state::<Arc<AgentService>>().inner());
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
         service.shutdown().await;
@@ -264,7 +282,7 @@ fn handle_tray_menu(app: &AppHandle, event: &tauri::menu::MenuEvent) {
             let _ = app.emit(NAVIGATE_EVENT, "diagnostics");
         }
         RECONNECT_ID => {
-            let service = Arc::clone(app.state::<Arc<DesktopService>>().inner());
+            let service = Arc::clone(app.state::<Arc<AgentService>>().inner());
             tauri::async_runtime::spawn(async move {
                 if let Err(error) = service.reconnect().await {
                     service.log.warn("transport", error.to_string());
@@ -308,7 +326,7 @@ fn build_application_submenu(app: &App, product_name: &str) -> tauri::Result<Sub
 
 #[cfg(target_os = "macos")]
 fn build_app_menu(app: &App) -> tauri::Result<Menu<tauri::Wry>> {
-    let product_name = app.try_state::<Arc<DesktopService>>().map_or_else(
+    let product_name = app.try_state::<Arc<AgentService>>().map_or_else(
         || "OPPA".to_owned(),
         |service| service.product.product_name.clone(),
     );
@@ -447,7 +465,7 @@ pub fn handle_app_menu_event(app: &AppHandle, event: &tauri::menu::MenuEvent) {
             let _ = app.emit(NAVIGATE_EVENT, "settings");
         }
         APP_RECONNECT => {
-            let service = Arc::clone(app.state::<Arc<DesktopService>>().inner());
+            let service = Arc::clone(app.state::<Arc<AgentService>>().inner());
             tauri::async_runtime::spawn(async move {
                 if let Err(error) = service.reconnect().await {
                     service.log.warn("transport", error.to_string());

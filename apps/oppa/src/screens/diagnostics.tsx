@@ -19,12 +19,15 @@ export function DiagnosticsScreen({
   busy,
   onReload,
   onExport,
+  canExportFile = true,
   onClearLogs,
 }: {
   diagnostics: Diagnostics;
   busy: string | null;
   onReload: () => Promise<void>;
   onExport: () => Promise<string>;
+  /** Whether the platform can write a diagnostics file the user can find. */
+  canExportFile?: boolean;
   onClearLogs: () => Promise<void>;
 }) {
   const [query, setQuery] = useState('');
@@ -57,20 +60,22 @@ export function DiagnosticsScreen({
               <Copy />
               Copy
             </Button>
-            <Button
-              size="sm"
-              disabled={busy !== null}
-              onClick={() =>
-                void onExport()
-                  .then((path) => setNotice(`Diagnostics: ${path}`))
-                  .catch((cause: unknown) =>
-                    setNotice(cause instanceof Error ? cause.message : 'Unable to export diagnostics.'),
-                  )
-              }
-            >
-              <Download />
-              Export
-            </Button>
+            {canExportFile && (
+              <Button
+                size="sm"
+                disabled={busy !== null}
+                onClick={() =>
+                  void onExport()
+                    .then((path) => setNotice(`Diagnostics: ${path}`))
+                    .catch((cause: unknown) =>
+                      setNotice(cause instanceof Error ? cause.message : 'Unable to export diagnostics.'),
+                    )
+                }
+              >
+                <Download />
+                Export
+              </Button>
+            )}
             <DropdownMenu>
               <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" aria-label="Log actions" />}>
                 <MoreHorizontal />

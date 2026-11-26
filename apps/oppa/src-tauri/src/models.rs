@@ -37,7 +37,7 @@ impl From<&ProductConfig> for ProductSummary {
     }
 }
 
-/// Complete status returned to the desktop frontend.
+/// Complete status returned to the frontend.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentStatus {
@@ -55,6 +55,8 @@ pub struct AgentStatus {
     pub server_configuration: OpenPrinterServerConfiguration,
     pub connected_service: Option<ConnectedServiceSummary>,
     pub connection_state: OpenPrinterConnectionState,
+    /// Capabilities of the compiled host platform.
+    pub capabilities: crate::platform::PlatformCapabilities,
 }
 
 /// Validated identity advertised by the connected `OpenPrinter` service.
@@ -341,7 +343,7 @@ pub struct JobSummary {
     pub printer_id: String,
     pub printer_name: String,
     pub idempotency_key: String,
-    pub state: DesktopJobState,
+    pub state: JobDisplayState,
     pub received_at: String,
     pub updated_at: String,
     pub attempts: u32,
@@ -351,7 +353,7 @@ pub struct JobSummary {
 /// Frontend job lifecycle.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
-pub enum DesktopJobState {
+pub enum JobDisplayState {
     Queued,
     Received,
     Submitted,

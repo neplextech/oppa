@@ -1,0 +1,325 @@
+/*
+ * Phone and tablet adaptation. Every rule is scoped to
+ * `html[data-runtime='mobile']`, set before the first render on Android and
+ * iOS, so the desktop layout is untouched.
+ */
+
+html[data-runtime='mobile'] {
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --mobile-tabbar-height: 60px;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
+}
+
+html[data-runtime='mobile'] body {
+  /* Inputs below 16px make iOS zoom on focus. */
+  font-size: 14px;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+html[data-runtime='mobile'] :is(input, textarea, select) {
+  font-size: 16px;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+html[data-runtime='mobile'] :is(.select-text, .select-all, pre, code, dd) {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+/* Comfortable touch targets for primary controls on coarse pointers. */
+@media (pointer: coarse) {
+  html[data-runtime='mobile'] :is([data-slot='button']:not([data-size^='icon']), .preference-select) {
+    min-height: 38px;
+  }
+  html[data-runtime='mobile'] [data-slot='button'][data-size^='icon'] {
+    min-width: 36px;
+    min-height: 36px;
+  }
+  html[data-runtime='mobile'] [data-slot='input'] {
+    min-height: 44px;
+  }
+}
+
+/*
+ * Android insets the WebView natively, and some WebViews then resolve `dvh`
+ * against the full window. Pin full-screen containers to the viewport instead.
+ */
+.mobile-shell {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+html[data-runtime='mobile'] body {
+  min-height: 0;
+}
+
+.mobile-header {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 10px;
+  min-height: 56px;
+  padding: calc(var(--safe-top) + 8px) calc(var(--safe-right) + 16px) 8px calc(var(--safe-left) + 16px);
+  border-bottom: 1px solid var(--border);
+  background: var(--background);
+}
+
+.mobile-connection {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--foreground);
+  background: var(--card);
+}
+.mobile-connection__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--color-warning);
+}
+.mobile-connection--ok .mobile-connection__dot {
+  background: var(--color-connected);
+}
+.mobile-connection--busy .mobile-connection__dot {
+  background: var(--color-pending);
+  animation: mobile-pulse 1.4s ease-in-out infinite;
+}
+@keyframes mobile-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.mobile-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.mobile-main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  padding-right: var(--safe-right);
+  padding-left: var(--safe-left);
+}
+
+.mobile-tabbar {
+  display: flex;
+  flex-shrink: 0;
+  align-items: stretch;
+  justify-content: space-around;
+  min-height: calc(var(--mobile-tabbar-height) + var(--safe-bottom));
+  padding: 4px calc(var(--safe-right) + 4px) var(--safe-bottom) calc(var(--safe-left) + 4px);
+  border-top: 1px solid var(--border);
+  background: var(--sidebar);
+}
+
+.mobile-nav-item {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  min-width: 0;
+  min-height: 48px;
+  border-radius: 10px;
+  color: var(--muted-foreground);
+  font-size: 11px;
+  font-weight: 500;
+}
+.mobile-nav-item__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 28px;
+  border-radius: 999px;
+  transition: background-color 150ms ease;
+}
+.mobile-nav-item__icon svg {
+  width: 20px;
+  height: 20px;
+}
+.mobile-nav-item[aria-current='page'] {
+  color: var(--foreground);
+}
+.mobile-nav-item__icon {
+  position: relative;
+}
+.mobile-nav-item__icon::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--primary);
+  opacity: 0;
+  transition: opacity 150ms ease;
+}
+.mobile-nav-item__icon svg {
+  position: relative;
+}
+/* An opacity layer instead of color-mix(): older Android WebViews lack it. */
+.mobile-nav-item[aria-current='page'] .mobile-nav-item__icon {
+  color: var(--primary);
+}
+.mobile-nav-item[aria-current='page'] .mobile-nav-item__icon::before {
+  opacity: 0.16;
+}
+.mobile-nav-item__label {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Tablets and landscape phones: navigation rail instead of a tab bar. */
+.mobile-rail {
+  display: none;
+}
+@media (min-width: 768px) {
+  .mobile-tabbar {
+    display: none;
+  }
+  .mobile-rail {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    width: 84px;
+    flex-shrink: 0;
+    padding: 12px 6px calc(var(--safe-bottom) + 12px) calc(var(--safe-left) + 6px);
+    border-right: 1px solid var(--border);
+    background: var(--sidebar);
+  }
+  .mobile-rail .mobile-nav-item {
+    flex: 0 0 auto;
+    min-height: 60px;
+  }
+  .mobile-main {
+    padding-left: 0;
+    padding-bottom: var(--safe-bottom);
+  }
+}
+
+/* Screens fill the remaining height and scroll internally. */
+html[data-runtime='mobile'] .preferences-content {
+  padding: 16px;
+}
+
+/* Setup and full-screen states clear the status bar and gesture area. */
+html[data-runtime='mobile'] .onboarding {
+  position: fixed;
+  inset: 0;
+  height: auto;
+  overflow-y: auto;
+  padding-top: var(--safe-top);
+  padding-bottom: var(--safe-bottom);
+  padding-left: var(--safe-left);
+  padding-right: var(--safe-right);
+}
+
+/* Dialogs become bottom sheets on phones and stay above the keyboard. */
+@media (max-width: 767px) {
+  html[data-runtime='mobile'] [data-slot='dialog-content'] {
+    top: auto;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    width: 100%;
+    max-width: 100%;
+    max-height: calc(100% - 24px);
+    overflow-y: auto;
+    translate: none;
+    transform: none;
+    border-radius: 20px 20px 0 0;
+    padding-bottom: calc(var(--safe-bottom) + 16px);
+  }
+}
+
+/* The mobile header already names the screen; keep only context and actions. */
+html[data-runtime='mobile'] .screen-header {
+  padding: 10px 16px;
+}
+html[data-runtime='mobile'] .screen-header__title {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.mobile-header-actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 4px;
+}
+.mobile-header-actions:empty {
+  display: none;
+}
+/* Text buttons collapse to their icon in the app bar to save width. */
+.mobile-header-actions [data-slot='button']:not([data-size^='icon']) {
+  padding-inline: 10px;
+}
+@media (max-width: 420px) {
+  .mobile-header-actions [data-slot='button']:not([data-size^='icon']) {
+    font-size: 0;
+    gap: 0;
+  }
+  .mobile-header-actions [data-slot='button'] svg {
+    width: 18px;
+    height: 18px;
+  }
+}
+
+/*
+ * Fallbacks for older Android System WebViews (Chromium < 105) that lack the
+ * individual `translate` property and container queries used by the shared
+ * desktop styles.
+ */
+@supports not (translate: 0) {
+  [data-slot='switch-thumb'][data-checked] {
+    transform: translateX(calc(100% - 8px));
+  }
+}
+@media (max-width: 650px) {
+  html[data-runtime='mobile'] .has-inspector .master-content,
+  html[data-runtime='mobile'] .has-inspector .inspector-divider {
+    display: none;
+  }
+  html[data-runtime='mobile'] .has-inspector .inspector-content {
+    position: relative;
+    width: 100% !important;
+    flex: 1;
+  }
+}
+/* Without color-mix(), Tailwind's translucent destructive fill becomes opaque. */
+@supports not (color: color-mix(in srgb, red 10%, transparent)) {
+  html[data-runtime='mobile'] [data-slot='button'][data-variant='destructive'] {
+    background: transparent;
+    border: 1px solid var(--destructive);
+    color: var(--destructive);
+  }
+}

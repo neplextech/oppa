@@ -1,5 +1,6 @@
 [workspace]
 members = [
+  "apps/oppa/plugins/mobile",
   "apps/oppa/src-tauri",
   "crates/oppa-agent",
   "crates/oppa-auth",

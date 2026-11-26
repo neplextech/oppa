@@ -8,7 +8,7 @@ use oppa_printer::{
 };
 use tokio::{net::TcpStream, process::Command, sync::RwLock};
 
-#[cfg(unix)]
+#[cfg(cups)]
 use crate::cups::{CupsQueueOptions, query_cups_options};
 use crate::{DiscoveryError, DiscoveryProvider, DiscoveryResult};
 
@@ -292,7 +292,7 @@ impl DiscoveryProvider for SystemQueueProvider {
 impl SystemQueueProvider {
     /// Adds PDF route details to each queue. Failed option queries advertise
     /// native PDF submission with no claimed media or duplex support.
-    #[cfg(unix)]
+    #[cfg(cups)]
     async fn describe_pdf_routes(&self, printers: &mut [DiscoveredPrinter]) {
         let queues: Vec<Option<String>> = printers
             .iter()
@@ -321,11 +321,11 @@ impl SystemQueueProvider {
         }
     }
 
-    #[cfg(not(unix))]
+    #[cfg(not(cups))]
     async fn describe_pdf_routes(&self, _printers: &mut [DiscoveredPrinter]) {}
 }
 
-#[cfg(unix)]
+#[cfg(cups)]
 fn platform_queue_command() -> Command {
     let mut command = Command::new("lpstat");
     command.args(["-p", "-v"]);
@@ -345,12 +345,12 @@ fn platform_queue_command() -> Command {
     command
 }
 
-#[cfg(not(any(unix, windows)))]
+#[cfg(not(any(cups, windows)))]
 fn platform_queue_command() -> Command {
     Command::new("__oppa_unsupported_printer_query__")
 }
 
-#[cfg(unix)]
+#[cfg(cups)]
 fn parse_platform_queues(output: &str) -> DiscoveryResult<Vec<DiscoveredPrinter>> {
     Ok(parse_lpstat(output))
 }
@@ -360,7 +360,7 @@ fn parse_platform_queues(output: &str) -> DiscoveryResult<Vec<DiscoveredPrinter>
     parse_windows_printers(output)
 }
 
-#[cfg(not(any(unix, windows)))]
+#[cfg(not(any(cups, windows)))]
 fn parse_platform_queues(_output: &str) -> DiscoveryResult<Vec<DiscoveredPrinter>> {
     Err(DiscoveryError::Unavailable(
         "system printer discovery is unsupported on this platform".to_owned(),

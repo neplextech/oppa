@@ -12,10 +12,22 @@ const baseConfigPath = join(tauriDirectory, 'tauri.conf.json');
 const devConfigPath = join(tauriDirectory, 'tauri.conf.dev.json');
 const generatedConfigPath = join(tauriDirectory, '.product-tauri.conf.json');
 
-const mode = process.argv[2];
-if (mode !== 'dev' && mode !== 'build') {
-  throw new Error('Usage: node scripts/run-tauri.mjs <dev|build> [tauri arguments...]');
+// Usage:
+//   node scripts/run-tauri.mjs <dev|build> [tauri arguments...]
+//   node scripts/run-tauri.mjs <android|ios> <init|dev|build|run> [tauri arguments...]
+const MOBILE_PLATFORMS = new Set(['android', 'ios']);
+const platform = MOBILE_PLATFORMS.has(process.argv[2]) ? process.argv[2] : null;
+const command = platform ? process.argv[3] : process.argv[2];
+const forwardedArguments = process.argv.slice(platform ? 4 : 3);
+const validCommands = platform ? ['init', 'dev', 'build', 'run'] : ['dev', 'build'];
+if (!validCommands.includes(command)) {
+  throw new Error(
+    'Usage: node scripts/run-tauri.mjs <dev|build> [args...]\n' +
+      '       node scripts/run-tauri.mjs <android|ios> <init|dev|build|run> [args...]',
+  );
 }
+// `init` and `run` behave like development commands for product selection.
+const mode = command === 'build' ? 'build' : 'dev';
 
 async function exists(path) {
   try {
@@ -79,8 +91,19 @@ const applicationId = requireProductString(product, 'applicationId');
 config.productName = productName;
 // Use a distinct identifier in dev when the default product is active; the dev product already
 // carries a dev-specific applicationId so no suffix is needed.
+//
+// Mobile projects are generated once for a fixed identifier: the Android Kotlin package and the
+// Rust JNI symbols derive from it. Mobile builds therefore always use the default product's
+// identifier. Android debug builds are distinguished by a `-dev` version name and by the debug
+// signing key, which Android never allows to replace a release-signed install.
 const usingDefaultProduct = productDirectory === defaultProductDir;
-const resolvedIdentifier = mode === 'dev' && usingDefaultProduct ? `${applicationId}.dev` : applicationId;
+const defaultProduct = JSON.parse(await readFile(join(defaultProductDir, 'product.json'), 'utf8'));
+const mobileIdentifier = requireProductString(defaultProduct, 'applicationId');
+const resolvedIdentifier = platform
+  ? mobileIdentifier
+  : mode === 'dev' && usingDefaultProduct
+    ? `${applicationId}.dev`
+    : applicationId;
 config.identifier = resolvedIdentifier;
 // Expose the effective app identifier to Vite so the frontend can display it.
 process.env.VITE_APP_IDENTIFIER = resolvedIdentifier;
@@ -107,6 +130,7 @@ if (deepLinkScheme !== null) {
   config.plugins ??= {};
   config.plugins['deep-link'] ??= {};
   config.plugins['deep-link'].desktop = [{ schemes: [deepLinkScheme] }];
+  config.plugins['deep-link'].mobile = [{ scheme: [deepLinkScheme], appLink: false }];
 }
 
 // Merge dev-only Tauri overrides (updater endpoints, bundle settings) on top of the product config.
@@ -119,15 +143,20 @@ await writeFile(generatedConfigPath, `${JSON.stringify(config, null, 2)}\n`, 'ut
 
 // const pnpm = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm';
 const pnpm = 'pnpm';
-const child = spawn(
-  pnpm,
-  ['--filter', 'oppa', 'exec', 'tauri', mode, '--config', generatedConfigPath, ...process.argv.slice(3)],
-  {
-    cwd: repositoryRoot,
-    env: { ...process.env, OPPA_PRODUCT_DIR: productDirectory },
-    stdio: 'inherit',
-  },
-);
+const tauriArguments = platform
+  ? [platform, command, ...(command === 'init' ? [] : ['--config', generatedConfigPath]), ...forwardedArguments]
+  : [command, '--config', generatedConfigPath, ...forwardedArguments];
+// Full Rust debug info makes Android debug APKs several hundred megabytes, too
+// large for many emulators; line tables still give symbolized backtraces.
+const childEnvironment = { ...process.env, OPPA_PRODUCT_DIR: productDirectory };
+if (platform === 'android' && childEnvironment.CARGO_PROFILE_DEV_DEBUG === undefined) {
+  childEnvironment.CARGO_PROFILE_DEV_DEBUG = 'line-tables-only';
+}
+const child = spawn(pnpm, ['--filter', 'oppa', 'exec', 'tauri', ...tauriArguments], {
+  cwd: repositoryRoot,
+  env: childEnvironment,
+  stdio: 'inherit',
+});
 
 child.once('error', (error) => {
   throw error;

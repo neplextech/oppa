@@ -27,6 +27,7 @@ import { Switch } from '@/components/ui/switch';
 import { agentClient } from '@/lib/agent-client';
 import { readSetupProgress, setupReducer } from '@/lib/onboarding';
 import type { SetupState } from '@/lib/onboarding';
+import { deviceLabel, deviceNoun } from '@/lib/platform';
 import type {
   AgentStatus,
   DeepLinkPairing,
@@ -89,7 +90,7 @@ export function SetupScreen({
     return {
       step: canResumePrinters ? 'printers' : 'connect',
       serverUrl: saved?.serverUrl ?? status.serverConfiguration.serverUrl,
-      computerName: saved?.computerName ?? 'This computer',
+      computerName: saved?.computerName ?? defaultDeviceName(status),
       code: '',
       identity: null,
     };
@@ -224,16 +225,18 @@ export function SetupScreen({
   const StepIcon = state.step === 'connect' ? Server : state.step === 'pair' ? KeyRound : Printer;
   return (
     <div className="onboarding bg-background text-foreground">
-      <TitleBar
-        minimal
-        status={status}
-        paired={false}
-        developerMode={false}
-        onNavigate={(screen) => {
-          if (screen === 'settings') onOpenSettings();
-        }}
-        onReconnect={onReconnect}
-      />
+      {status.capabilities.windowControls && (
+        <TitleBar
+          minimal
+          status={status}
+          paired={false}
+          developerMode={false}
+          onNavigate={(screen) => {
+            if (screen === 'settings') onOpenSettings();
+          }}
+          onReconnect={onReconnect}
+        />
+      )}
       <main className="onboarding-stage">
         <section className="onboarding-column" aria-labelledby="setup-heading">
           <div
@@ -257,7 +260,7 @@ export function SetupScreen({
               {state.step === 'connect'
                 ? 'Connect to a server'
                 : state.step === 'pair'
-                  ? 'Pair this computer'
+                  ? `Pair ${deviceNoun(status.capabilities)}`
                   : 'Choose printers'}
             </h1>
             <p className="onboarding-description">
@@ -304,7 +307,7 @@ export function SetupScreen({
                   {!error && needsPairingRecovery && (
                     <p className="text-warning text-xs leading-4">
                       {status.connectionState === 'credential_revoked'
-                        ? 'This computer’s access was revoked. Continue to verify the server and pair with a new code.'
+                        ? `${capitalize(deviceNoun(status.capabilities))}’s access was revoked. Continue to verify the server and pair with a new code.`
                         : 'Authentication failed. Continue to pair again, or retry the connection below.'}
                     </p>
                   )}
@@ -413,7 +416,7 @@ export function SetupScreen({
               </div>
               <FieldGroup className="gap-3">
                 <Field>
-                  <FieldLabel htmlFor="setup-name">Computer name</FieldLabel>
+                  <FieldLabel htmlFor="setup-name">{deviceLabel(status.capabilities)} name</FieldLabel>
                   <Input
                     id="setup-name"
                     autoComplete="off"
@@ -457,7 +460,7 @@ export function SetupScreen({
                   disabled={locked || !state.identity || state.code.length < 4 || !state.computerName.trim()}
                 >
                   {working && <LoaderCircle className="animate-spin" />}
-                  {working ? 'Pairing…' : 'Pair computer'}
+                  {working ? 'Pairing…' : `Pair ${deviceLabel(status.capabilities).toLowerCase()}`}
                 </Button>
                 <Button
                   type="button"
@@ -564,7 +567,7 @@ export function SetupScreen({
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Replace this computer’s pairing?</DialogTitle>
+            <DialogTitle>Replace {deviceNoun(status.capabilities)}’s pairing?</DialogTitle>
             <DialogDescription>
               Continuing disconnects the current server and removes its saved credential. Verify the new server before
               pairing again.
@@ -599,4 +602,20 @@ export function SetupScreen({
       </Dialog>
     </div>
   );
+}
+
+function capitalize(value: string): string {
+  return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+/** Suggested agent name shown before pairing; the user can edit it. */
+function defaultDeviceName(status: AgentStatus): string {
+  switch (status.capabilities.kind) {
+    case 'android':
+      return 'Android device';
+    case 'ios':
+      return /iPad/.test(navigator.userAgent) ? 'iPad' : 'iPhone';
+    default:
+      return 'This computer';
+  }
 }

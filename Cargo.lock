@@ -3101,13 +3101,17 @@ dependencies = [
  "oppa-spooler",
  "oppa-storage",
  "oppa-transport",
+ "reqwest 0.12.28",
+ "semver",
  "serde",
  "serde_json",
+ "sha2",
  "tauri",
  "tauri-build",
  "tauri-plugin-autostart",
  "tauri-plugin-deep-link",
  "tauri-plugin-frame",
+ "tauri-plugin-oppa-mobile",
  "tauri-plugin-process",
  "tauri-plugin-single-instance",
  "tauri-plugin-updater",
@@ -3208,6 +3212,8 @@ dependencies = [
  "hostname",
  "keyring",
  "open",
+ "security-framework 3.7.0",
+ "security-framework-sys",
  "thiserror 2.0.19",
  "tokio",
  "url",
@@ -5118,6 +5124,20 @@ dependencies = [
  "tauri",
  "tauri-plugin",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "tauri-plugin-oppa-mobile"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "oppa-platform",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-plugin",
+ "thiserror 2.0.19",
+ "tokio",
 ]
 
 [[package]]

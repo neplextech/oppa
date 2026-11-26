@@ -173,7 +173,7 @@ export function JobsScreen({
         open={confirm}
         onOpenChange={setConfirm}
         title="Clear local job records?"
-        description="This removes retained history from this computer. It does not cancel jobs, clear the durable delivery queue, or change server delivery policies."
+        description="This removes retained history from this device. It does not cancel jobs, clear the durable delivery queue, or change server delivery policies."
         busy={busy !== null}
         action={async () => {
           await onClear();

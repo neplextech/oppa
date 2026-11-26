@@ -1,5 +1,7 @@
 import { LoaderCircle } from 'lucide-react';
 import type { ButtonHTMLAttributes, HTMLAttributes, ReactNode } from 'react';
+import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 /**
  * Shared application-level UI primitives.
@@ -132,15 +134,43 @@ export function ScreenHeader({
   description?: string;
   action?: ReactNode;
 }) {
+  // On mobile the app bar names the screen; actions move into it and only
+  // the description, if any, stays in the page.
+  const mobileActions = useMobileHeaderActions();
+  if (mobileActions) {
+    return (
+      <>
+        {action && createPortal(action, mobileActions)}
+        {description && (
+          <div className="screen-header border-border shrink-0 border-b">
+            <h1 className="screen-header__title">{title}</h1>
+            <p className="text-muted-foreground text-sm">{description}</p>
+          </div>
+        )}
+        {!description && <h1 className="screen-header__title">{title}</h1>}
+      </>
+    );
+  }
   return (
-    <div className="border-border flex shrink-0 flex-wrap items-start justify-between gap-4 border-b px-6 py-5">
-      <div>
-        <h1 className="text-foreground text-[22px] leading-7 font-semibold">{title}</h1>
+    <div className="screen-header border-border flex shrink-0 flex-wrap items-start justify-between gap-4 border-b px-6 py-5">
+      <div className="screen-header__text">
+        <h1 className="screen-header__title text-foreground text-[22px] leading-7 font-semibold">{title}</h1>
         {description && <p className="text-muted-foreground mt-0.5 text-sm">{description}</p>}
       </div>
       {action && <div className="shrink-0">{action}</div>}
     </div>
   );
+}
+
+/** The mobile app bar's action slot, when the mobile shell is mounted. */
+function useMobileHeaderActions(): HTMLElement | null {
+  const [slot, setSlot] = useState<HTMLElement | null>(() =>
+    typeof document === 'undefined' ? null : document.getElementById('mobile-header-actions'),
+  );
+  useEffect(() => {
+    if (!slot) setSlot(document.getElementById('mobile-header-actions'));
+  }, [slot]);
+  return slot;
 }
 
 /* ── Empty state ─────────────────────────────────────────────────── */

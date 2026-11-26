@@ -12,7 +12,7 @@ use std::{
     time::Duration,
 };
 
-#[cfg(unix)]
+#[cfg(cups)]
 use std::{ffi::OsString, path::PathBuf, process::Stdio};
 
 use async_trait::async_trait;
@@ -21,7 +21,7 @@ use oppa_printer::{
     ConnectionKind, PrinterConnection, PrinterLanguage, PrinterRef, SubmissionMode,
     SubmissionReceipt, VirtualPrinterProfile,
 };
-#[cfg(unix)]
+#[cfg(cups)]
 use oppa_renderer::encode_raster_page_png;
 use oppa_renderer::{
     EscPosDiagnostics, EscPosInterpreter, PageRenderOptions, PdfPrintDocument, PdfRasterOptions,
@@ -38,6 +38,8 @@ use tokio::{
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
+/// PDF submission exists only where an OS print queue can accept it.
+#[cfg(any(cups, windows))]
 mod pdf;
 
 /// Default upper bound for one spooler submission payload.
@@ -243,6 +245,9 @@ impl Spooler for SystemQueueSpooler {
     }
 }
 
+// Without an OS print queue (Android, iOS) payloads are prepared for
+// validation only and rejected before submission.
+#[cfg_attr(not(any(cups, windows)), allow(dead_code))]
 enum SystemQueuePayload {
     RawEscPos(Vec<u8>),
     DriverPages {
@@ -250,7 +255,7 @@ enum SystemQueuePayload {
         compatibility: Option<EscPosDiagnostics>,
     },
     /// The validated PDF is handed to CUPS, which applies its PDF filters.
-    #[cfg(unix)]
+    #[cfg(cups)]
     NativePdf(PdfPrintDocument),
     /// The PDF is rasterized and submitted as device pages on Windows.
     #[cfg(windows)]
@@ -282,7 +287,7 @@ fn prepare_system_queue_submission(
         SystemQueuePayload::DriverPages { document, .. } => {
             document.pages.iter().map(|page| page.data.len()).sum()
         }
-        #[cfg(unix)]
+        #[cfg(cups)]
         SystemQueuePayload::NativePdf(_) => 0,
         #[cfg(windows)]
         SystemQueuePayload::RasterPdf(_) => 0,
@@ -300,7 +305,7 @@ fn prepare_pdf_submission(
             "PDF documents require driver submission mode".to_owned(),
         ));
     }
-    #[cfg(unix)]
+    #[cfg(cups)]
     {
         enforce_size(
             document.bytes.len(),
@@ -318,7 +323,7 @@ fn prepare_pdf_submission(
         }
         Ok(SystemQueuePayload::RasterPdf(document.clone()))
     }
-    #[cfg(not(any(unix, windows)))]
+    #[cfg(not(any(cups, windows)))]
     {
         let _ = document;
         Err(SpoolerError::BackendUnavailable(
@@ -361,7 +366,7 @@ fn require_raw_mode(printer: &PrinterRef) -> SpoolerResult<()> {
     }
 }
 
-#[cfg(unix)]
+#[cfg(cups)]
 async fn submit_system_queue(
     queue_name: &str,
     payload: SystemQueuePayload,
@@ -415,7 +420,7 @@ async fn submit_system_queue(
     }
 }
 
-#[cfg(unix)]
+#[cfg(cups)]
 async fn submit_cups_raw(
     queue_name: &str,
     bytes: &[u8],
@@ -460,7 +465,7 @@ async fn submit_cups_raw(
     }
 }
 
-#[cfg(unix)]
+#[cfg(cups)]
 async fn submit_cups_driver(
     queue_name: &str,
     document: &RasterDocument,
@@ -520,7 +525,7 @@ async fn submit_cups_driver(
     }
 }
 
-#[cfg(unix)]
+#[cfg(cups)]
 fn cups_raw_args(queue_name: &str) -> Vec<OsString> {
     ["-d", queue_name, "-o", "raw"]
         .into_iter()
@@ -528,14 +533,14 @@ fn cups_raw_args(queue_name: &str) -> Vec<OsString> {
         .collect()
 }
 
-#[cfg(unix)]
+#[cfg(cups)]
 fn cups_driver_args(queue_name: &str, paths: &[PathBuf]) -> Vec<OsString> {
     let mut args = vec![OsString::from("-d"), OsString::from(queue_name)];
     args.extend(paths.iter().map(|path| path.as_os_str().to_owned()));
     args
 }
 
-#[cfg(unix)]
+#[cfg(cups)]
 fn lp_receipt(
     queue_name: &str,
     output: std::process::Output,
@@ -633,7 +638,7 @@ fn windows_print_driver(
     ))
 }
 
-#[cfg(not(any(unix, windows)))]
+#[cfg(not(any(cups, windows)))]
 async fn submit_system_queue(
     _queue_name: &str,
     _payload: SystemQueuePayload,
@@ -645,7 +650,7 @@ async fn submit_system_queue(
     ))
 }
 
-#[cfg(unix)]
+#[cfg(cups)]
 fn parse_lp_job_id(output: &str) -> Option<String> {
     // Common CUPS output: "request id is queue-123 (1 file(s))".
     output
@@ -1454,7 +1459,7 @@ mod tests {
 
     #[test]
     fn cups_arguments_keep_driver_and_raw_filtering_separate() {
-        #[cfg(unix)]
+        #[cfg(cups)]
         {
             let raw = cups_raw_args("Thermal");
             assert_eq!(

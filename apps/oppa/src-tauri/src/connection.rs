@@ -26,8 +26,8 @@ use uuid::Uuid;
 
 use crate::{
     error::sanitize,
-    models::{ConnectedServiceSummary, DesktopJobState, JobSummary, OpenPrinterConnectionState},
-    service::{DesktopService, JOBS_CHANGED_EVENT, PRINTERS_CHANGED_EVENT},
+    models::{ConnectedServiceSummary, JobDisplayState, JobSummary, OpenPrinterConnectionState},
+    service::{AgentService, JOBS_CHANGED_EVENT, PRINTERS_CHANGED_EVENT},
 };
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(12);
@@ -59,10 +59,7 @@ fn now_millis() -> u64 {
         })
 }
 
-async fn load_legacy_record(
-    service: &DesktopService,
-    server_id: &str,
-) -> Option<LegacyServerRecord> {
+async fn load_legacy_record(service: &AgentService, server_id: &str) -> Option<LegacyServerRecord> {
     let value = service
         .storage
         .setting(PROTOCOL_NEGOTIATION_SETTING)
@@ -74,7 +71,7 @@ async fn load_legacy_record(
     })
 }
 
-async fn store_cache_update(service: &DesktopService, server_id: &str, update: CacheUpdate) {
+async fn store_cache_update(service: &AgentService, server_id: &str, update: CacheUpdate) {
     let value = match update {
         CacheUpdate::Unchanged => return,
         CacheUpdate::Clear => serde_json::Value::Null,
@@ -139,7 +136,7 @@ pub enum ConnectionControl {
 /// Owns the mutable WebSocket and reconnect lifecycle for the desktop host.
 #[allow(clippy::too_many_lines)]
 pub async fn run_connection_supervisor(
-    service: Arc<DesktopService>,
+    service: Arc<AgentService>,
     mut outbound: mpsc::Receiver<OutboundRequest>,
     mut controls: mpsc::Receiver<ConnectionControl>,
 ) {
@@ -629,7 +626,7 @@ enum MessageDisposition {
 
 #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 async fn handle_server_message(
-    service: &Arc<DesktopService>,
+    service: &Arc<AgentService>,
     transport: &mut WebSocketTransport,
     message: ServerMessage,
     hello_message_id: &str,
@@ -825,7 +822,7 @@ async fn handle_server_message(
                     printer_id: job.printer_id.clone(),
                     printer_name,
                     idempotency_key: job.idempotency_key.clone(),
-                    state: DesktopJobState::Queued,
+                    state: JobDisplayState::Queued,
                     received_at: now.clone(),
                     updated_at: now,
                     attempts: 0,
@@ -845,7 +842,7 @@ async fn handle_server_message(
                     Ok(ServerJobOutcome::PrintJob(flow)) => match flow.receipt {
                         ReceiveJobOutcome::Inserted { .. } => {}
                         ReceiveJobOutcome::DuplicateJob { state, .. } => {
-                            let state = desktop_job_state(state);
+                            let state = display_job_state(state);
                             if let Err(error) = job_service
                                 .jobs
                                 .update(&job_id, state, None, None, Timestamp::now().to_string())
@@ -874,16 +871,16 @@ async fn handle_server_message(
                     Ok(ServerJobOutcome::CancelJob(_)) => {}
                     Err(AgentRuntimeError::Reporting { message, source }) => {
                         let (state, error) = match message.kind {
-                            AgentMessageKind::JobSubmitted(_) => (DesktopJobState::Submitted, None),
+                            AgentMessageKind::JobSubmitted(_) => (JobDisplayState::Submitted, None),
                             AgentMessageKind::JobFailed(failed) => {
-                                (DesktopJobState::Failed, Some(failed.error.message))
+                                (JobDisplayState::Failed, Some(failed.error.message))
                             }
                             AgentMessageKind::JobReceived(_) => (
-                                DesktopJobState::Received,
+                                JobDisplayState::Received,
                                 Some("Receipt status is waiting for gateway delivery.".to_owned()),
                             ),
                             _ => (
-                                DesktopJobState::Failed,
+                                JobDisplayState::Failed,
                                 Some("Gateway status reporting failed.".to_owned()),
                             ),
                         };
@@ -946,19 +943,19 @@ async fn handle_server_message(
     }
 }
 
-fn desktop_job_state(state: oppa_core::JobState) -> DesktopJobState {
+fn display_job_state(state: oppa_core::JobState) -> JobDisplayState {
     match state {
         oppa_core::JobState::Received | oppa_core::JobState::Submitting => {
-            DesktopJobState::Received
+            JobDisplayState::Received
         }
-        oppa_core::JobState::Submitted => DesktopJobState::Submitted,
-        oppa_core::JobState::Failed => DesktopJobState::Failed,
-        oppa_core::JobState::Cancelled => DesktopJobState::Cancelled,
+        oppa_core::JobState::Submitted => JobDisplayState::Submitted,
+        oppa_core::JobState::Failed => JobDisplayState::Failed,
+        oppa_core::JobState::Cancelled => JobDisplayState::Cancelled,
     }
 }
 
 fn hello_message(
-    service: &DesktopService,
+    service: &AgentService,
     agent_id: &str,
     offered: &[ProtocolVersion],
 ) -> AgentMessage {
@@ -976,7 +973,7 @@ fn hello_message(
 
 /// Sends the printer inventory projected for the negotiated protocol version.
 async fn send_inventory(
-    service: &DesktopService,
+    service: &AgentService,
     transport: &mut WebSocketTransport,
     correlation_id: Option<String>,
     version: ProtocolVersion,
@@ -1009,7 +1006,7 @@ fn envelope(kind: AgentMessageKind, correlation_id: Option<String>) -> AgentMess
 }
 
 async fn wait_for_reconnect(
-    service: &DesktopService,
+    service: &AgentService,
     controls: &mut mpsc::Receiver<ConnectionControl>,
     outbound: &mut mpsc::Receiver<OutboundRequest>,
 ) -> Option<ConnectionControl> {
@@ -1035,7 +1032,7 @@ enum DelayOutcome {
 }
 
 async fn wait_delay_or_control(
-    service: &DesktopService,
+    service: &AgentService,
     delay: Duration,
     controls: &mut mpsc::Receiver<ConnectionControl>,
 ) -> DelayOutcome {

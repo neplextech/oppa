@@ -1,0 +1,17 @@
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <!-- Application theme. The window background shows behind the system bars. -->
+    <style name="Theme.oppa" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="android:windowBackground">@color/oppa_background</item>
+        <item name="colorPrimary">@color/oppa_primary</item>
+    </style>
+
+    <!--
+      Launch theme. MainActivity switches to Theme.oppa before its content is
+      created, so the brand tile is only visible while the process starts.
+    -->
+    <style name="Theme.oppa.Launch">
+        <item name="android:windowBackground">@drawable/oppa_splash</item>
+        <item name="android:statusBarColor">@color/oppa_brand</item>
+        <item name="android:navigationBarColor">@color/oppa_brand</item>
+    </style>
+</resources>

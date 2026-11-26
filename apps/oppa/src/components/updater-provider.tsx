@@ -3,6 +3,7 @@ import { check, type Update } from '@tauri-apps/plugin-updater';
 import { Download, LoaderCircle, RotateCcw } from 'lucide-react';
 import { type PropsWithChildren, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import { MobileUpdaterProvider } from '@/components/mobile-updater-provider';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -13,6 +14,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { UpdaterContext } from '@/components/updater-context';
+import { detectMobileOs } from '@/lib/platform';
 
 type UpdatePhase = 'ready' | 'downloading' | 'installing' | 'failed';
 
@@ -26,7 +28,17 @@ function errorMessage(cause: unknown): string {
   return 'The update could not be installed.';
 }
 
+/**
+ * Selects the update mechanism for this platform. Desktop uses the signed
+ * Tauri updater; Android uses verified direct-download APKs; iOS has none.
+ */
 export function UpdaterProvider({ children }: PropsWithChildren) {
+  const mobileOs = detectMobileOs();
+  if (mobileOs) return <MobileUpdaterProvider os={mobileOs}>{children}</MobileUpdaterProvider>;
+  return <DesktopUpdaterProvider>{children}</DesktopUpdaterProvider>;
+}
+
+function DesktopUpdaterProvider({ children }: PropsWithChildren) {
   const [isChecking, setIsChecking] = useState(false);
   const [lastResult, setLastResult] = useState<string | null>(null);
   const [update, setUpdate] = useState<Update | null>(null);

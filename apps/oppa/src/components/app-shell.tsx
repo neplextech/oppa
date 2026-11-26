@@ -18,6 +18,7 @@ import {
 import { useEffect, useState, type ReactNode } from 'react';
 
 import { CommandMenu } from '@/components/command-menu';
+import { MobileShell } from '@/components/mobile-shell';
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip';
 import { WindowMenu } from '@/components/window-menu';
 import type { AgentStatus } from '@/lib/types';
@@ -65,6 +66,20 @@ export function AppShell({
   children: ReactNode;
   contextualActions?: Array<{ id: string; label: string; action: () => void }>;
 }) {
+  if (status.capabilities.mobile) {
+    return (
+      <MobileShell
+        activeScreen={activeScreen}
+        onNavigate={onNavigate}
+        status={status}
+        developerMode={developerMode}
+        paired={paired}
+        onReconnect={onReconnect}
+      >
+        {children}
+      </MobileShell>
+    );
+  }
   return (
     <div className="bg-background text-foreground flex h-dvh flex-col overflow-hidden">
       {/* Title bar */}

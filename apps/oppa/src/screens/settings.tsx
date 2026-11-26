@@ -5,12 +5,14 @@ import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 
 import type { Theme } from '@/App';
+import { MobileLifecycleSection } from '@/components/mobile-lifecycle';
 import { ServerConfigurationForm } from '@/components/server-configuration-form';
 import { ScreenContainer, ScreenHeader, Toggle } from '@/components/ui';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { useUpdater } from '@/components/updater-context';
 import { ConfirmAction, KeyValue } from '@/components/workspace';
+import { deviceNoun } from '@/lib/platform';
 import type { AgentStatus, OpenPrinterServerConfiguration } from '@/lib/types';
 export function SettingsScreen({
   status,
@@ -44,6 +46,8 @@ export function SettingsScreen({
   onBackToSetup?: () => void;
 }) {
   const { checkForUpdates, isChecking, lastResult } = useUpdater();
+  const capabilities = status.capabilities;
+  const device = deviceNoun(capabilities);
   const [params, setParams] = useSearchParams();
   const categories = ['General', 'Connection', 'Appearance', 'Developer', 'About'];
   const category = categories.includes(params.get('category') ?? '') ? params.get('category')! : 'General';
@@ -62,7 +66,7 @@ export function SettingsScreen({
     <ScreenContainer>
       <ScreenHeader
         title="Settings"
-        description="Preferences for this computer."
+        description={`Preferences for ${device}.`}
         action={
           fromSetup && onBackToSetup ? (
             <Button size="sm" variant="ghost" onClick={onBackToSetup}>
@@ -93,43 +97,61 @@ export function SettingsScreen({
         <TabsContent value="General" className="min-h-0 overflow-y-auto">
           <div className="preferences-content">
             <PreferenceSection title="Background agent" description="Keep local printing available when you need it.">
-              <PreferenceRow
-                title="Start on login"
-                description={`Launch ${status.product.name} when you sign in to this computer.`}
-                control={
-                  <Toggle
-                    checked={status.startOnLogin}
-                    label="Start on login"
-                    onChange={(enabled) => void onStartOnLogin(enabled).catch(() => undefined)}
-                  />
-                }
-              />
-              <PreferenceRow
-                title="Window behavior"
-                description="Closing the window keeps the background agent running. Use Quit to stop the agent."
-              />
-              <PreferenceRow
-                title="Software updates"
-                description={lastResult ?? 'Check for a signed application update.'}
-                control={
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={isChecking}
-                    onClick={() => void checkForUpdates().catch(() => undefined)}
-                  >
-                    {isChecking ? 'Checking…' : 'Check for updates'}
-                  </Button>
-                }
-              />
+              {capabilities.mobile && (
+                <MobileLifecycleSection productName={status.product.name} canQuit={capabilities.quit} />
+              )}
+              {capabilities.startOnLogin && (
+                <PreferenceRow
+                  title="Start on login"
+                  description={`Launch ${status.product.name} when you sign in to ${device}.`}
+                  control={
+                    <Toggle
+                      checked={status.startOnLogin}
+                      label="Start on login"
+                      onChange={(enabled) => void onStartOnLogin(enabled).catch(() => undefined)}
+                    />
+                  }
+                />
+              )}
+              {capabilities.systemTray && (
+                <PreferenceRow
+                  title="Window behavior"
+                  description="Closing the window keeps the background agent running. Use Quit to stop the agent."
+                />
+              )}
             </PreferenceSection>
+            {capabilities.updates !== 'none' && (
+              <PreferenceSection
+                title="Software updates"
+                description={
+                  capabilities.updates === 'apk_download'
+                    ? 'Updates are signed APKs verified against this app before Android asks you to install them.'
+                    : 'Signed application updates.'
+                }
+              >
+                <PreferenceRow
+                  title="Check for updates"
+                  description={lastResult ?? 'Look for a newer signed release.'}
+                  control={
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={isChecking}
+                      onClick={() => void checkForUpdates().catch(() => undefined)}
+                    >
+                      {isChecking ? 'Checking…' : 'Check now'}
+                    </Button>
+                  }
+                />
+              </PreferenceSection>
+            )}
           </div>
         </TabsContent>
         <TabsContent value="Connection" className="min-h-0 overflow-y-auto">
           <div className="preferences-content">
             <PreferenceSection
               title="OpenPrinter server"
-              description="Service identity and the connection for this computer."
+              description={`Service identity and the connection for ${device}.`}
             >
               {status.connectedService ? (
                 <dl className="flex flex-col gap-2 py-4">
@@ -269,7 +291,7 @@ export function SettingsScreen({
           if (!open) setOperation(null);
         }}
         title={operation?.kind === 'forget' ? 'Forget server?' : 'Change server configuration?'}
-        description="This disconnects the current server and removes its pairing credential. You will need to verify and pair this computer again."
+        description={`This disconnects the current server and removes its pairing credential. You will need to verify and pair ${device} again.`}
         busy={busy !== null}
         action={async () => {
           if (operation?.kind === 'forget') await onForgetServer();
@@ -299,7 +321,7 @@ function PreferenceSection({
 }
 function PreferenceRow({ title, description, control }: { title: string; description: string; control?: ReactNode }) {
   return (
-    <div className="border-border flex items-center justify-between gap-6 border-b py-4">
+    <div className="border-border flex items-center justify-between gap-4 border-b py-4 sm:gap-6">
       <div className="min-w-0">
         <p className="text-sm font-medium">{title}</p>
         <p className="text-muted-foreground mt-1 max-w-lg text-xs leading-5">{description}</p>

@@ -10,18 +10,18 @@ use std::time::Duration;
 #[cfg(windows)]
 use std::time::Instant;
 
-#[cfg(unix)]
+#[cfg(cups)]
 use std::{ffi::OsString, path::Path, process::Stdio};
 
-#[cfg(unix)]
+#[cfg(cups)]
 use oppa_protocol::{Duplex, PaperSize, PrintSettings, Scaling, StandardPaperSize};
 use oppa_renderer::PdfPrintDocument;
 #[cfg(windows)]
 use oppa_renderer::{PdfRasterOptions, RasterDocument, rasterize_pdf};
-#[cfg(unix)]
+#[cfg(cups)]
 use tokio_util::sync::CancellationToken;
 
-#[cfg(unix)]
+#[cfg(cups)]
 use crate::{SpoolerError, SpoolerResult, SubmissionReceipt, lp_receipt};
 #[cfg(windows)]
 use crate::{SpoolerError, SpoolerResult, SubmissionReceipt, windows_print_driver};
@@ -60,7 +60,7 @@ fn rasterize_for_driver(
 /// Every setting maps to an IPP attribute. Absent paper keeps the driver's
 /// default media; absent scaling is pinned to actual size so output does not
 /// depend on the driver's automatic fit behaviour.
-#[cfg(unix)]
+#[cfg(cups)]
 pub(crate) fn cups_pdf_args(
     queue_name: &str,
     settings: &PrintSettings,
@@ -99,13 +99,13 @@ pub(crate) fn cups_pdf_args(
     args
 }
 
-#[cfg(unix)]
+#[cfg(cups)]
 fn push_option(args: &mut Vec<OsString>, name: &str, value: &str) {
     args.push(OsString::from("-o"));
     args.push(OsString::from(format!("{name}={value}")));
 }
 
-#[cfg(unix)]
+#[cfg(cups)]
 fn cups_sides(duplex: Duplex) -> &'static str {
     match duplex {
         Duplex::Simplex => "one-sided",
@@ -114,7 +114,7 @@ fn cups_sides(duplex: Duplex) -> &'static str {
     }
 }
 
-#[cfg(unix)]
+#[cfg(cups)]
 fn cups_media_name(paper: PaperSize) -> String {
     match paper {
         PaperSize::Standard(StandardPaperSize::A4) => "A4".to_owned(),
@@ -133,7 +133,7 @@ fn cups_media_name(paper: PaperSize) -> String {
 ///
 /// The temporary copy is created with owner-only permissions and removed when
 /// this function returns, after `lp` has finished reading it.
-#[cfg(unix)]
+#[cfg(cups)]
 pub(crate) async fn submit_cups_pdf(
     queue_name: &str,
     document: &PdfPrintDocument,
@@ -185,7 +185,7 @@ pub(crate) fn windows_print_pdf(
     windows_print_driver(queue_name, &raster, None)
 }
 
-#[cfg(all(test, unix))]
+#[cfg(all(test, cups))]
 mod tests {
     use std::path::Path;
 
