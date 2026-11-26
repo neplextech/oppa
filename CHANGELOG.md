@@ -2,6 +2,24 @@
 
 All notable changes to OPPA and OpenPrinter are documented here.
 
+## oppa-v0.4.1 — 2026-11-26
+
+### Features
+
+- Discover desktop and Android updates through the Neplex update
+  server at `updates.neplex.com.np`. Signature, checksum, package, and
+  signing-certificate verification are unchanged, and GitHub release
+  artifacts remain published for older installations.
+- Cross-platform setup guides in the documentation site.
+
+### Bug Fixes
+
+- Treat an HTTP 204 update response on Android as no update available
+  and report unavailable update servers clearly.
+- Restore the Android interface after the task is removed from
+  recents, and explain rejected pairing attempts.
+- Disable pinch and double-tap zoom in the mobile app.
+
 ## oppa-v0.4.0 — 2026-11-26
 
 ### Features
