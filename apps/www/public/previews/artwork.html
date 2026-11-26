@@ -1,0 +1,313 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>OPPA store preview artwork</title>
+    <style>
+      @font-face {
+        font-family: Inter;
+        src: url(./inter-latin.woff2) format('woff2');
+        font-weight: 100 900;
+        font-display: block;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: #111110;
+        font-family: Inter, Arial, Helvetica, sans-serif;
+      }
+      #art {
+        position: relative;
+        width: 1080px;
+        height: var(--height, 1920px);
+        overflow: hidden;
+        transform: scale(var(--scale, 1));
+        transform-origin: top left;
+        color: #f5f1e9;
+        background: #151513;
+      }
+      .glow {
+        position: absolute;
+        width: 1300px;
+        height: 1300px;
+        right: -700px;
+        top: 500px;
+        background: radial-gradient(circle, #ef823b33, transparent 65%);
+      }
+      .grid {
+        position: absolute;
+        inset: 0;
+        background-image:
+          linear-gradient(#ffffff05 1px, transparent 1px), linear-gradient(90deg, #ffffff05 1px, transparent 1px);
+        background-size: 108px 108px;
+        mask-image: linear-gradient(transparent, #000);
+      }
+      header {
+        position: relative;
+        display: flex;
+        align-items: center;
+        gap: 20px;
+        padding: 76px 82px 0;
+      }
+      header img {
+        width: 78px;
+        height: 78px;
+        border-radius: 18px;
+      }
+      header strong {
+        font-size: 44px;
+        letter-spacing: -2px;
+      }
+      .category {
+        margin-left: auto;
+        font: 20px monospace;
+        letter-spacing: 3px;
+        color: #a8a299;
+      }
+      .copy {
+        position: relative;
+        margin: 74px 82px 0;
+        z-index: 2;
+      }
+      .eyebrow {
+        font: 22px monospace;
+        color: #f48b4c;
+        letter-spacing: 3px;
+        text-transform: uppercase;
+      }
+      h1 {
+        font-size: 100px;
+        line-height: 1.04;
+        letter-spacing: -5px;
+        margin: 27px 0 24px;
+        font-weight: 750;
+        white-space: pre-line;
+      }
+      h1 em {
+        font-style: normal;
+        color: #f48b4c;
+      }
+      .description {
+        font-size: 32px;
+        line-height: 1.45;
+        max-width: 830px;
+        color: #b9b5ac;
+        margin: 0;
+      }
+      .phone {
+        position: absolute;
+        width: var(--phone, 650px);
+        left: 50%;
+        top: var(--top, 635px);
+        transform: translateX(-50%) rotate(var(--angle, -3deg));
+        padding: 12px;
+        border-radius: 52px;
+        background: #343431;
+        box-shadow:
+          0 60px 100px #0008,
+          0 0 0 1px #ffffff25;
+      }
+      .screen {
+        position: relative;
+        aspect-ratio: 1080/2025;
+        background: #131313;
+        border-radius: 39px;
+        overflow: hidden;
+      }
+      .screen img {
+        position: absolute;
+        width: 100%;
+        height: auto;
+        top: -3.3%;
+        left: 0;
+      }
+      .serial {
+        position: absolute;
+        right: 65px;
+        bottom: 68px;
+        font: 24px monospace;
+        letter-spacing: 3px;
+        color: #8d8980;
+      }
+      .side-note {
+        position: absolute;
+        left: 38px;
+        bottom: 100px;
+        writing-mode: vertical-rl;
+        transform: rotate(180deg);
+        font: 18px monospace;
+        letter-spacing: 4px;
+        color: #77736c;
+      }
+      .orange {
+        background: #e98140 !important;
+        color: #191916 !important;
+      }
+      .orange h1 em,
+      .orange .eyebrow,
+      .orange .description,
+      .orange .category {
+        color: #35251a;
+      }
+      .orange .phone {
+        background: #39302a;
+      }
+      .orange .serial,
+      .orange .side-note {
+        color: #5b3720;
+      }
+      .orange .glow {
+        background: radial-gradient(circle, #ffdabd88, transparent 65%);
+      }
+      .feature header {
+        padding: 55px 60px 0;
+      }
+      .feature header img {
+        width: 54px;
+        height: 54px;
+      }
+      .feature header strong {
+        font-size: 32px;
+      }
+      .feature .category {
+        display: none;
+      }
+      .feature .copy {
+        margin: 34px 60px;
+      }
+      .feature .eyebrow {
+        font-size: 14px;
+        letter-spacing: 2px;
+      }
+      .feature h1 {
+        font-size: 67px;
+        letter-spacing: -3px;
+        margin-top: 15px;
+        line-height: 1;
+      }
+      .feature .description {
+        font-size: 20px;
+        max-width: 470px;
+      }
+      .feature .phone {
+        width: 340px;
+        left: auto;
+        right: 65px;
+        top: 65px;
+        transform: rotate(8deg);
+      }
+      .feature .serial,
+      .feature .side-note {
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <main id="art">
+      <div class="grid"></div>
+      <div class="glow"></div>
+      <header>
+        <img src="/icon.png" alt="OPPA" /><strong>OPPA</strong
+        ><span class="category">OPEN PRINTER<br />PROXY AGENT</span>
+      </header>
+      <div class="copy">
+        <div class="eyebrow" id="eyebrow"></div>
+        <h1 id="title"></h1>
+        <p class="description" id="description"></p>
+      </div>
+      <div class="phone">
+        <div class="screen"><img id="shot" alt="OPPA application in dark mode" /></div>
+      </div>
+      <div class="serial" id="serial"></div>
+      <div class="side-note">LOCAL PRINTING. CONNECTED.</div>
+    </main>
+    <script>
+      const slides = [
+        {
+          slug: '01-printers-within-reach',
+          eyebrow: 'A local agent. A connected workflow.',
+          title: 'Your printers.\n<em>Within reach.</em>',
+          description: 'Bring network printing to your phone or tablet.',
+          shot: 'mobile-virtual',
+          angle: '-3deg',
+        },
+        {
+          slug: '02-pair-your-device',
+          eyebrow: 'Simple, secure pairing',
+          title: 'Your device.\n<em>Your server.</em>',
+          description: 'Confirm your server. Enter a one-time code. Get connected.',
+          shot: 'mobile-pair',
+          orange: true,
+          angle: '3deg',
+        },
+        {
+          slug: '03-connect-network-printers',
+          eyebrow: 'Made for your local network',
+          title: 'Find it.\n<em>Connect it.</em>',
+          description: 'Discover compatible printers or add an IP address and port.',
+          shot: 'mobile-add-printer',
+          angle: '-2deg',
+        },
+        {
+          slug: '04-job-history',
+          eyebrow: 'Know where every job stands',
+          title: 'Every job.\n<em>A clear record.</em>',
+          description: 'Review received, submitted, and failed jobs in one place.',
+          shot: 'mobile-jobs',
+          orange: true,
+          angle: '2deg',
+        },
+        {
+          slug: '05-receipt-preview',
+          eyebrow: 'Virtual printers, real confidence',
+          title: 'Check the receipt.\n<em>Before the paper.</em>',
+          description: 'Inspect captured output with a virtual printer.',
+          shot: 'mobile-virtual',
+          angle: '3deg',
+        },
+        {
+          slug: '06-background-agent',
+          eyebrow: 'Built for Android',
+          title: 'Keep printing.\n<em>Keep moving.</em>',
+          description: 'A foreground agent keeps jobs flowing while you use other apps.',
+          shot: 'mobile-background',
+          orange: true,
+          angle: '-2deg',
+        },
+      ];
+      const query = new URLSearchParams(location.search),
+        index = Math.max(0, Math.min(5, Number(query.get('slide') || 0))),
+        slide = slides[index],
+        feature = query.get('format') === 'feature',
+        apple = query.get('format') === 'app-store';
+      const width = feature ? 1024 : apple ? 1290 : 1080,
+        height = feature ? 500 : apple ? 2796 : 1920,
+        base = feature ? 1024 : 1080;
+      const art = document.getElementById('art');
+      art.style.width = base + 'px';
+      art.style.setProperty('--scale', width / base);
+      art.style.setProperty('--height', height / (width / base) + 'px');
+      if (apple) {
+        art.style.setProperty('--phone', '800px');
+        art.style.setProperty('--top', '760px');
+      }
+      art.style.setProperty('--angle', slide.angle);
+      art.classList.toggle('orange', !!slide.orange);
+      art.classList.toggle('feature', feature);
+      document.getElementById('eyebrow').textContent = slide.eyebrow;
+      document.getElementById('title').innerHTML = slide.title;
+      document.getElementById('description').textContent = slide.description;
+      document.getElementById('shot').src = '/images/setup/' + slide.shot + '-dark.png';
+      document.getElementById('serial').textContent = String(index + 1).padStart(2, '0') + (apple ? ' / 05' : ' / 06');
+      document.title = 'OPPA — ' + slide.slug;
+      window.previewAsset = { slug: slide.slug, width, height };
+    </script>
+  </body>
+</html>

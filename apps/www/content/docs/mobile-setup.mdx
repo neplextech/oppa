@@ -1,0 +1,220 @@
+---
+title: Set Up OPPA on Android
+description:
+  Install the Android APK, pair your phone or tablet, add a network
+  printer, and keep the agent running in the background.
+---
+
+import { SetupScreenshot } from '@/components/setup-screenshot';
+
+Turn an Android phone or tablet into a local print agent. OPPA
+connects to your OpenPrinter server and sends jobs to compatible
+network printers, with the same pairing and durable job handling as
+desktop.
+
+This guide is for **Android 8 or newer**. For desktop installation,
+see [Install and Set Up OPPA](/docs/setup). Public iOS distribution is
+not available yet;
+[iOS development and lifecycle information](/docs/mobile#ios-lifecycle)
+explains its foreground-only operation.
+
+## 1. Prepare your phone and printer
+
+Before installing, have these ready:
+
+- Your administrator's **HTTPS OpenPrinter server address** and a
+  fresh **one-time pairing code**.
+- A Wi-Fi or Ethernet printer that supports **raw TCP ESC/POS**. Find
+  its IP address and TCP port in its network settings or manual. Port
+  `9100` is common, but confirm your printer's value.
+- Wi-Fi on your phone or tablet that can reach that printer, plus a
+  connection to your OpenPrinter server.
+- Paper in the printer and no active hardware error.
+
+Android does not use the print queues installed on your computer. USB
+and Bluetooth printers are not supported by this mobile release. A
+printer on a guest network may be unreachable because of Wi-Fi client
+isolation.
+
+## 2. Install the APK
+
+1. Visit [Downloads](/downloads) on the Android device.
+2. Select **Download for Android**. OPPA suggests the universal APK
+   when available, so you do not need to choose a processor type.
+3. Open the downloaded `.apk` from your browser's downloads list or
+   your file manager.
+4. If Android asks, allow **Install unknown apps** for that browser or
+   file manager. Approve the installation, then open **OPPA**.
+
+Google Play is not required. Only install the official OPPA release.
+Later versions must use the same application identity and signing key
+to update your installation while preserving configuration.
+
+## 3. Connect to your server
+
+On first launch, enter the server address supplied by your
+administrator, including `https://`, then select **Continue**.
+
+A pairing link from your dashboard can open OPPA and fill the address
+and code for you. Check the server name before confirming the pairing.
+
+The application screenshots below were captured from OPPA on Android
+in dark mode against the local development example. The loopback
+address is for that test only: enter your own server's HTTPS address.
+On your phone, `127.0.0.1` refers to the phone, not your computer.
+
+## 4. Pair this device
+
+1. On **Pair this device**, check the server name and identity.
+2. Enter a useful **Device name**, such as **Print station tablet**.
+3. Enter the fresh **Pairing code** from your administrator.
+4. Select **Pair device**.
+
+<SetupScreenshot
+  mobile
+  name="mobile-pair"
+  alt="Android OPPA Pair this device screen with Device name and Pairing code fields"
+>
+  Confirm the server and give the phone or tablet a recognizable name.
+</SetupScreenshot>
+
+Pairing codes expire and are single-use. Ask for a new code if yours
+is rejected. OPPA protects the paired credentials using Android
+Keystore-backed encryption, so you normally pair only once per
+installation. Do not uninstall or clear app storage to troubleshoot a
+connection unless you intend to set up the device again.
+
+## 5. Choose or add your network printer
+
+If OPPA already lists your printers during setup, enable the ones the
+server may use and select **Finish setup**. Otherwise, choose
+**Configure printers later** and add a printer after setup.
+
+1. Tap **Printers** in the bottom navigation.
+2. Tap **Add printer**.
+3. Try **Scan** to discover advertised printers. If yours is not
+   found, enter its address manually.
+4. Enter a **Display name**, **Host name or IP address**, and **TCP
+   port**. Enter the printer address here, not the server address.
+5. Confirm **I have verified that this printer supports ESC/POS** only
+   for a compatible printer, then tap **Add printer**.
+6. Select the printer and enable server access if needed.
+
+<SetupScreenshot
+  mobile
+  name="mobile-add-printer"
+  alt="Android OPPA Add network printer form with network discovery and raw TCP address fields"
+>
+  Use Scan or enter the printer's IP address and raw TCP port.
+</SetupScreenshot>
+
+A successful network connection does not prove the printer understands
+ESC/POS. Android cannot use an ordinary desktop printer driver as a
+fallback. PDF support depends on the target backend; a raw TCP receipt
+printer does not automatically accept PDF jobs.
+
+## 6. Check a test print
+
+1. In **Printers**, select your enabled printer.
+2. Check that its details report it as available.
+3. Tap **Send test print** and inspect the paper output.
+4. Open **Jobs** to review the result. **Submitted** means the backend
+   accepted the job, not that physical paper output was verified.
+
+You can also try rendering without hardware: enable **Settings →
+Developer → Developer Mode**, open **Virtual**, create a thermal
+printer, enable it, and tap **Test print**. Select a capture to
+inspect its preview.
+
+<SetupScreenshot
+  mobile
+  name="mobile-virtual"
+  alt="Android OPPA Virtual printers screen with a thermal receipt capture"
+>
+  A virtual printer shows receipt output without using physical paper.
+</SetupScreenshot>
+
+## 7. Keep the agent available in the background
+
+Android can receive jobs while another app is open or the screen is
+locked by keeping the foreground agent service running.
+
+1. Allow notifications when OPPA asks after pairing. The persistent
+   notification shows the connection status and a **Stop agent**
+   action.
+2. Open **Settings → General**.
+3. Keep **Keep running in background** enabled and check that the
+   status is **Running**.
+4. Review **Battery optimization**. If your device stops the agent,
+   use **Allow** and follow the manufacturer's battery guidance shown
+   in OPPA. System wording differs between devices.
+
+<SetupScreenshot
+  mobile
+  name="mobile-background"
+  alt="Android OPPA Settings General showing a running background agent and battery optimization controls"
+>
+  Keep the foreground agent running and review battery restrictions
+  here.
+</SetupScreenshot>
+
+If you deny notification permission, the foreground service can still
+run, but its notification and Stop action may not be visible. Restore
+notification permission in Android's app settings if you want that
+status indicator.
+
+Do not force-stop OPPA when you want it to receive jobs. If Android
+ends the process, reopen the app to reconnect and recover pending
+work. The service helps maintain availability, but does not override
+Android or device-specific lifecycle restrictions.
+
+## 8. Update without losing your setup
+
+When OPPA offers an Android update, approve its download and follow
+the system installer. Android may first ask you to allow installation
+from OPPA; after granting permission, return to OPPA and retry the
+update. Installation always requires your approval.
+
+Alternatively, download a newer official APK and install it over the
+existing app. Keep the app installed: uninstalling removes local
+configuration, pairing, and history. Debug builds use a different
+signing key and cannot replace release-signed builds.
+
+## Using an iOS development build
+
+There is no public iOS installer or App Store release yet. If your
+administrator supplies a signed development build, follow their
+installation instructions, then:
+
+1. Open OPPA and allow **Local Network** access when asked so it can
+   discover and connect to nearby printers.
+2. Pair with your HTTPS OpenPrinter server using the same device-name
+   and one-time-code steps above.
+3. Add a compatible network printer by its IP address and TCP port,
+   enable it, and send a test print.
+4. Keep OPPA visible to receive jobs. Enable **Keep screen awake** in
+   Settings if this device is being used as an attended print station.
+5. Return to OPPA after switching apps or unlocking the device. It
+   reconnects and recovers pending work when active again.
+
+iOS does not offer Android's persistent background agent. Do not rely
+on an iPhone or iPad for continuous unattended background printing.
+The screenshots in this guide are Android captures; iOS system prompts
+and lifecycle controls differ.
+
+## Troubleshooting
+
+| Problem                           | What to check                                                                                                                        |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| Phone cannot find the printer     | Use the same reachable network, avoid guest Wi-Fi, and try the IP address manually. Discovery only finds printers that advertise.    |
+| Pairing fails                     | Confirm the server address and obtain a fresh one-time code. A remote plain-HTTP server is not accepted.                             |
+| Jobs stop when the phone locks    | Check background-agent status, notification permission, and battery optimization settings. Reopen OPPA if Android ended the process. |
+| Printer says unavailable          | Verify its power, paper, raw TCP port, and local IP address. Check whether a VPN blocks local traffic.                               |
+| Submitted, but no receipt         | Confirm ESC/POS compatibility and inspect the printer itself. Backend acceptance does not confirm physical output.                   |
+| OPPA mentions an outdated WebView | Update Android System WebView through your device's app store or system settings. Keep Android and OPPA up to date.                  |
+| An update will not install        | Check free storage and install permission, and use the official release with the same signing identity.                              |
+
+Open **Logs** for connection and submission errors. Use **Share
+diagnostics** to send a sanitized bundle to your administrator or
+support contact; leave pairing codes and print documents out of your
+message.

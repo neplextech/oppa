@@ -16,9 +16,10 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import type { ComponentType, SVGProps } from 'react';
-import { useMemo } from 'react';
+import { useEffect, useState } from 'react';
 
 import { SiteHeader } from '@/components/site-header';
+import { detectDownloadPlatform, pickRecommendedAsset } from '@/lib/download-platform';
 import {
   createDownloadRelease,
   findLatestStableOppaRelease,
@@ -30,25 +31,6 @@ import {
 
 import { LinuxPlatformIcon, MacPlatformIcon, WindowsPlatformIcon } from './platform-icons';
 import { useOppaRelease } from './use-oppa-release';
-
-function detectPlatform(): DownloadPlatform | null {
-  if (typeof navigator === 'undefined') return null;
-  const ua = navigator.userAgent;
-  if (/Android/i.test(ua)) return 'Android';
-  if (/iPhone|iPad|iPod/i.test(ua) || (/Mac/i.test(ua) && navigator.maxTouchPoints > 1)) return null;
-  if (/Mac/i.test(ua)) return 'macOS';
-  if (/Win/i.test(ua)) return 'Windows';
-  if (/Linux/i.test(ua)) return 'Linux';
-  return null;
-}
-
-function pickBestAsset(assets: DownloadAsset[], platform: DownloadPlatform): DownloadAsset | null {
-  const platformAssets = assets.filter((a) => a.platform === platform);
-  if (platformAssets.length === 0) return null;
-  // Prefer arm64 on macOS (Apple Silicon), x64 everywhere else
-  const preferred = platform === 'macOS' ? 'arm64' : 'x64';
-  return platformAssets.find((a) => a.architecture === preferred) ?? platformAssets[0];
-}
 
 function platformLabel(platform: DownloadPlatform): string {
   if (platform === 'macOS') return 'Download for Mac';
@@ -101,9 +83,12 @@ export function DownloadsClient() {
     : null;
   const releaseNotes = formatReleaseNotes(latestRelease?.body ?? null);
 
-  const detectedPlatform = useMemo(() => detectPlatform(), []);
+  const [detectedPlatform, setDetectedPlatform] = useState<DownloadPlatform | null>(null);
+  useEffect(() => {
+    setDetectedPlatform(detectDownloadPlatform(navigator));
+  }, []);
   const allAssets = downloadRelease ? PLATFORMS.flatMap((p) => downloadRelease.assetsByPlatform[p]) : [];
-  const suggestedAsset = detectedPlatform && !loading ? pickBestAsset(allAssets, detectedPlatform) : null;
+  const suggestedAsset = detectedPlatform && !loading ? pickRecommendedAsset(allAssets, detectedPlatform) : null;
   const suggestedPlatformDetails = detectedPlatform ? PLATFORM_DETAILS[detectedPlatform] : null;
   const SuggestedPlatformIcon = suggestedPlatformDetails?.icon ?? ArrowDownToLine;
   const suggestedPlatformLabel = detectedPlatform ? platformLabel(detectedPlatform) : 'Download';
@@ -126,7 +111,7 @@ export function DownloadsClient() {
                 <span className="text-orange-400">within reach.</span>
               </h1>
               <p className="mt-6 max-w-xl text-[14px] leading-6 text-stone-400 sm:text-[15px]">
-                Download the Open Printer Proxy Agent for the machine connected to your printers. OPPA runs locally,
+                Download the Open Printer Proxy Agent for the device connected to your printers. OPPA runs locally,
                 keeps credentials in operating-system secure storage, and accepts only the documented OpenPrinter
                 protocol.
               </p>
@@ -165,7 +150,7 @@ export function DownloadsClient() {
                 )}
                 <Link
                   className="inline-flex min-h-12 w-full items-center justify-center gap-1.5 rounded border border-white/10 px-4 py-2 text-[13px] font-medium text-stone-300 transition hover:border-white/20 hover:text-stone-100"
-                  href="/docs/getting-started"
+                  href={detectedPlatform === 'Android' ? '/docs/mobile-setup' : '/docs/setup'}
                 >
                   Setup guide
                   <ArrowUpRight className="size-3.5" aria-hidden />
@@ -239,6 +224,46 @@ export function DownloadsClient() {
           ) : (
             <NoRelease error={error} />
           )}
+        </div>
+      </section>
+
+      <section className="border-b border-white/10" aria-labelledby="install-help">
+        <div className="mx-auto grid max-w-6xl gap-8 px-6 py-12 lg:grid-cols-2 lg:px-8">
+          <div>
+            <h2 id="install-help" className="text-xl font-semibold tracking-tight">
+              Your first print starts here.
+            </h2>
+            <p className="mt-3 text-sm leading-6 text-stone-400">
+              Follow the illustrated setup guide to install OPPA, pair with your server, choose printers, and send a
+              test print.
+            </p>
+            <Link
+              href="/docs/setup"
+              className="mt-4 inline-flex items-center gap-2 text-sm font-medium text-orange-300 hover:text-orange-200"
+            >
+              Install and set up OPPA <ArrowUpRight className="size-4" aria-hidden />
+            </Link>
+            <Link
+              href="/docs/mobile-setup"
+              className="mt-3 flex items-center gap-2 text-sm text-orange-300 hover:text-orange-200"
+            >
+              Set up an Android phone or tablet <Smartphone className="size-4" aria-hidden />
+            </Link>
+          </div>
+          <div id="macos-first-launch" className="min-w-0 rounded-lg border border-white/10 bg-white/[0.025] p-5">
+            <h3 className="text-sm font-semibold">macOS blocking the first launch?</h3>
+            <p className="mt-2 text-sm leading-6 text-stone-400">
+              Move OPPA to Applications first. If you trust your download from the official release, remove the
+              quarantine attribute for OPPA only, then open it again:
+            </p>
+            <pre className="mt-4 overflow-x-auto rounded-md border border-white/10 bg-black/30 p-3 text-xs text-orange-200">
+              <code>{'xattr -dr com.apple.quarantine "/Applications/OPPA.app"'}</code>
+            </pre>
+            <p className="mt-3 text-xs leading-5 text-stone-500">
+              This removes the downloaded-file quarantine flag; it does not repair a corrupted download. You can also
+              use Open Anyway in System Settings → Privacy &amp; Security.
+            </p>
+          </div>
         </div>
       </section>
 

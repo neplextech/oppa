@@ -140,7 +140,7 @@ export function MarketingOpenGraphImage({ variant }: { variant: 'home' | 'downlo
               width: '7px',
             }}
           />
-          {isDownloads ? 'OPPA DESKTOP' : 'OPEN PRINTER PROXY AGENT'}
+          {isDownloads ? 'OPPA' : 'OPEN PRINTER PROXY AGENT'}
         </div>
       </div>
 
@@ -216,7 +216,7 @@ export function MarketingOpenGraphImage({ variant }: { variant: 'home' | 'downlo
             }}
           >
             {isDownloads
-              ? 'Install OPPA on the machine connected to your printers. Available for macOS, Windows, and Linux.'
+              ? 'Install OPPA on the device connected to your printers. Available for macOS, Windows, Linux, and Android.'
               : 'One safe, deliberately narrow bridge between cloud applications and the printers they need to reach.'}
           </p>
         </div>
@@ -330,6 +330,7 @@ function DownloadPanel() {
     ['macOS', 'DMG', ORANGE],
     ['Windows', 'EXE / MSI', '#7dd3fc'],
     ['Linux', 'APPIMAGE / DEB', EMERALD],
+    ['Android', 'APK', '#bef264'],
   ];
 
   return (

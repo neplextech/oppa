@@ -1,0 +1,296 @@
+---
+title: Install and Set Up OPPA
+description:
+  Download OPPA, connect it to your OpenPrinter server, choose your
+  printers, and check your first print. A step-by-step guide for
+  Windows, macOS, Linux, and Android.
+---
+
+import { SetupScreenshot } from '@/components/setup-screenshot';
+
+OPPA connects the printers near you to an OpenPrinter server. Install
+it on the computer or Android device that can reach your printers,
+pair it once, and keep the agent running to receive print jobs.
+
+You do not need to write code to follow this guide. If someone manages
+your printing service, ask them for the **server address** and a
+**pairing code** before you start.
+
+Setting up a phone or tablet? Use the dedicated
+[Android setup guide](/docs/mobile-setup) for mobile screenshots and
+background-agent settings.
+
+## Before you begin
+
+Have these ready:
+
+- An OpenPrinter server address, such as `https://print.example.com`.
+  Use the address supplied by your administrator, not the example
+  address shown in the screenshots.
+- A fresh, one-time pairing code from that server or its dashboard.
+- A printer connected to your computer, or a network printer reachable
+  from the same device. For a network printer, find its IP address,
+  port, and supported printing mode in its settings or manual.
+- For a physical test, load paper and check that the printer is on.
+
+The screenshots below show the real OPPA interface in dark mode with
+example server and printer data. Desktop and Android share the setup
+steps; navigation and some printer options differ by platform. Select
+any screenshot to enlarge it.
+
+## 1. Download and install OPPA
+
+Open the [downloads page](/downloads). It suggests an installer for
+your device, and lists the other platforms below it.
+
+### Windows
+
+1. Download the Windows installer that matches your computer: **x64**
+   for most Intel/AMD PCs, or **ARM64** for Windows on ARM.
+2. Run the `.exe` installer and follow its prompts. The `.msi` package
+   is also available for managed installations.
+3. Open **OPPA** from the Start menu.
+
+### macOS
+
+1. Download the **ARM64** disk image for an Apple silicon Mac, or
+   **x64** for an Intel Mac. Find your chip under **Apple menu → About
+   This Mac**.
+2. Open the `.dmg`, drag **OPPA** into **Applications**, and eject the
+   disk image.
+3. Open **OPPA** from Applications.
+
+If macOS blocks the first launch because the developer cannot be
+verified, you can use **System Settings → Privacy & Security → Open
+Anyway** after attempting to open the app. See
+[Apple's instructions](https://support.apple.com/102445).
+
+For an OPPA download you trust from the official release, the Terminal
+alternative is:
+
+```bash
+xattr -dr com.apple.quarantine "/Applications/OPPA.app"
+```
+
+Then open OPPA again. This removes the downloaded-file quarantine flag
+from OPPA only; it does not fix a damaged or incomplete download. If
+OPPA is installed elsewhere, use that app's actual path.
+
+### Linux
+
+1. Choose the package for your architecture and distribution: `.deb`
+   for Debian/Ubuntu, `.rpm` for RPM-based systems, or `.AppImage` for
+   a portable installation.
+2. Install the package using your distribution's package manager. For
+   AppImage, make the downloaded file executable in its file
+   properties, then open it.
+3. Open **OPPA** from your application launcher or the AppImage file.
+
+### Android
+
+1. Open the [downloads page](/downloads) on your phone or tablet and
+   choose **Download for Android**. The universal `.apk` supports the
+   Android architectures included in the release. Android 8 or newer
+   is required.
+2. Open the downloaded APK. If Android asks, allow **Install unknown
+   apps** for the browser or file manager you used. Approve the
+   installation; Google Play is not required.
+3. Open **OPPA**. Keep the device on a network that can reach both
+   your server and your network printer. USB and Bluetooth printing
+   are outside this release's mobile support.
+
+There is no public iOS download yet. iOS development builds are
+covered in the [mobile guide](/docs/mobile).
+
+## 2. Enter your server address
+
+On first launch, OPPA shows **Connect to a server**.
+
+1. Enter the full OpenPrinter server address, including `https://`.
+2. Select **Continue**.
+3. Check the server identity shown on the next screen. If the name is
+   unexpected, go back and confirm the address with your
+   administrator.
+
+<SetupScreenshot
+  name="connect"
+  alt="OPPA Connect to a server screen with a server address field and Continue button"
+>
+  Enter your own server address here. The address shown is an example.
+</SetupScreenshot>
+
+Production servers must use HTTPS. Plain HTTP is accepted only for a
+server on the same device through a loopback address such as
+`http://127.0.0.1:8787`. On a phone, `127.0.0.1` refers to the phone,
+not your computer.
+
+If your dashboard offers **Open in OPPA** or a pairing link, open it
+with OPPA installed. The link can fill in the server address and
+pairing code for you; confirm the server before continuing.
+
+## 3. Pair this device
+
+1. Get a new pairing code from your server's dashboard or
+   administrator. The code is short-lived and can be used only once.
+2. Enter the **Pairing code** shown by your server.
+3. Give the agent a recognizable name, such as **Front desk PC** or
+   **Print station tablet**.
+4. Select **Pair computer** on desktop, or **Pair device** on mobile.
+
+<SetupScreenshot
+  name="pair"
+  alt="OPPA pairing screen showing the server identity, pairing code, and device name fields"
+>
+  Confirm the server, enter a fresh pairing code, and name this
+  device.
+</SetupScreenshot>
+
+OPPA stores its private credentials in your operating system's secure
+storage. You normally do not need to pair again after restarting or
+updating the app. If a code is rejected, request a new one rather than
+repeatedly trying the expired code.
+
+## 4. Choose which printers the server can use
+
+After pairing, OPPA shows **Choose printers**.
+
+1. Turn on the switches for the printers this server should access.
+   Leave other printers disabled.
+2. Select **Finish setup**.
+3. Check the **Overview** screen for the connection state and printer
+   availability.
+
+<SetupScreenshot
+  name="printers"
+  alt="OPPA Choose printers setup screen with printer enable switches and Finish setup"
+>
+  Enable only the printers you want to make available to your server.
+</SetupScreenshot>
+
+If no printer appears, you can finish setup and add one from
+**Printers**. On Windows, macOS, and Linux, install your printer in
+the operating system first if you want to use its system print queue.
+Android uses network printers instead of desktop print queues.
+
+<SetupScreenshot
+  name="overview"
+  alt="OPPA Overview showing Connected and Ready for print jobs with available printers"
+>
+  A connected server and available, enabled printers mean the agent is
+  ready.
+</SetupScreenshot>
+
+## 5. Add a network printer if needed
+
+For a printer on Ethernet or Wi-Fi:
+
+1. Open **Printers**, then select **Add printer**.
+2. On mobile, try **Scan** to find printers that advertise on your
+   network. You can also enter the address manually.
+3. Enter a **Display name**, the printer's **Host name or IP
+   address**, and **TCP port**. Port `9100` is common, but use the
+   value specified by your printer.
+4. Confirm **I have verified that this printer supports ESC/POS** only
+   if your printer supports that language. This dialog adds raw TCP
+   ESC/POS printers; use an operating-system queue on desktop for
+   system-driver printing.
+5. Select **Add printer**, then enable the printer if needed.
+
+<SetupScreenshot
+  name="add-printer"
+  alt="OPPA Add network printer dialog with display name, host, TCP port, and ESC/POS compatibility confirmation"
+>
+  Use the address and protocol supported by your printer; a network
+  address alone does not establish compatibility.
+</SetupScreenshot>
+
+Your device and printer must be able to communicate on the local
+network. Guest Wi-Fi, client isolation, VPN routing, or a firewall can
+prevent this even when both devices have internet access. Discovery is
+a convenience; entering a known IP address still works when a printer
+does not advertise itself.
+
+## 6. Send a test print
+
+1. In **Printers**, select the printer to open its details.
+2. Check that it is **Available** and enabled.
+3. Select **Send test print**.
+4. Check the physical output, then open **Print jobs** to inspect the
+   recorded result.
+
+<SetupScreenshot
+  name="test-print"
+  alt="OPPA printer details showing availability, the server access switch, and the Send test print action"
+>
+  Use the test action in the selected printer's details before sending
+  live work.
+</SetupScreenshot>
+
+A **submitted** result means the printer backend accepted the job. It
+does not guarantee that paper physically came out. If the job is
+submitted but there is no paper output, check the printer's paper,
+error lights, selected mode, and network connection.
+
+For PDF-capable backends, the printer details also offer PDF test
+controls. A raw TCP ESC/POS receipt printer does not automatically
+support PDF documents. See [document printing](/docs/print-documents)
+for supported routes.
+
+### Try OPPA without a physical printer
+
+1. Open **Settings → Developer** and enable **Developer Mode**.
+2. Open **Virtual printers** and select **Create printer**.
+3. Create a thermal receipt printer, enable it, and select **Test
+   print**.
+4. Select the resulting capture to inspect its receipt preview.
+
+<SetupScreenshot
+  name="virtual"
+  alt="OPPA virtual printer showing a captured thermal receipt and its preview"
+>
+  Virtual output lets you check rendering without sending anything to
+  physical hardware.
+</SetupScreenshot>
+
+## 7. Keep OPPA ready to receive jobs
+
+**Windows, macOS, and Linux:** closing the main window hides it while
+the tray agent continues. Use OPPA's explicit **Quit** action when you
+want to stop receiving jobs. Enable **Start on login** in Settings if
+available and you want the agent to start with your computer.
+
+**Android:** after pairing, allow notifications so you can see the
+persistent agent status and **Stop agent** action. In **Settings →
+General**, keep **Keep running in background** enabled. Review the
+battery guidance there if your device stops OPPA while the screen is
+locked. Android can still end the process; reopen OPPA to resume.
+
+**iOS development builds:** keep OPPA active to receive jobs. Optional
+keep-awake mode is available in Settings. iOS does not support
+continuous unattended background printing; OPPA reconnects when you
+return to it.
+
+Your printing service should now be able to send jobs to the enabled
+printer IDs advertised by this agent. If your service asks you to
+assign a printer, select this device and its printer in that service's
+own interface.
+
+## If something does not work
+
+| What you see                 | What to try                                                                                                                              |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| Server cannot be reached     | Check the full server address and internet connection. Confirm the endpoint is an OpenPrinter server, and use HTTPS for a remote server. |
+| Pairing code rejected        | Ask for a fresh code, confirm you selected the correct server, and try once more.                                                        |
+| No printers listed           | Install the system printer on desktop, or add a raw TCP network printer. Use Refresh after changing printer settings.                    |
+| Printer unavailable          | Check power, paper, IP address, port, and whether the device can reach the printer's network.                                            |
+| Connected, but no new jobs   | Confirm the printer is enabled, the server is targeting this agent and printer ID, and the agent is still running.                       |
+| Android stops receiving jobs | Reopen OPPA, check background-agent and notification settings, and follow the device's battery guidance.                                 |
+
+Open **Logs** to inspect recent errors. If you need help, use the
+sanitized diagnostics controls there to copy, export, or share a
+bundle, depending on your platform. Avoid sending raw print documents
+or pairing codes with a support request.
+
+For a local example server and an API-driven test job, continue with
+the [developer quickstart](/docs/getting-started). For mobile
+lifecycle and platform details, see [Android and iOS](/docs/mobile).

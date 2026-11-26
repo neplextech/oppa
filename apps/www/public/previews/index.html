@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>OPPA preview artwork</title>
+    <style>
+      @font-face {
+        font-family: Inter;
+        src: url(./inter-latin.woff2);
+        font-weight: 100 900;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        padding: 60px max(24px, 6vw);
+        background: #141412;
+        color: #f5f1e9;
+        font-family: Inter, Arial, sans-serif;
+      }
+      header {
+        max-width: 800px;
+        margin-bottom: 50px;
+      }
+      header img {
+        width: 64px;
+        height: 64px;
+        border-radius: 15px;
+      }
+      h1 {
+        font-size: clamp(32px, 5vw, 60px);
+        letter-spacing: -2px;
+        margin: 24px 0 12px;
+      }
+      p {
+        color: #aaa79f;
+        line-height: 1.7;
+      }
+      h2 {
+        margin-top: 54px;
+        font-size: 24px;
+      }
+      a {
+        color: #f58c4e;
+      }
+      section {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 24px;
+      }
+      figure {
+        margin: 0;
+      }
+      figure img {
+        width: 100%;
+        height: auto;
+        border-radius: 12px;
+        border: 1px solid #ffffff15;
+      }
+      figcaption {
+        font-size: 12px;
+        color: #aaa79f;
+        line-height: 1.6;
+        margin-top: 10px;
+      }
+      .feature {
+        max-width: 800px;
+      }
+      code {
+        color: #f58c4e;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <img src="/icon.png" alt="OPPA" />
+      <h1>Local printing.<br />Ready for its close-up.</h1>
+      <p>
+        Dark-mode OPPA application captures in branded store layouts. Select an image to open the full-resolution PNG.
+        Editable artwork and export details are in <a href="./README.md">README.md</a>.
+      </p>
+    </header>
+    <h2>Google Play · 1080 × 1920</h2>
+    <section id="play-store"></section>
+    <h2>App Store layout drafts · 1290 × 2796</h2>
+    <p>
+      These layouts use Android captures. Replace the application images with native iOS captures before submitting to
+      Apple.
+    </p>
+    <section id="app-store"></section>
+    <h2>Android feature graphic · 1024 × 500</h2>
+    <section id="feature" class="feature"></section>
+    <script>
+      fetch('./manifest.json')
+        .then((r) => r.json())
+        .then((items) => {
+          for (const item of items) {
+            const figure = document.createElement('figure'),
+              link = document.createElement('a'),
+              image = document.createElement('img'),
+              caption = document.createElement('figcaption');
+            link.href = item.file;
+            image.src = item.file;
+            image.alt = item.file.split('/').pop().replace('.png', '').replaceAll('-', ' ');
+            image.loading = 'lazy';
+            link.append(image);
+            caption.textContent = `${item.file} · ${item.width} × ${item.height}`;
+            figure.append(link, caption);
+            document
+              .getElementById(
+                item.file.startsWith('play-store/')
+                  ? 'play-store'
+                  : item.file.startsWith('app-store/')
+                    ? 'app-store'
+                    : 'feature',
+              )
+              .append(figure);
+          }
+        });
+    </script>
+  </body>
+</html>

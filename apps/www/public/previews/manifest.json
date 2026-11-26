@@ -1,0 +1,74 @@
+[
+  {
+    "file": "play-store/01-printers-within-reach.png",
+    "width": 1080,
+    "height": 1920,
+    "draft": false
+  },
+  {
+    "file": "play-store/02-pair-your-device.png",
+    "width": 1080,
+    "height": 1920,
+    "draft": false
+  },
+  {
+    "file": "play-store/03-connect-network-printers.png",
+    "width": 1080,
+    "height": 1920,
+    "draft": false
+  },
+  {
+    "file": "play-store/04-job-history.png",
+    "width": 1080,
+    "height": 1920,
+    "draft": false
+  },
+  {
+    "file": "play-store/05-receipt-preview.png",
+    "width": 1080,
+    "height": 1920,
+    "draft": false
+  },
+  {
+    "file": "play-store/06-background-agent.png",
+    "width": 1080,
+    "height": 1920,
+    "draft": false
+  },
+  {
+    "file": "app-store/01-printers-within-reach.png",
+    "width": 1290,
+    "height": 2796,
+    "draft": true
+  },
+  {
+    "file": "app-store/02-pair-your-device.png",
+    "width": 1290,
+    "height": 2796,
+    "draft": true
+  },
+  {
+    "file": "app-store/03-connect-network-printers.png",
+    "width": 1290,
+    "height": 2796,
+    "draft": true
+  },
+  {
+    "file": "app-store/04-job-history.png",
+    "width": 1290,
+    "height": 2796,
+    "draft": true
+  },
+  {
+    "file": "app-store/05-receipt-preview.png",
+    "width": 1290,
+    "height": 2796,
+    "draft": true
+  },
+  {
+    "file": "feature-graphic.png",
+    "width": 1024,
+    "height": 500,
+    "draft": false
+  }
+]
