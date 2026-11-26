@@ -32,6 +32,7 @@
     "build",
     "out",
     ".next",
+    "next-env.d.ts",
     "**/public-modules",
     "README.md",
     ".DS_Store",
