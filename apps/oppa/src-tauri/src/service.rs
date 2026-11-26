@@ -1178,7 +1178,7 @@ impl AgentService {
     }
 
     /// Paths owned by this runtime.
-    #[cfg_attr(desktop, allow(dead_code))]
+    #[cfg_attr(not(target_os = "android"), allow(dead_code))]
     pub(crate) fn paths(&self) -> &AppPaths {
         &self.paths
     }

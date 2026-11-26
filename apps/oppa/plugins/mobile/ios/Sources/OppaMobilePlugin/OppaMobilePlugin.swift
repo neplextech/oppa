@@ -309,10 +309,13 @@ private final class LocalNetworkProbe {
     func start(done: @escaping (String) -> Void) {
         let browser = NWBrowser(for: .bonjour(type: "_pdl-datastream._tcp", domain: nil), using: .tcp)
         self.browser = browser
-        let finish: (String) -> Void = { [weak self] access in
-            guard let self = self, !self.completed else { return }
+        // Retain the probe through its deadline; callers create it temporarily.
+        let finish: (String) -> Void = { access in
+            guard !self.completed else { return }
             self.completed = true
+            self.browser?.stateUpdateHandler = nil
             self.browser?.cancel()
+            self.browser = nil
             done(access)
         }
         browser.stateUpdateHandler = { state in

@@ -108,6 +108,7 @@ pub fn limitations(capabilities: PlatformCapabilities) -> Vec<String> {
 }
 
 /// Returns guidance for manufacturers known to stop foreground services.
+#[cfg_attr(target_os = "ios", allow(dead_code))]
 pub fn battery_guidance(manufacturer: &str) -> Option<BatteryGuidance> {
     let vendor = manufacturer.trim().to_ascii_lowercase();
     let (name, slug, steps): (&str, &str, &[&str]) = match vendor.as_str() {

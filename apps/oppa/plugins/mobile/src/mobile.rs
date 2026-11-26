@@ -27,10 +27,7 @@ use tauri::{
 use tokio::sync::RwLock;
 use tokio::sync::broadcast;
 
-use crate::{
-    MobileError, MobileEvent, ServiceEndpoint,
-    models::{BooleanValue, ServiceEndpoints},
-};
+use crate::{MobileError, MobileEvent, ServiceEndpoint, models::ServiceEndpoints};
 
 #[cfg(target_os = "ios")]
 tauri::ios_plugin_binding!(init_plugin_oppa_mobile);
@@ -174,8 +171,9 @@ impl<R: Runtime> OppaMobile<R> {
         self.call_unit("openUrl", json!({ "url": url })).await
     }
 
+    #[cfg(target_os = "android")]
     async fn call_bool(&self, command: &'static str) -> Result<bool, MobileError> {
-        self.call::<BooleanValue>(command, json!({}), NATIVE_CALL_TIMEOUT)
+        self.call::<crate::models::BooleanValue>(command, json!({}), NATIVE_CALL_TIMEOUT)
             .await
             .map(|value| value.value)
     }
@@ -214,7 +212,7 @@ impl<R: Runtime> OppaMobile<R> {
     /// Requests `POST_NOTIFICATIONS` on Android 13 and newer.
     pub async fn request_notification_permission(&self) -> Result<bool, MobileError> {
         // The permission dialog waits for the user, so allow a longer window.
-        self.call::<BooleanValue>(
+        self.call::<crate::models::BooleanValue>(
             "requestNotificationPermission",
             json!({}),
             Duration::from_secs(120),

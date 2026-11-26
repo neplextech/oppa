@@ -1,0 +1,2 @@
+# Tauri copies its Swift API here while building the plugin.
+/.tauri/

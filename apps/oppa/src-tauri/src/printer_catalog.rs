@@ -165,6 +165,7 @@ impl PrinterCatalog {
     }
 
     /// Lightweight native-tray counts; does not clone documents or render virtual previews.
+    #[cfg(not(target_os = "ios"))]
     pub(crate) async fn availability_counts(&self) -> (usize, usize) {
         let state = self.state.read().await;
         let enabled = state

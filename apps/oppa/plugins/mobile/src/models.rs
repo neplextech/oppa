@@ -77,6 +77,7 @@ pub enum LocalNetworkAccess {
     Denied,
 }
 
+#[cfg(target_os = "android")]
 #[derive(Debug, Deserialize)]
 pub(crate) struct CredentialValue {
     pub(crate) value: Option<String>,
@@ -100,6 +101,7 @@ pub(crate) struct LocalNetworkState {
     pub(crate) access: LocalNetworkAccess,
 }
 
+#[cfg(target_os = "android")]
 #[derive(Debug, Deserialize)]
 pub(crate) struct BooleanValue {
     pub(crate) value: bool,

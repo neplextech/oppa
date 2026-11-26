@@ -94,8 +94,8 @@ alive.
 ## Building
 
 Prerequisites: the Rust toolchain with mobile targets, Node.js and
-pnpm, the Android SDK and NDK with JDK 17 for Android, and Xcode for
-iOS.
+pnpm, the Android SDK and NDK with JDK 17 for Android, and Xcode with
+an installed iOS simulator runtime for iOS (iOS 15 or newer).
 
 ```bash
 rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
@@ -117,6 +117,16 @@ because the generated Android Kotlin package and the Rust JNI symbols
 derive from it. Debug builds are told apart by a `-dev` version name
 and by the debug signing key, which Android never lets replace a
 release-signed install.
+
+If Xcode reports that the iOS platform is not installed, install the
+simulator runtime in **Xcode → Settings → Components**, or run
+`xcodebuild -downloadPlatform iOS`. Accept Xcode's license and finish
+its first-launch setup before building.
+
+The `oppa:ios:*` scripts select SwiftPM's native build backend for the
+`swift-rs` bridge. This preserves iOS cross-compilation with Xcode 27,
+whose default Swift Build backend otherwise selects a macOS host
+target.
 
 For a physical iOS device, set your development team with
 `APPLE_DEVELOPMENT_TEAM` or in Xcode. Simulator builds need no

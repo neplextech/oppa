@@ -5,12 +5,12 @@
 // configuration cannot express is applied here:
 //
 // - the opaque, App Store-ready icon set from `src-tauri/icons/ios`;
-// - the launch screen background, matching the brand tile color.
+// - the centered launch mark and background, matching the Android splash.
 //
 // Info.plist keys (local network privacy, Bonjour services, export
 // compliance) are merged by the Tauri CLI from `src-tauri/Info.ios.plist`.
 import { constants } from 'node:fs';
-import { access, copyFile, readdir, readFile, writeFile } from 'node:fs/promises';
+import { access, copyFile, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -19,6 +19,8 @@ const BRAND_TILE = { red: 0x29 / 255, green: 0x28 / 255, blue: 0x2b / 255 };
 const appDirectory = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const appleDirectory = join(appDirectory, 'src-tauri', 'gen', 'apple');
 const iconSource = join(appDirectory, 'src-tauri', 'icons', 'ios');
+const tauriConfig = JSON.parse(await readFile(join(appDirectory, 'src-tauri/tauri.conf.json'), 'utf8'));
+const minimumIosVersion = tauriConfig.bundle.iOS.minimumSystemVersion;
 
 async function exists(path) {
   try {
@@ -45,6 +47,20 @@ if (!(await exists(appleDirectory))) {
   throw new Error('Run `pnpm oppa:ios:init` before applying iOS branding.');
 }
 
+// Existing generated projects retain their old deployment target after init.
+// Keep direct Xcode builds consistent with the Tauri configuration as well.
+const projectFiles = await findFiles(
+  appleDirectory,
+  (path) => path.endsWith('project.pbxproj') || path.endsWith('project.yml'),
+);
+for (const path of projectFiles) {
+  const source = await readFile(path, 'utf8');
+  const updated = path.endsWith('project.pbxproj')
+    ? source.replace(/IPHONEOS_DEPLOYMENT_TARGET = [0-9.]+;/g, `IPHONEOS_DEPLOYMENT_TARGET = ${minimumIosVersion};`)
+    : source.replace(/(deploymentTarget:\s*\n\s*iOS:) [0-9.]+/, `$1 ${minimumIosVersion}`);
+  if (updated !== source) await writeFile(path, updated, 'utf8');
+}
+
 const [appIconSet] = await findFiles(appleDirectory, (path) =>
   path.endsWith(join('AppIcon.appiconset', 'Contents.json')),
 );
@@ -57,12 +73,59 @@ for (const name of await readdir(iconSource)) {
   copied += 1;
 }
 
+const splashDirectory = join(dirname(iconDirectory), 'OppaLaunch.imageset');
+await mkdir(splashDirectory, { recursive: true });
+const splashImages = [];
+for (const [scale, density] of [
+  ['1x', 'mdpi'],
+  ['2x', 'xhdpi'],
+  ['3x', 'xxhdpi'],
+]) {
+  const filename = `oppa-launch-${scale}.png`;
+  await copyFile(
+    join(appDirectory, 'src-tauri/gen/android/app/src/main/res', `drawable-${density}`, 'oppa_splash_logo.png'),
+    join(splashDirectory, filename),
+  );
+  splashImages.push({ idiom: 'universal', filename, scale });
+}
+await writeFile(
+  join(splashDirectory, 'Contents.json'),
+  `${JSON.stringify({ images: splashImages, info: { version: 1, author: 'xcode' } }, null, 2)}\n`,
+);
+
 const color = (key) =>
   `<color key="${key}" red="${BRAND_TILE.red.toFixed(4)}" green="${BRAND_TILE.green.toFixed(4)}" blue="${BRAND_TILE.blue.toFixed(4)}" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>`;
 const storyboards = await findFiles(appleDirectory, (path) => /LaunchScreen\.storyboard$/.test(path));
+if (storyboards.length === 0) throw new Error('The generated project has no launch storyboard.');
 for (const storyboard of storyboards) {
   const source = await readFile(storyboard, 'utf8');
-  const branded = source.replace(/<color key="backgroundColor"[^>]*\/>/g, color('backgroundColor'));
+  let branded = source.replace(/<color key="backgroundColor"[^>]*\/>/g, color('backgroundColor'));
+  if (!source.includes('image="OppaLaunch"')) {
+    const rootViewId = /<view key="view"[^>]* id="([^"]+)"/.exec(source)?.[1];
+    if (!rootViewId || !source.includes('<viewLayoutGuide key="safeArea"') || !source.includes('<resources>')) {
+      throw new Error(`Unrecognized launch storyboard structure: ${storyboard}`);
+    }
+    branded = branded.replace(
+      '<viewLayoutGuide key="safeArea"',
+      `<subviews>
+                            <imageView userInteractionEnabled="NO" contentMode="scaleAspectFit" image="OppaLaunch" translatesAutoresizingMaskIntoConstraints="NO" id="oppa-launch-mark">
+                                <constraints>
+                                    <constraint firstAttribute="width" constant="160" id="oppa-launch-width"/>
+                                    <constraint firstAttribute="height" constant="160" id="oppa-launch-height"/>
+                                </constraints>
+                            </imageView>
+                        </subviews>
+                        <constraints>
+                            <constraint firstItem="oppa-launch-mark" firstAttribute="centerX" secondItem="${rootViewId}" secondAttribute="centerX" id="oppa-launch-center-x"/>
+                            <constraint firstItem="oppa-launch-mark" firstAttribute="centerY" secondItem="${rootViewId}" secondAttribute="centerY" id="oppa-launch-center-y"/>
+                        </constraints>
+                        <viewLayoutGuide key="safeArea"`,
+    );
+    branded = branded.replace(
+      '<resources>',
+      '<resources>\n        <image name="OppaLaunch" width="160" height="160"/>',
+    );
+  }
   if (branded !== source) await writeFile(storyboard, branded, 'utf8');
 }
 

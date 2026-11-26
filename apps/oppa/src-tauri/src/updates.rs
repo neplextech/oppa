@@ -14,7 +14,7 @@
 //! No Google Play or Play services dependency is involved.
 
 // Used by the mobile host; desktop builds compile it for regression tests.
-#![cfg_attr(desktop, allow(dead_code))]
+#![cfg_attr(not(target_os = "android"), allow(dead_code))]
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest as _, Sha256};

@@ -6,7 +6,7 @@ export const RELEASE_CACHE_TTL_MS = 15 * 60 * 1000;
 export const RELEASE_REFRESH_BACKOFF_MS = 60 * 1000;
 export const RELEASE_CACHE_VERSION = 1;
 
-export type DownloadPlatform = 'macOS' | 'Windows' | 'Linux';
+export type DownloadPlatform = 'macOS' | 'Windows' | 'Linux' | 'Android';
 export type DownloadArchitecture = 'universal' | 'arm64' | 'x64' | 'x86' | 'armv7' | 'unknown';
 
 export interface GitHubReleaseAsset {
@@ -54,8 +54,8 @@ export interface DownloadRelease {
 
 type UnknownRecord = Record<string, unknown>;
 
-const INSTALLER_EXTENSIONS = ['.dmg', '.exe', '.msi', '.appimage', '.deb', '.rpm'] as const;
-const PLATFORM_ORDER: DownloadPlatform[] = ['macOS', 'Windows', 'Linux'];
+const INSTALLER_EXTENSIONS = ['.dmg', '.exe', '.msi', '.appimage', '.deb', '.rpm', '.apk'] as const;
+const PLATFORM_ORDER: DownloadPlatform[] = ['macOS', 'Windows', 'Linux', 'Android'];
 const ARCHITECTURE_ORDER: DownloadArchitecture[] = ['universal', 'arm64', 'x64', 'armv7', 'x86', 'unknown'];
 
 function isRecord(value: unknown): value is UnknownRecord {
@@ -248,6 +248,7 @@ export function createDownloadRelease(release: GitHubRelease, checksums: Record<
     macOS: [],
     Windows: [],
     Linux: [],
+    Android: [],
   };
 
   for (const asset of release.assets) {
@@ -334,6 +335,9 @@ function classifyInstallerAsset(
   const architecture = detectArchitecture(lowerName);
   const architectureLabel = getArchitectureLabel(architecture);
 
+  if (lowerName.endsWith('.apk')) {
+    return { platform: 'Android', architecture, architectureLabel, format: 'APK installer' };
+  }
   if (lowerName.endsWith('.dmg')) {
     return { platform: 'macOS', architecture, architectureLabel, format: 'DMG installer' };
   }

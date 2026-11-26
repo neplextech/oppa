@@ -7,10 +7,12 @@
 //! agent business logic lives here.
 
 use std::{
-    path::PathBuf,
     sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
+
+#[cfg(target_os = "android")]
+use std::path::PathBuf;
 
 use oppa_platform::{AppPaths, CredentialStore};
 use oppa_product::ProductConfig;
@@ -377,6 +379,7 @@ pub async fn lifecycle_status(
     let host = mobile_host(app)?;
     let settings = *host.settings.read().await;
     let capabilities = service.capabilities;
+    #[cfg_attr(target_os = "ios", allow(unused_mut))]
     let mut status = MobileLifecycleStatus {
         platform: capabilities.kind,
         background_execution: capabilities.background_execution,
@@ -415,6 +418,7 @@ fn native_error(error: tauri_plugin_oppa_mobile::MobileError) -> CommandError {
 }
 
 /// Android: enables or disables the persistent background agent.
+#[cfg_attr(target_os = "ios", allow(clippy::unused_async))]
 pub async fn set_background_agent(
     app: &AppHandle,
     service: &Arc<AgentService>,
@@ -485,6 +489,7 @@ pub fn unsupported(capability: &str) -> CommandError {
 }
 
 /// Requests the notification permission (Android 13+).
+#[cfg_attr(target_os = "ios", allow(clippy::unused_async))]
 pub async fn request_notification_permission(app: &AppHandle) -> Result<bool, CommandError> {
     #[cfg(target_os = "android")]
     {
@@ -501,6 +506,7 @@ pub async fn request_notification_permission(app: &AppHandle) -> Result<bool, Co
 }
 
 /// Opens the battery-optimization exemption prompt (Android).
+#[cfg_attr(target_os = "ios", allow(clippy::unused_async))]
 pub async fn request_battery_exemption(app: &AppHandle) -> Result<(), CommandError> {
     #[cfg(target_os = "android")]
     {
@@ -520,6 +526,7 @@ pub async fn request_battery_exemption(app: &AppHandle) -> Result<(), CommandErr
 ///
 /// The URL comes from [`mobile_settings::battery_guidance`], never from the
 /// frontend, so this cannot be used to open arbitrary pages.
+#[cfg_attr(target_os = "ios", allow(clippy::unused_async))]
 pub async fn open_battery_guide(app: &AppHandle) -> Result<(), CommandError> {
     #[cfg(target_os = "android")]
     {
@@ -629,6 +636,7 @@ pub async fn open_url(app: &AppHandle, url: &url::Url) -> Result<(), CommandErro
 }
 
 /// Android: checks the direct-download release channel.
+#[cfg_attr(target_os = "ios", allow(clippy::unused_async))]
 pub async fn check_update(
     app: &AppHandle,
 ) -> Result<Option<crate::updates::MobileUpdate>, CommandError> {
@@ -649,6 +657,7 @@ pub async fn check_update(
 }
 
 /// Outcome of an install request.
+#[cfg_attr(target_os = "ios", allow(dead_code))]
 #[derive(Debug, Clone, Copy, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum InstallOutcome {
@@ -659,6 +668,7 @@ pub enum InstallOutcome {
 }
 
 /// Android: downloads, verifies, and opens the installer for the offered update.
+#[cfg_attr(target_os = "ios", allow(clippy::unused_async))]
 pub async fn install_update(
     app: &AppHandle,
     service: &AgentService,

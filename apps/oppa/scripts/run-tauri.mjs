@@ -144,13 +144,17 @@ await writeFile(generatedConfigPath, `${JSON.stringify(config, null, 2)}\n`, 'ut
 // const pnpm = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm';
 const pnpm = 'pnpm';
 const tauriArguments = platform
-  ? [platform, command, ...(command === 'init' ? [] : ['--config', generatedConfigPath]), ...forwardedArguments]
+  ? [platform, command, '--config', generatedConfigPath, ...forwardedArguments]
   : [command, '--config', generatedConfigPath, ...forwardedArguments];
 // Full Rust debug info makes Android debug APKs several hundred megabytes, too
 // large for many emulators; line tables still give symbolized backtraces.
 const childEnvironment = { ...process.env, OPPA_PRODUCT_DIR: productDirectory };
 if (platform === 'android' && childEnvironment.CARGO_PROFILE_DEV_DEBUG === undefined) {
   childEnvironment.CARGO_PROFILE_DEV_DEBUG = 'line-tables-only';
+}
+// Keep swift-rs cross-compilation compatible with Xcode 27's SwiftPM default.
+if (platform === 'ios' && process.platform === 'darwin') {
+  childEnvironment.PATH = `${join(scriptDirectory, 'apple-toolchain')}:${childEnvironment.PATH ?? ''}`;
 }
 const child = spawn(pnpm, ['--filter', 'oppa', 'exec', 'tauri', ...tauriArguments], {
   cwd: repositoryRoot,

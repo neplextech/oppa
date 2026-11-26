@@ -1,0 +1,10 @@
+#!/bin/sh
+# swift-rs passes the iOS target through compiler flags. Swift Build (the
+# SwiftPM default in Xcode 27) overrides those flags with the host target.
+# Keep the native backend until swift-rs supports Swift Build cross-compilation.
+swift_binary="$(/usr/bin/xcrun --find swift)" || exit 1
+if [ "$1" = build ]; then
+  shift
+  exec "$swift_binary" build --build-system native "$@"
+fi
+exec "$swift_binary" "$@"
