@@ -12,6 +12,7 @@
     "server-sdk",
     "build-oppa",
     "product-configuration",
+    "mobile",
     "---Pairing and security---",
     "authentication-flow",
     "deep-link-pairing",

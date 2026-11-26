@@ -13,7 +13,11 @@ this repository's generic protocol and agent layers.
 
 ## Workspace map
 
-- `apps/oppa`: React interface and narrow Tauri host
+- `apps/oppa`: React interface and narrow Tauri host for desktop,
+  Android, and iOS
+- `apps/oppa/plugins/mobile`: minimal Kotlin/Swift bridge for
+  mobile-only platform services (Keystore, foreground service, DNS-SD,
+  lifecycle)
 - `apps/www`: Fumadocs landing and documentation site
 - `crates/oppa-agent`: top-level Rust orchestration
 - `crates/oppa-*`: focused domain and infrastructure boundaries

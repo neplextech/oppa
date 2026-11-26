@@ -1,15 +1,21 @@
-# OPPA desktop application
+# OPPA application
 
-OPPA is the Open Printer Proxy Agent desktop host. This workspace unit combines a compact React
-interface with a narrow Tauri boundary around the shell-independent `oppa-agent` crate.
+OPPA is the Open Printer Proxy Agent host for Windows, macOS, Linux, Android, and iOS. This
+workspace unit combines a compact React interface with a narrow Tauri boundary around the
+shell-independent `oppa-agent` crate. All platforms share one frontend, one Rust host, and one
+agent; platform differences are selected at compile time and reported at runtime as
+`AgentStatus.capabilities`.
 
 ## Responsibilities
 
 - server discovery, pairing, and explicit connection-state presentation
 - printer, virtual printer, job, diagnostic, and background settings views
 - validated runtime selection of one OpenPrinter server base URL
-- signed stable-update checks and installation through the Tauri updater
-- system tray and close-to-background behavior
+- signed stable-update checks and installation through the Tauri updater (desktop), or verified
+  direct-download APK updates approved by the user (Android)
+- system tray and close-to-background behavior (desktop)
+- the Android foreground service, iOS keep-awake and bounded background time, lifecycle-driven
+  reconnects, and DNS-SD network printer discovery (mobile)
 - translating typed frontend requests into agent operations
 
 The application does not contain durable job logic, renderer or spooler implementations, server-side
@@ -26,6 +32,14 @@ OPPA_PRODUCT_DIR=products/default pnpm oppa:dev
 OPPA_PRODUCT_DIR=products/default pnpm oppa:build
 ```
 
+Mobile, from the repository root (see `apps/www/content/docs/mobile.mdx`):
+
+```bash
+pnpm oppa:android:dev
+pnpm oppa:android:build --debug --apk
+pnpm oppa:ios:init && pnpm oppa:ios:brand && pnpm oppa:ios:dev
+```
+
 The plain Vite development command uses safe demonstration data when Tauri internals are absent.
 The Tauri build uses the real Rust command service.
 
@@ -38,13 +52,30 @@ validates the file and submits it as a local test, without storing it in the
 job ledger or sending it to a server. Duplex and custom sizes appear only when
 the printer reports them.
 
+## Host structure
+
+| Module | Role |
+| --- | --- |
+| `service.rs` | `AgentService`: process-owned runtime shared by every platform |
+| `runtime_owner.rs` | one runtime and one connection supervisor per process |
+| `platform.rs` | capability table per platform; product features are intersected with it |
+| `desktop.rs` | tray, application menu, close-to-background (desktop only) |
+| `mobile.rs` | sandbox paths, credential store, lifecycle loop, notification status (mobile only) |
+| `lifecycle.rs` | pure reconnect/suspension/stop policy, tested on every host |
+| `network_discovery.rs` | DNS-SD result normalization into add-printer suggestions |
+| `updates.rs` | Android update manifest and download verification |
+
+Native Android and iOS code lives in `../plugins/mobile` and contains no agent logic.
+
 ## Security boundary
 
 The frontend receives only typed status, printer, job, and sanitized diagnostic objects. It is not
 granted generic shell, filesystem, SQL, or network execution.
 
 The OpenPrinter server base URL and paired public identifiers are non-secret settings. The private
-Ed25519 key remains in operating-system secure storage and never enters SQLite or the frontend.
+Ed25519 key remains in operating-system secure storage (Keychain, Credential Manager, Secret
+Service, Android Keystore-backed encryption, or the iOS Keychain) and never enters SQLite or the
+frontend.
 Discovery supplies the current pairing and gateway endpoints. Plain HTTP is accepted only for
 loopback development; production discovery/pairing requires HTTPS and the gateway resolves to WSS.
 Changing or forgetting the service deletes the local key and requires a new pairing code.
@@ -53,6 +84,12 @@ Update artifacts are fetched from GitHub Releases and verified by the native Tau
 the updater public-key placeholder in `src-tauri/tauri.conf.json` before publishing a release.
 
 ## Status
+
+Android: built and exercised on an Android 13 emulator (pairing, deep links, foreground service,
+Doze, activity recreation, process death recovery, updates over an existing install, raw TCP and
+virtual printing, PDF). iOS: implemented; simulator builds run in CI on macOS and need Xcode
+locally. Physical-device checks are listed in the mobile documentation.
+
 
 The initial application provides setup, overview, printer management, virtual output, job history,
 diagnostics, settings, tray behavior, and start-on-login integration. Physical behavior still

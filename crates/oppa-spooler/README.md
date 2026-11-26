@@ -23,6 +23,12 @@ its installed driver or an explicitly selected raw printer language.
   delay, independent of the virtual printer profile
 - `SpoolerRegistry` routing by validated connection family
 
+CUPS code is gated by an explicit `cups` configuration set by `build.rs` for
+macOS, Linux, and the BSDs. Android and iOS are Unix targets without print
+queues, so `cfg(unix)` is deliberately not used; on mobile, raw TCP and
+virtual printers are available and system-queue submission returns
+`BackendUnavailable`.
+
 All backends enforce payload limits, return structured errors, tolerate a
 printer disappearing, and support cooperative cancellation where technically
 possible. Platforms that are neither Unix nor Windows return an explicit
